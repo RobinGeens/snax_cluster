@@ -13,7 +13,7 @@ class BlockGemmDelayedWrapper(val params: GemmParams) extends Module with Requir
   val blockGemm = Module(new BlockGemm(params))
 
   io <> blockGemm.io
-  io.data.a_i -|> blockGemm.io.data.a_i
+  io.data.a_i -||> blockGemm.io.data.a_i
   io.data.b_i -|> blockGemm.io.data.b_i
 
 }
