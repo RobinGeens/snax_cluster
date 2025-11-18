@@ -6,7 +6,15 @@
 
 #include "data.h"
 
+<<<<<<< HEAD
 #include "snax-versacore-to-lib.h"
+=======
+<<<<<<<< HEAD:target/snitch_cluster/sw/apps/snax-versacore-dse-matmul-profile/src/snax-versacore-dse-matmul-profile.c
+#include "snax-versacore-dse-lib.h"
+========
+#include "snax-versacore-to-lib.h"
+>>>>>>>> 6391813a (rename current versacore to versacore_to (#585)):target/snitch_cluster/sw/apps/snax-versacore-to-matmul-profile/src/snax-versacore-to-matmul-profile.c
+>>>>>>> 6391813a (rename current versacore to versacore_to (#585))
 
 int main() {
     // Set err value for checking
@@ -76,7 +84,11 @@ int main() {
             set_addr_remap_index_D32, channel_en_D, array_shape,
 
             quantization_enable, shift_i, multiplier_i, input_zp_i, output_zp_i,
+<<<<<<< HEAD
             int32tofp16_enable, int4_a_enable, int4_b_enable);
+=======
+            int32tofp16_enable);
+>>>>>>> 6391813a (rename current versacore to versacore_to (#585))
 
         // Set GEMMX configuration CSR
         uint32_t subtraction_setting =

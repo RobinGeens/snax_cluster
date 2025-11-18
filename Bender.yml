@@ -293,6 +293,105 @@ sources:
       # Level 2
       - target/snitch_cluster/generated/snax_simbacore/snax_simbacore_wrapper.sv
 
+  # Hypercorex
+  - target: hypercorex
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_hypercorex/snax_hypercorex_Streamer.sv
+      # Level 1
+      - hw/snax_hypercorex/snax_hypercorex_shell_wrapper.sv
+      - target/snitch_cluster/generated/snax_hypercorex/snax_hypercorex_streamer_wrapper.sv
+      # Level 2
+      - target/snitch_cluster/generated/snax_hypercorex/snax_hypercorex_wrapper.sv
+
+  # CGRA
+  - target: cgra
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_cgra/snax_cgra_reqrspman_ReqRspManager.sv
+      - target/snitch_cluster/generated/snax_cgra/snax_cgra_Streamer.sv
+      # Level 1
+      - hw/snax_cgra/src/snax_cgra_shell_wrapper.sv
+      - target/snitch_cluster/generated/snax_cgra/snax_cgra_csrman_wrapper.sv
+      - target/snitch_cluster/generated/snax_cgra/snax_cgra_streamer_wrapper.sv
+      # Level 2
+      - target/snitch_cluster/generated/snax_cgra/snax_cgra_wrapper.sv
+
+  # dimc
+  - target: dimc
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_dimc/snax_dimc_Streamer.sv
+      # Level 1
+      # TODO: implement this wrapepr file
+      - hw/snax_dimc/snax_dimc_shell_wrapper.sv
+      - target/snitch_cluster/generated/snax_dimc/snax_dimc_streamer_wrapper.sv
+      # Level 2
+      - target/snitch_cluster/generated/snax_dimc/snax_dimc_wrapper.sv
+
+  - target: snax_data_reshuffler
+    files:
+      # Level 0
+      - hw/chisel_acc/generated/reshuffle/Reshuffler.sv
+      - target/snitch_cluster/generated/snax_data_reshuffler/snax_data_reshuffler_reqrspman_ReqRspManager.sv
+      - target/snitch_cluster/generated/snax_data_reshuffler/snax_data_reshuffler_Streamer.sv
+      # Level 1
+      - target/snitch_cluster/generated/snax_data_reshuffler/snax_data_reshuffler_csrman_wrapper.sv
+      - target/snitch_cluster/generated/snax_data_reshuffler/snax_data_reshuffler_streamer_wrapper.sv
+      # Level 2
+      - hw/chisel_acc/src/snax_data_reshuffler_shell_wrapper.sv
+      - target/snitch_cluster/generated/snax_data_reshuffler/snax_data_reshuffler_wrapper.sv
+
+  - target: snax_versacore
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_versacore/VersaCore.sv
+      - target/snitch_cluster/generated/snax_versacore/snax_versacore_shell_wrapper.sv
+      - target/snitch_cluster/generated/snax_versacore/snax_versacore_reqrspman_ReqRspManager.sv
+      - target/snitch_cluster/generated/snax_versacore/snax_versacore_Streamer.sv
+      # Level 1
+      - target/snitch_cluster/generated/snax_versacore/snax_versacore_csrman_wrapper.sv
+      - target/snitch_cluster/generated/snax_versacore/snax_versacore_streamer_wrapper.sv
+      # Level 2
+      - target/snitch_cluster/generated/snax_versacore/snax_versacore_wrapper.sv
+
+  - target: snax_gemmX
+    files:
+      # Level 0
+      - hw/chisel_acc/generated/gemmx/BlockGemmRescaleSIMD.sv
+      - hw/chisel_acc/src/snax_streamer_gemmX_shell_wrapper.sv
+      - target/snitch_cluster/generated/snax_streamer_gemmX/snax_streamer_gemmX_reqrspman_ReqRspManager.sv
+      - target/snitch_cluster/generated/snax_streamer_gemmX/snax_streamer_gemmX_Streamer.sv
+      # Level 1
+      - target/snitch_cluster/generated/snax_streamer_gemmX/snax_streamer_gemmX_csrman_wrapper.sv
+      - target/snitch_cluster/generated/snax_streamer_gemmX/snax_streamer_gemmX_streamer_wrapper.sv
+      # Level 2
+      - target/snitch_cluster/generated/snax_streamer_gemmX/snax_streamer_gemmX_wrapper.sv
+
+  - target: snax_KUL_cluster_xdma
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_KUL_cluster_xdma/snax_KUL_cluster_xdma.sv
+      # Level 1
+      - target/snitch_cluster/generated/snax_KUL_cluster_xdma/snax_KUL_cluster_xdma_wrapper.sv
+
+  - target: snax_versacore_to_cluster_xdma
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_versacore_to_cluster_xdma/snax_versacore_to_cluster_xdma.sv
+      # Level 1
+      - target/snitch_cluster/generated/snax_versacore_to_cluster_xdma/snax_versacore_to_cluster_xdma_wrapper.sv
+
+  - target: snax_xdma_cluster_xdma
+    files:
+      # Level 0
+      - target/snitch_cluster/generated/snax_xdma_cluster_xdma/snax_xdma_cluster_xdma.sv
+      # Level 1
+      - target/snitch_cluster/generated/snax_xdma_cluster_xdma/snax_xdma_cluster_xdma_wrapper.sv
+
+  - target: test
+    files:
+      - hw/snitch_cluster/test/snitch_tcdm_interconnect_tb.sv
 
   # target/common
   - target: any(simulation, verilator)
@@ -310,6 +409,9 @@ sources:
     files:
       - target/snitch_cluster/generated/snax_simbacore_cluster_wrapper.sv 
 
+  - target: snax_versacore_to_cluster
+    files:
+      - target/snitch_cluster/generated/snax_versacore_to_cluster_wrapper.sv
 
   #---------------------------
   # Test harness declaration

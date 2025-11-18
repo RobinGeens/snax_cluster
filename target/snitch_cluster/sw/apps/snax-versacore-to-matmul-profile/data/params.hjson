@@ -5,12 +5,22 @@
 // Cluster configuration for a matmul testbench system.
 {
   // gemm configurations
+<<<<<<< HEAD
   array_shape: 4,
   data_type: 0,
   transposed_A: 1,
   transposed_B: 1,
   int4_a_enable: 1,
   int4_b_enable: 1,
+=======
+  granularity_a: 1,
+  granularity_b: 16,
+  granularity_c: 4,
+  array_shape: 1,
+  data_type: 0,
+  transposed_A: 1,
+  transposed_B: 0,
+>>>>>>> 6391813a (rename current versacore to versacore_to (#585))
   K: 1,
   N: 4,
   M: 2,

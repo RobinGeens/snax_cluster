@@ -6,7 +6,11 @@
 
 #include "data.h"
 
+<<<<<<<< HEAD:target/snitch_cluster/sw/apps/snax-versacore-dse-matmul-profile/src/snax-versacore-dse-matmul-profile.c
 #include "snax-versacore-dse-lib.h"
+========
+#include "snax-versacore-to-lib.h"
+>>>>>>>> 6391813a (rename current versacore to versacore_to (#585)):target/snitch_cluster/sw/apps/snax-versacore-to-matmul-profile/src/snax-versacore-to-matmul-profile.c
 
 int main() {
     // Set err value for checking
