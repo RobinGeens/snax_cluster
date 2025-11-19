@@ -33,32 +33,24 @@
 // Pack two subtraction values to one CSR
 int32_t gen_subtraction_config(int8_t subtraction_a, int8_t subtraction_b);
 
-void set_versacore_streamer_csr(
-    int32_t delta_local_a, int32_t* Aslstride, int32_t* Atlbound,
-    int32_t* Atlstride, int32_t set_addr_remap_index_A, int32_t transpose_A,
-    int32_t* channel_en_A,
+void set_versacore_streamer_csr(int32_t delta_local_a, int32_t* Aslstride, int32_t* Atlbound, int32_t* Atlstride,
+                                int32_t set_addr_remap_index_A, int32_t transpose_A, int32_t* channel_en_A,
 
-    int32_t delta_local_b, int32_t* Bslstride, int32_t* Btlbound,
-    int32_t* Btlstride, int32_t set_addr_remap_index_B, int32_t transpose_B,
-    int32_t* channel_en_B,
+                                int32_t delta_local_b, int32_t* Bslstride, int32_t* Btlbound, int32_t* Btlstride,
+                                int32_t set_addr_remap_index_B, int32_t transpose_B, int32_t* channel_en_B,
 
-    int32_t delta_local_c, int32_t* Cslstride, int32_t* Ctlbound,
-    int32_t* Ctlstride, int32_t set_addr_remap_index_C, int32_t* channel_en_C,
+                                int32_t delta_local_c, int32_t* Cslstride, int32_t* Ctlbound, int32_t* Ctlstride,
+                                int32_t set_addr_remap_index_C, int32_t* channel_en_C,
 
-    int32_t delta_local_d32, int32_t* D32slstride, int32_t* D32tlbound,
-    int32_t* D32tlstride, int32_t set_addr_remap_index_D32,
-    int32_t* channel_en_D, int32_t array_shape, uint32_t quantization_enable,
-    uint32_t shift_i, uint32_t multiplier_i, int32_t input_zp_i,
-    int32_t output_zp_i, int32_t int32tofp16_enable);
+                                int32_t delta_local_d32, int32_t* D32slstride, int32_t* D32tlbound,
+                                int32_t* D32tlstride, int32_t set_addr_remap_index_D32, int32_t* channel_en_D);
 
 // Set CSR to start STREAMER
 inline void set_versacore_streamer_start() { csrw_ss(STREAMER_START_CSR, 1); }
 
 // Set GEMM configuration CSR
-void set_versacore_csr(uint32_t take_in_new_c,
-                       uint32_t a_b_input_times_one_output,
-                       uint32_t output_times, uint32_t subtractions,
-                       uint32_t array_shape, uint32_t data_type);
+void set_versacore_csr(uint32_t take_in_new_c, uint32_t a_b_input_times_one_output, uint32_t output_times,
+                       uint32_t subtractions, uint32_t array_shape, uint32_t data_type);
 
 // Set CSR to start GEMM
 inline void set_versacore_start() { csrw_ss(GEMMX_START, 1); }
@@ -75,6 +67,5 @@ uint32_t read_versacore_streamer_perf_counter();
 uint32_t read_versacore_perf_counter();
 
 // Check the result of GEMMX
-uint32_t check_versacore_result_D32(int8_t* output, int8_t* output_golden,
-                                    int32_t data_length,
+uint32_t check_versacore_result_D32(int8_t* output, int8_t* output_golden, int32_t data_length,
                                     bool banked_data_layout);
