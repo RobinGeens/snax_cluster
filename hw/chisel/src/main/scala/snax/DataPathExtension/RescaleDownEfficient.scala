@@ -74,22 +74,6 @@ class RescaleDownEfficientPE(
   io.data_o := intervalled_out.asSInt
 }
 
-class HasRescaleDownEfficient(in_elementWidth: Int = 32, out_elementWidth: Int = 8, dataWidth: Int = 512)
-    extends HasDataPathExtension {
-  implicit val extensionParam:          DataPathExtensionParam =
-    new DataPathExtensionParam(
-      moduleName = "RescaleDownEfficient",
-      userCsrNum = 4,
-      dataWidth  = dataWidth
-    )
-  def instantiate(clusterName: String): RescaleDownEfficient   =
-    Module(
-      new RescaleDownEfficient(in_elementWidth, out_elementWidth) {
-        override def desiredName = clusterName + namePostfix
-      }
-    )
-}
-
 class RescaleDownEfficient(
   in_elementWidth:  Int = 32,
   out_elementWidth: Int = 8
