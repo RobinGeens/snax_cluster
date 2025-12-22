@@ -7,8 +7,6 @@
 #include "snax-simbacore-lib.h"
 #include "streamer_csr_addr_map.h"
 
-// #define VERBOSE
-
 int test_simd() {
     int err = 0;
 

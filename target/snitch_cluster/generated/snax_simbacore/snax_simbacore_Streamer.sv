@@ -2415,7 +2415,7 @@ module ram_9x20(	// src/main/scala/chisel3/util/Decoupled.scala:256:91
   assign R0_data = R0_en ? Memory[R0_addr] : 20'bx;	// src/main/scala/chisel3/util/Decoupled.scala:256:91
 endmodule
 
-module Queue_W20_D9_Haujmv8(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hbt51sm(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -2515,7 +2515,7 @@ module snax_simbacore__C0_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   wire _queues_0_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
   wire enq_all_ready = _queues_0_io_enq_ready & _queues_1_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_1_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W20_D9_Haujmv8 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hbt51sm queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -2525,7 +2525,7 @@ module snax_simbacore__C0_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W20_D9_Haujmv8 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hbt51sm queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -2882,7 +2882,7 @@ module ram_9x64(	// src/main/scala/chisel3/util/Decoupled.scala:256:91
   assign R0_data = R0_en ? Memory[R0_addr] : 64'bx;	// src/main/scala/chisel3/util/Decoupled.scala:256:91
 endmodule
 
-module Queue_W64_D9_Hi4cnrd(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hp3i1nk(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -2980,7 +2980,7 @@ module snax_simbacore__C0_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   wire [63:0] _queues_0_io_deq_bits;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
   wire        deq_all_valid = _queues_0_io_deq_valid & _queues_1_io_deq_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :89:61
   wire        _queues_1_io_deq_ready_T = deq_all_valid & io_out_0_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:89:61, :92:57
-  Queue_W64_D9_Hi4cnrd queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hp3i1nk queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -2989,7 +2989,7 @@ module snax_simbacore__C0_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_0_io_deq_valid),
     .io_deq_bits  (_queues_0_io_deq_bits)
   );
-  Queue_W64_D9_Hi4cnrd queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hp3i1nk queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_1_valid),
@@ -3314,7 +3314,7 @@ module snax_simbacore__C1_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_H5906p2(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H2amflv(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -3424,7 +3424,7 @@ module snax_simbacore__C1_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     _queues_0_io_enq_ready & _queues_1_io_enq_ready & _queues_2_io_enq_ready
     & _queues_3_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_3_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W20_D9_H5906p2 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H2amflv queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -3434,7 +3434,7 @@ module snax_simbacore__C1_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W20_D9_H5906p2 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H2amflv queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -3444,7 +3444,7 @@ module snax_simbacore__C1_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_1_valid),
     .io_deq_bits  (io_out_1_bits)
   );
-  Queue_W20_D9_H5906p2 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H2amflv queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_2_io_enq_ready),
@@ -3454,7 +3454,7 @@ module snax_simbacore__C1_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_2_valid),
     .io_deq_bits  (io_out_2_bits)
   );
-  Queue_W20_D9_H5906p2 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H2amflv queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_3_io_enq_ready),
@@ -3869,7 +3869,7 @@ module snax_simbacore__C1_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_H6m1160(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hofafdg(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -3977,7 +3977,7 @@ module snax_simbacore__C1_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     _queues_0_io_deq_valid & _queues_1_io_deq_valid & _queues_2_io_deq_valid
     & _queues_3_io_deq_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :89:61
   wire        _queues_3_io_deq_ready_T = deq_all_valid & io_out_0_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:89:61, :92:57
-  Queue_W64_D9_H6m1160 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hofafdg queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -3986,7 +3986,7 @@ module snax_simbacore__C1_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_0_io_deq_valid),
     .io_deq_bits  (_queues_0_io_deq_bits)
   );
-  Queue_W64_D9_H6m1160 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hofafdg queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_1_valid),
@@ -3995,7 +3995,7 @@ module snax_simbacore__C1_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_1_io_deq_valid),
     .io_deq_bits  (_queues_1_io_deq_bits)
   );
-  Queue_W64_D9_H6m1160 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hofafdg queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_2_valid),
@@ -4004,7 +4004,7 @@ module snax_simbacore__C1_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_2_io_deq_valid),
     .io_deq_bits  (_queues_2_io_deq_bits)
   );
-  Queue_W64_D9_H6m1160 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hofafdg queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_3_valid),
@@ -4397,7 +4397,7 @@ module snax_simbacore__C2_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hul4ui3(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H4u0u2m(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -4490,7 +4490,7 @@ module snax_simbacore__C2_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hul4ui3 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H4u0u2m queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -4764,7 +4764,7 @@ module snax_simbacore__C2_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hs1bkt1(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H6bde2j(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -4854,7 +4854,7 @@ module snax_simbacore__C2_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hs1bkt1 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H6bde2j queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -5142,7 +5142,7 @@ module snax_simbacore__C3_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hesj3cr(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H4bv8lm(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -5235,7 +5235,7 @@ module snax_simbacore__C3_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hesj3cr queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H4bv8lm queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -5509,7 +5509,7 @@ module snax_simbacore__C3_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Ham6pk0(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hoh5h3f(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -5599,7 +5599,7 @@ module snax_simbacore__C3_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Ham6pk0 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hoh5h3f queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -5887,7 +5887,7 @@ module snax_simbacore__C4_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_H56u2eq(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H8b3djd(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -5980,7 +5980,7 @@ module snax_simbacore__C4_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_H56u2eq queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H8b3djd queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -6254,7 +6254,7 @@ module snax_simbacore__C4_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Haleg7f(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H5s5q7c(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -6344,7 +6344,7 @@ module snax_simbacore__C4_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Haleg7f queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H5s5q7c queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -6632,7 +6632,7 @@ module snax_simbacore__C5_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hs5nkde(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Han9g0n(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -6725,7 +6725,7 @@ module snax_simbacore__C5_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hs5nkde queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Han9g0n queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -6999,7 +6999,7 @@ module snax_simbacore__C5_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hr294o2(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hrg0ff7(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -7089,7 +7089,7 @@ module snax_simbacore__C5_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hr294o2 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hrg0ff7 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -7377,7 +7377,7 @@ module snax_simbacore__C6_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hlis2n2(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hpkj58f(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -7470,7 +7470,7 @@ module snax_simbacore__C6_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hlis2n2 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hpkj58f queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -7744,7 +7744,7 @@ module snax_simbacore__C6_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hsrqbme(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H5lieq5(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -7834,7 +7834,7 @@ module snax_simbacore__C6_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hsrqbme queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H5lieq5 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -8122,7 +8122,7 @@ module snax_simbacore__C7_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hou64va(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hrmveca(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -8232,7 +8232,7 @@ module snax_simbacore__C7_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     _queues_0_io_enq_ready & _queues_1_io_enq_ready & _queues_2_io_enq_ready
     & _queues_3_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_3_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W20_D9_Hou64va queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hrmveca queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -8242,7 +8242,7 @@ module snax_simbacore__C7_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W20_D9_Hou64va queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hrmveca queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -8252,7 +8252,7 @@ module snax_simbacore__C7_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_1_valid),
     .io_deq_bits  (io_out_1_bits)
   );
-  Queue_W20_D9_Hou64va queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hrmveca queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_2_io_enq_ready),
@@ -8262,7 +8262,7 @@ module snax_simbacore__C7_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_2_valid),
     .io_deq_bits  (io_out_2_bits)
   );
-  Queue_W20_D9_Hou64va queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hrmveca queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_3_io_enq_ready),
@@ -8677,7 +8677,7 @@ module snax_simbacore__C7_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hc4vd4d(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hpb51ej(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -8785,7 +8785,7 @@ module snax_simbacore__C7_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     _queues_0_io_deq_valid & _queues_1_io_deq_valid & _queues_2_io_deq_valid
     & _queues_3_io_deq_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :89:61
   wire        _queues_3_io_deq_ready_T = deq_all_valid & io_out_0_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:89:61, :92:57
-  Queue_W64_D9_Hc4vd4d queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hpb51ej queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -8794,7 +8794,7 @@ module snax_simbacore__C7_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_0_io_deq_valid),
     .io_deq_bits  (_queues_0_io_deq_bits)
   );
-  Queue_W64_D9_Hc4vd4d queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hpb51ej queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_1_valid),
@@ -8803,7 +8803,7 @@ module snax_simbacore__C7_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_1_io_deq_valid),
     .io_deq_bits  (_queues_1_io_deq_bits)
   );
-  Queue_W64_D9_Hc4vd4d queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hpb51ej queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_2_valid),
@@ -8812,7 +8812,7 @@ module snax_simbacore__C7_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (_queues_2_io_deq_valid),
     .io_deq_bits  (_queues_2_io_deq_bits)
   );
-  Queue_W64_D9_Hc4vd4d queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hpb51ej queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_3_valid),
@@ -9205,7 +9205,7 @@ module snax_simbacore__C8_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hl4rsg(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H385amg(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -9298,7 +9298,7 @@ module snax_simbacore__C8_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hl4rsg queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H385amg queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -9572,7 +9572,7 @@ module snax_simbacore__C8_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hrs5i2k(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Ho8slsv(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -9662,7 +9662,7 @@ module snax_simbacore__C8_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hrs5i2k queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Ho8slsv queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -9950,7 +9950,7 @@ module snax_simbacore__C9_Reader_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hhmpckn(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hb6gm8r(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -10043,7 +10043,7 @@ module snax_simbacore__C9_Reader_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hhmpckn queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hb6gm8r queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -10317,7 +10317,7 @@ module snax_simbacore__C9_Reader_DataResponsers(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hg2ht87(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H2va8et(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -10407,7 +10407,7 @@ module snax_simbacore__C9_Reader_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hg2ht87 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H2va8et queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -10695,7 +10695,7 @@ module snax_simbacore__C10_Reader_AddressGenUnitCounter(	// src/main/scala/snax/
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hav9s4e(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hdbvhi6(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -10788,7 +10788,7 @@ module snax_simbacore__C10_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hav9s4e queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hdbvhi6 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -11062,7 +11062,7 @@ module snax_simbacore__C10_Reader_DataResponsers(	// src/main/scala/snax/readerW
   );
 endmodule
 
-module Queue_W64_D9_Hah7q3g(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H79t3g2(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -11152,7 +11152,7 @@ module snax_simbacore__C10_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hah7q3g queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H79t3g2 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -11440,7 +11440,7 @@ module snax_simbacore__C11_Reader_AddressGenUnitCounter(	// src/main/scala/snax/
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_H1hg8hc(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H5somp8(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -11533,7 +11533,7 @@ module snax_simbacore__C11_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_H1hg8hc queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H5somp8 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -11807,7 +11807,7 @@ module snax_simbacore__C11_Reader_DataResponsers(	// src/main/scala/snax/readerW
   );
 endmodule
 
-module Queue_W64_D9_Hpaj797(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H6uaos2(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -11897,7 +11897,7 @@ module snax_simbacore__C11_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hpaj797 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H6uaos2 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -12185,7 +12185,7 @@ module snax_simbacore__C12_Reader_AddressGenUnitCounter(	// src/main/scala/snax/
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_H6devuu(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hr7bhlc(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -12295,7 +12295,7 @@ module snax_simbacore__C12_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     _queues_0_io_enq_ready & _queues_1_io_enq_ready & _queues_2_io_enq_ready
     & _queues_3_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_3_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W20_D9_H6devuu queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr7bhlc queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -12305,7 +12305,7 @@ module snax_simbacore__C12_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W20_D9_H6devuu queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr7bhlc queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -12315,7 +12315,7 @@ module snax_simbacore__C12_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     .io_deq_valid (io_out_1_valid),
     .io_deq_bits  (io_out_1_bits)
   );
-  Queue_W20_D9_H6devuu queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr7bhlc queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_2_io_enq_ready),
@@ -12325,7 +12325,7 @@ module snax_simbacore__C12_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     .io_deq_valid (io_out_2_valid),
     .io_deq_bits  (io_out_2_bits)
   );
-  Queue_W20_D9_H6devuu queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr7bhlc queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_3_io_enq_ready),
@@ -12740,7 +12740,7 @@ module snax_simbacore__C12_Reader_DataResponsers(	// src/main/scala/snax/readerW
   );
 endmodule
 
-module Queue_W64_D9_Hrvshg8(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_H54g261(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -12848,7 +12848,7 @@ module snax_simbacore__C12_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     _queues_0_io_deq_valid & _queues_1_io_deq_valid & _queues_2_io_deq_valid
     & _queues_3_io_deq_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :89:61
   wire        _queues_3_io_deq_ready_T = deq_all_valid & io_out_0_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:89:61, :92:57
-  Queue_W64_D9_Hrvshg8 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H54g261 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -12857,7 +12857,7 @@ module snax_simbacore__C12_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     .io_deq_valid (_queues_0_io_deq_valid),
     .io_deq_bits  (_queues_0_io_deq_bits)
   );
-  Queue_W64_D9_Hrvshg8 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H54g261 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_1_valid),
@@ -12866,7 +12866,7 @@ module snax_simbacore__C12_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     .io_deq_valid (_queues_1_io_deq_valid),
     .io_deq_bits  (_queues_1_io_deq_bits)
   );
-  Queue_W64_D9_Hrvshg8 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H54g261 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_2_valid),
@@ -12875,7 +12875,7 @@ module snax_simbacore__C12_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     .io_deq_valid (_queues_2_io_deq_valid),
     .io_deq_bits  (_queues_2_io_deq_bits)
   );
-  Queue_W64_D9_Hrvshg8 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_H54g261 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_3_valid),
@@ -13268,7 +13268,7 @@ module snax_simbacore__C13_Reader_AddressGenUnitCounter(	// src/main/scala/snax/
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hoq3kvb(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hr2d1sn(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -13378,7 +13378,7 @@ module snax_simbacore__C13_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     _queues_0_io_enq_ready & _queues_1_io_enq_ready & _queues_2_io_enq_ready
     & _queues_3_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_3_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W20_D9_Hoq3kvb queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr2d1sn queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -13388,7 +13388,7 @@ module snax_simbacore__C13_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W20_D9_Hoq3kvb queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr2d1sn queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -13398,7 +13398,7 @@ module snax_simbacore__C13_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     .io_deq_valid (io_out_1_valid),
     .io_deq_bits  (io_out_1_bits)
   );
-  Queue_W20_D9_Hoq3kvb queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr2d1sn queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_2_io_enq_ready),
@@ -13408,7 +13408,7 @@ module snax_simbacore__C13_Reader_AddressBufferFIFO(	// src/main/scala/snax/read
     .io_deq_valid (io_out_2_valid),
     .io_deq_bits  (io_out_2_bits)
   );
-  Queue_W20_D9_Hoq3kvb queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hr2d1sn queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_3_io_enq_ready),
@@ -13823,7 +13823,7 @@ module snax_simbacore__C13_Reader_DataResponsers(	// src/main/scala/snax/readerW
   );
 endmodule
 
-module Queue_W64_D9_Hr4qhaj(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hh12qf8(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 io_enq_valid,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -13931,7 +13931,7 @@ module snax_simbacore__C13_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     _queues_0_io_deq_valid & _queues_1_io_deq_valid & _queues_2_io_deq_valid
     & _queues_3_io_deq_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :89:61
   wire        _queues_3_io_deq_ready_T = deq_all_valid & io_out_0_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:89:61, :92:57
-  Queue_W64_D9_Hr4qhaj queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hh12qf8 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_0_valid),
@@ -13940,7 +13940,7 @@ module snax_simbacore__C13_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     .io_deq_valid (_queues_0_io_deq_valid),
     .io_deq_bits  (_queues_0_io_deq_bits)
   );
-  Queue_W64_D9_Hr4qhaj queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hh12qf8 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_1_valid),
@@ -13949,7 +13949,7 @@ module snax_simbacore__C13_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     .io_deq_valid (_queues_1_io_deq_valid),
     .io_deq_bits  (_queues_1_io_deq_bits)
   );
-  Queue_W64_D9_Hr4qhaj queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hh12qf8 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_2_valid),
@@ -13958,7 +13958,7 @@ module snax_simbacore__C13_Reader_DataBuffer(	// src/main/scala/snax/readerWrite
     .io_deq_valid (_queues_2_io_deq_valid),
     .io_deq_bits  (_queues_2_io_deq_bits)
   );
-  Queue_W64_D9_Hr4qhaj queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hh12qf8 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_valid (io_in_3_valid),
@@ -14351,7 +14351,7 @@ module snax_simbacore__C0_Writer_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hcv0gbk(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H39k7oj(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -14444,7 +14444,7 @@ module snax_simbacore__C0_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hcv0gbk queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H39k7oj queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -14626,7 +14626,7 @@ module snax_simbacore__C0_Writer_DataRequestors(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hu57td2(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hk4jcs(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -14718,7 +14718,7 @@ module snax_simbacore__C0_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hu57td2 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hk4jcs queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -14904,7 +14904,7 @@ module snax_simbacore__C1_Writer_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_H85bmh7(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H74gf6h(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -14997,7 +14997,7 @@ module snax_simbacore__C1_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_H85bmh7 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H74gf6h queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -15179,7 +15179,7 @@ module snax_simbacore__C1_Writer_DataRequestors(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hfplv1h(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hec6ct6(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -15271,7 +15271,7 @@ module snax_simbacore__C1_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hfplv1h queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hec6ct6 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -15457,7 +15457,7 @@ module snax_simbacore__C2_Writer_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hpeu967(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_H9h9ias(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -15550,7 +15550,7 @@ module snax_simbacore__C2_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
   output [19:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W20_D9_Hpeu967 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_H9h9ias queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -15732,7 +15732,7 @@ module snax_simbacore__C2_Writer_DataRequestors(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hjlacft(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hk04h5h(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -15824,7 +15824,7 @@ module snax_simbacore__C2_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
   output [63:0] io_out_0_bits	// src/main/scala/snax/utils/ComplexQueue.scala:37:14
 );
 
-  Queue_W64_D9_Hjlacft queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hk04h5h queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (io_in_0_ready),
@@ -16010,7 +16010,7 @@ module snax_simbacore__C3_Writer_AddressGenUnitCounter(	// src/main/scala/snax/u
   assign io_lastVal = _smallCounter_io_lastVal;	// src/main/scala/snax/utils/Counter.scala:83:7, :102:30
 endmodule
 
-module Queue_W20_D9_Hc4n51r(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W20_D9_Hsoup29(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -16120,7 +16120,7 @@ module snax_simbacore__C3_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
     _queues_0_io_enq_ready & _queues_1_io_enq_ready & _queues_2_io_enq_ready
     & _queues_3_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_3_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W20_D9_Hc4n51r queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hsoup29 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -16130,7 +16130,7 @@ module snax_simbacore__C3_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W20_D9_Hc4n51r queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hsoup29 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -16140,7 +16140,7 @@ module snax_simbacore__C3_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_1_valid),
     .io_deq_bits  (io_out_1_bits)
   );
-  Queue_W20_D9_Hc4n51r queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hsoup29 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_2_io_enq_ready),
@@ -16150,7 +16150,7 @@ module snax_simbacore__C3_Writer_AddressBufferFIFO(	// src/main/scala/snax/reade
     .io_deq_valid (io_out_2_valid),
     .io_deq_bits  (io_out_2_bits)
   );
-  Queue_W20_D9_Hc4n51r queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W20_D9_Hsoup29 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_3_io_enq_ready),
@@ -16431,7 +16431,7 @@ module snax_simbacore__C3_Writer_DataRequestors(	// src/main/scala/snax/readerWr
   );
 endmodule
 
-module Queue_W64_D9_Hkqge74(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
+module Queue_W64_D9_Hckl2tc(	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   input         clock,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
                 reset,	// src/main/scala/snax/utils/ComplexQueue.scala:57:28
   output        io_enq_ready,	// src/main/scala/chisel3/util/Decoupled.scala:255:14
@@ -16540,7 +16540,7 @@ module snax_simbacore__C3_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
     _queues_0_io_enq_ready & _queues_1_io_enq_ready & _queues_2_io_enq_ready
     & _queues_3_io_enq_ready;	// src/main/scala/snax/utils/ComplexQueue.scala:57:23, :69:61
   wire _queues_3_io_enq_valid_T = enq_all_ready & io_in_0_valid;	// src/main/scala/snax/utils/ComplexQueue.scala:69:61, :72:57
-  Queue_W64_D9_Hkqge74 queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hckl2tc queues_0 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_0_io_enq_ready),
@@ -16550,7 +16550,7 @@ module snax_simbacore__C3_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (io_out_0_valid),
     .io_deq_bits  (io_out_0_bits)
   );
-  Queue_W64_D9_Hkqge74 queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hckl2tc queues_1 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_1_io_enq_ready),
@@ -16560,7 +16560,7 @@ module snax_simbacore__C3_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (io_out_1_valid),
     .io_deq_bits  (io_out_1_bits)
   );
-  Queue_W64_D9_Hkqge74 queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hckl2tc queues_2 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_2_io_enq_ready),
@@ -16570,7 +16570,7 @@ module snax_simbacore__C3_Writer_DataBuffer(	// src/main/scala/snax/readerWriter
     .io_deq_valid (io_out_2_valid),
     .io_deq_bits  (io_out_2_bits)
   );
-  Queue_W64_D9_Hkqge74 queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
+  Queue_W64_D9_Hckl2tc queues_3 (	// src/main/scala/snax/utils/ComplexQueue.scala:57:23
     .clock        (clock),
     .reset        (reset),
     .io_enq_ready (_queues_3_io_enq_ready),

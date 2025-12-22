@@ -11,7 +11,9 @@
 
 #pragma once
 
-// SimbaCore CSR: 5
+// #define VERBOSE
+
+// SimbaCore CSR
 #define SIMBACORE_CSR_ADDR_BASE (STREAMER_PERFORMANCE_COUNTER_CSR + 1)
 #define MODE (SIMBACORE_CSR_ADDR_BASE + 0)
 #define SEQ_LEN (SIMBACORE_CSR_ADDR_BASE + 1)

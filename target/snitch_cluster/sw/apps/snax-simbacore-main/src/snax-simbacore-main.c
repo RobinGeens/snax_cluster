@@ -6,7 +6,7 @@
 #include "snax-simbacore-helper.c"
 #include "snax-simbacore-lib.h"
 
-// #define VERBOSE
+#define VERBOSE
 
 int test_phase1() {
     int err = 0;
@@ -206,7 +206,8 @@ int test_phase1_and_2() {
 
     snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles = 0;
+    uint32_t start_cycles            = 0;
+    uint32_t simbacore_cycles_phase1 = 0;
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Mamba main (Phase1 and Phase2)\n\n");
         start_cycles = get_cycle_count();
@@ -222,13 +223,13 @@ int test_phase1_and_2() {
         set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInner, dtRank, xProjDim);
         start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
         wait_simbacore_and_streamer();
-    }
+        simbacore_cycles_phase1 = read_simbacore_perf_counter();
 
-    uint32_t simbacore_cycles_phase1 = read_simbacore_perf_counter();
 #ifdef VERBOSE
-    uint32_t end_cycles_phase1 = get_cycle_count();
-    printf("[%d cc] SimbaCore Phase1 took %u cycles\n", end_cycles_phase1, simbacore_cycles_phase1);
+        uint32_t end_cycles_phase1 = get_cycle_count();
+        printf("[%d cc] SimbaCore Phase1 took %u cycles\n", end_cycles_phase1, simbacore_cycles_phase1);
 #endif
+    }
 
     // Disable to transfer to L1 in parallel with Phase1 computation
     // snrt_cluster_hw_barrier();

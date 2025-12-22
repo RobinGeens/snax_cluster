@@ -6,8 +6,6 @@
 #include "data.h"
 #include "snax-simbacore-lib.h"
 
-// #define VERBOSE
-
 int test_isgemm() {
     int err = 0;
 

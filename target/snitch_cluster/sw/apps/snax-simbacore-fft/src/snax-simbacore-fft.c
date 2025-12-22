@@ -6,8 +6,6 @@
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"
 
-// #define VERBOSE
-
 int test() {
     int err = 0;
 
