@@ -14,7 +14,6 @@ bender update --fetch
 podman run --rm -i -v "$(pwd)":"$(pwd)" -w "$(pwd)" ghcr.io/kuleuven-micas/snax:main bash -s <<'IN_CONTAINER'
 set -e
 cd target/snitch_cluster
-make -k clean || true
 make CFG_OVERRIDE=cfg/snax_simbacore_cluster.hjson rtl-gen
 make CFG_OVERRIDE=cfg/snax_simbacore_cluster.hjson vsim_preparation
 make CFG_OVERRIDE=cfg/snax_simbacore_cluster.hjson sw

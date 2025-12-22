@@ -6,8 +6,6 @@
 #include "snax-simbacore-helper.c"
 #include "snax-simbacore-lib.h"
 
-#define VERBOSE
-
 int test_phase1() {
     int err = 0;
 
@@ -264,9 +262,9 @@ int test_phase1_and_2() {
 
         uint32_t simbacore_cycles_phase2 = read_simbacore_perf_counter();
         uint32_t end_cycles              = get_cycle_count();
-        printf("[%d cc] SimbaCore Phase1 took %u cycles\n", end_cycles, simbacore_cycles_phase1);
-        printf("[%d cc] SimbaCore Phase2 took %u cycles\n", end_cycles, simbacore_cycles_phase2);
-        printf("[%d cc] SimbaCore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_phase2);
+        printf("[%d cc] Simbacore Phase1 took %u cycles\n", end_cycles, simbacore_cycles_phase1);
+        printf("[%d cc] Simbacore Phase2 took %u cycles\n", end_cycles, simbacore_cycles_phase2);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_phase2);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_z, M2_oscore_expected, M2_test_samples_z,  //
