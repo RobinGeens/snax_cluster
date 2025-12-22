@@ -6,6 +6,8 @@
 #include "data.h"
 #include "snax-simbacore-lib.h"
 
+// #define VERBOSE
+
 int test_osgemm() {
     int err = 0;
 
@@ -14,6 +16,11 @@ int test_osgemm() {
     uint8_t* ptr_a      = (uint8_t*)(tcdm_base_ptr + M3_addr_a);
     uint8_t* ptr_b      = (uint8_t*)(tcdm_base_ptr + M3_addr_b);
     uint8_t* ptr_d      = (uint8_t*)(tcdm_base_ptr + M3_addr_d);
+
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
 
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
@@ -27,7 +34,11 @@ int test_osgemm() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
-        printf("Setting up Streamer and SimbaCore for OSGeMM...\n");
+        printf("\nStarting program: OSGeMM\n\n");
+        uint32_t start_cycles = get_cycle_count();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
 
         set_osgemm_streamer_csr((uint32_t)ptr_a, M3_R0_ss, M3_R0_tb, M3_R0_ts,   // A
                                 (uint32_t)ptr_b, M3_R1_ss, M3_R1_tb, M3_R1_ts,   // B
@@ -36,7 +47,9 @@ int test_osgemm() {
         set_simbacore_csr(M3_OSGEMM, dim0, dim1, dim2, 1, 1);
         start_simbacore_and_streamers(M3_R10_en, 0, M3_R11_en, 0);
         wait_simbacore_and_streamer();
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
+        uint32_t end_cycles = get_cycle_count();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_d, M3_D, M3_test_samples_D,  //
                                    nb_test_samples, "out");

@@ -6,6 +6,8 @@
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"
 
+// #define VERBOSE
+
 int test() {
     int err = 0;
 
@@ -14,6 +16,11 @@ int test() {
     uint8_t* ptr_a      = (uint8_t*)(tcdm_base_ptr + M5_addr_a);
     uint8_t* ptr_b      = (uint8_t*)(tcdm_base_ptr + M5_addr_b);
     uint16_t* ptr_cd    = (uint16_t*)(tcdm_base_ptr + M5_addr_cd);
+
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
 
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
@@ -29,7 +36,11 @@ int test() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
-        printf("Setting up Streamer and SimbaCore for DFT partition 1...\n");
+        printf("\nStarting program: DFT partition 1\n\n");
+        uint32_t start_cycles = get_cycle_count();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
 
         set_isgemm_streamer_csr((uint32_t)ptr_a, M5_R11_ss, M5_R11_tb, M5_R11_ts,  // A
                                 (uint32_t)ptr_b, M5_R12_ss, M5_R12_tb, M5_R12_ts,  // B
@@ -38,7 +49,9 @@ int test() {
         set_simbacore_csr(M5_ISGEMM_SQ, L1_padded0, 1, L1_padded1, 1, (dModel * L2));
         start_simbacore_and_streamers(M5_R10_en, 0, M5_R11_en, 0);
         wait_simbacore_and_streamer();
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
+        uint32_t end_cycles = get_cycle_count();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         // check_result_all((uint8_t*)ptr_cd, M5_D, M5_length_cd);
         err += check_result_sample((uint8_t*)ptr_cd, M5_expected, M5_test_samples_expected,  //

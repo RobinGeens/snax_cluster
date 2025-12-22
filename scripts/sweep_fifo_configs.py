@@ -76,9 +76,9 @@ def run_build_and_sim(log_path):
 
 def parse_cycles(log_path):
     s = open(log_path).read()
-    nums = [int(m.group(1)) for m in re.finditer(r"SimbaCore took\s+(\d+)\s+cycles", s)]
+    nums = [int(m.group(1)) for m in re.finditer(r"Simbacore elapsed time:\s+(\d+)\s+cycles", s)]
     if len(nums) < 2:
-        raise RuntimeError("Expected at least two 'SimbaCore took ... cycles' lines")
+        raise RuntimeError("Expected at least two 'Simbacore elapsed time: ... cycles' lines")
     return nums[-2], nums[-1]
 
 

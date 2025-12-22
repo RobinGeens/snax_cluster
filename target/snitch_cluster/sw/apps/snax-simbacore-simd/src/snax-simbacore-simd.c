@@ -7,6 +7,8 @@
 #include "snax-simbacore-lib.h"
 #include "streamer_csr_addr_map.h"
 
+// #define VERBOSE
+
 int test_simd() {
     int err = 0;
 
@@ -19,6 +21,11 @@ int test_simd() {
     uint16_t* ptr_out_mul  = (uint16_t*)(tcdm_base_ptr + M6_addr_mul_out);
     uint16_t* ptr_out_cmul = (uint16_t*)(tcdm_base_ptr + M6_addr_cmul_out);
 
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
+
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_a, M6_simd_a, M6_length_in_a);
@@ -30,6 +37,12 @@ int test_simd() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: SIMD\n\n");
+        uint32_t start_cycles = get_cycle_count();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
+
         // CMUL
         set_simd_streamer_csr((uint32_t)ptr_a, M6_R7_ss, M6_R7_tb, M6_R7_ts,        // SUC BC
                               (uint32_t)ptr_b, M6_R13_ss, M6_R13_tb, M6_R13_ts,     // isCore psum
@@ -59,7 +72,9 @@ int test_simd() {
         start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
         wait_simbacore_and_streamer();
 
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
+        uint32_t end_cycles = get_cycle_count();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample_u16(ptr_out_cmul, M6_cmul_out, M6_test_samples_out,  //
                                        nb_test_samples, "CMUL");

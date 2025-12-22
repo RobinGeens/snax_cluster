@@ -481,50 +481,55 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
     var csrOffset = csrBase
 
     // base pointer
-    csrMap    = csrMap + "#define BASE_PTR_" + tag + "_LOW " + csrOffset + "\n"
+    csrMap    = csrMap + "#define BASE_PTR_" + tag + "_LOW " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
     csrOffset = csrOffset + 1
-    csrMap    = csrMap + "#define BASE_PTR_" + tag + "_HIGH " + csrOffset + "\n"
+    csrMap    = csrMap + "#define BASE_PTR_" + tag + "_HIGH " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
     csrOffset = csrOffset + 1
 
     // spatial strides base address for this data mover
-    csrMap = csrMap + "#define S_STRIDE_BASE_" + tag + " " + csrOffset + "\n"
+    csrMap = csrMap + "#define S_STRIDE_BASE_" + tag + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
     csrMap = csrMap + "#define S_STRIDE_NUM_" + tag + " " + param.aguParam.spatialBounds.length + "\n"
 
     // spatial strides
     for (i <- 0 until param.aguParam.spatialBounds.length) {
-      csrMap    = csrMap + "#define " + "S_STRIDE_" + tag + "_" + i + " " + csrOffset + "\n"
+      csrMap    =
+        csrMap + "#define " + "S_STRIDE_" + tag + "_" + i + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
       csrOffset = csrOffset + 1
     }
 
     // temporal bounds base address for this data mover
-    csrMap = csrMap + "#define T_BOUND_BASE_" + tag + " " + csrOffset + "\n"
+    csrMap = csrMap + "#define T_BOUND_BASE_" + tag + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
     csrMap = csrMap + "#define T_BOUND_NUM_" + tag + " " + param.aguParam.temporalDimension + "\n"
 
     // temporal bounds
     for (i <- 0 until param.aguParam.temporalDimension) {
-      csrMap    = csrMap + "#define " + "T_BOUND_" + tag + "_" + i + " " + csrOffset + "\n"
+      csrMap    =
+        csrMap + "#define " + "T_BOUND_" + tag + "_" + i + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
       csrOffset = csrOffset + 1
     }
 
     // temporal strides base address for this data mover
-    csrMap = csrMap + "#define T_STRIDE_BASE_" + tag + " " + csrOffset + "\n"
+    csrMap = csrMap + "#define T_STRIDE_BASE_" + tag + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
     csrMap = csrMap + "#define T_STRIDE_NUM_" + tag + " " + param.aguParam.temporalDimension + "\n"
 
     // temporal stride
     for (i <- 0 until param.aguParam.temporalDimension) {
-      csrMap    = csrMap + "#define " + "T_STRIDE_" + tag + "_" + i + " " + csrOffset + "\n"
+      csrMap    =
+        csrMap + "#define " + "T_STRIDE_" + tag + "_" + i + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
       csrOffset = csrOffset + 1
     }
 
     // address remap index
     if (param.aguParam.tcdmLogicWordSize.length > 1) {
-      csrMap    = csrMap + "#define " + "ADDR_REMAP_INDEX_" + tag + " " + csrOffset + "\n"
+      csrMap    =
+        csrMap + "#define " + "ADDR_REMAP_INDEX_" + tag + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
       csrOffset = csrOffset + 1
     }
 
     // channel enable
     if (param.configurableChannel) {
-      csrMap    = csrMap + "#define " + "ENABLED_CHANNEL_" + tag + " " + csrOffset + "\n"
+      csrMap    =
+        csrMap + "#define " + "ENABLED_CHANNEL_" + tag + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
       csrMap    =
         csrMap + "#define " + "ENABLED_CHANNEL_" + tag + "_CSR_NUM " + ((param.aguParam.numChannel + 31) / 32) + "\n"
       csrOffset = csrOffset + ((param.aguParam.numChannel + 31) / 32)
@@ -532,7 +537,7 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
 
     // byte mask enable
     if (param.configurableByteMask) {
-      csrMap    = csrMap + "#define " + "ENABLED_BYTE_" + tag + " " + csrOffset + "\n"
+      csrMap = csrMap + "#define " + "ENABLED_BYTE_" + tag + " " + csrOffset + " // 0x" + csrOffset.toHexString + "\n"
       csrOffset = csrOffset + 1
     }
 
@@ -596,7 +601,7 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
     extension_csr_num = get_extension_csr_num(param.readerDatapathExtension(i))
     if (extension_csr_num > 0) {
       csrBase_i = csrBase + get_extension_list_csr_num(param.readerDatapathExtension.take(i))
-      csrMap += s"#define READER_EXTENSION_${i}_CSR_BASE $csrBase_i\n"
+      csrMap += s"#define READER_EXTENSION_${i}_CSR_BASE $csrBase_i // 0x${csrBase_i.toHexString}\n"
       csrMap += s"#define READER_EXTENSION_${i}_CSR_NUM $extension_csr_num\n"
     }
   }
@@ -607,7 +612,7 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
     extension_csr_num = get_extension_csr_num(param.writerDatapathExtension(i))
     if (extension_csr_num > 0) {
       csrBase_i = csrBase + get_extension_list_csr_num(param.writerDatapathExtension.take(i))
-      csrMap += s"#define WRITER_EXTENSION_${i}_CSR_BASE $csrBase_i\n"
+      csrMap += s"#define WRITER_EXTENSION_${i}_CSR_BASE $csrBase_i // 0x${csrBase_i.toHexString}\n"
       csrMap += s"#define WRITER_EXTENSION_${i}_CSR_NUM $extension_csr_num\n"
     }
   }
@@ -618,7 +623,7 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
     extension_csr_num = get_extension_csr_num(param.readerwriterDatapathExtension(i))
     if (extension_csr_num > 0) {
       csrBase_i = csrBase + get_extension_list_csr_num(param.readerwriterDatapathExtension.take(i))
-      csrMap += s"#define READER_WRITER_EXTENSION_${i}_CSR_BASE $csrBase_i\n"
+      csrMap += s"#define READER_WRITER_EXTENSION_${i}_CSR_BASE $csrBase_i // 0x${csrBase_i.toHexString}\n"
       csrMap += s"#define READER_WRITER_EXTENSION_${i}_CSR_NUM $extension_csr_num\n"
     }
   }
@@ -631,21 +636,21 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
     var emittedStart = 0
     for (i <- 0 until param.readerNum) {
       if (param.readerParams(i).delayedStart) {
-        csrMap += s"#define DELAYED_START_READER_${i} $csrBase\n"
+        csrMap += s"#define DELAYED_START_READER_${i} $csrBase // 0x${csrBase.toHexString}\n"
         csrBase += 1
         emittedStart += 1
       }
     }
     for (i <- 0 until param.writerNum) {
       if (param.writerParams(i).delayedStart) {
-        csrMap += s"#define DELAYED_START_WRITER_${i} $csrBase\n"
+        csrMap += s"#define DELAYED_START_WRITER_${i} $csrBase // 0x${csrBase.toHexString}\n"
         csrBase += 1
         emittedStart += 1
       }
     }
     for (i <- 0 until param.readerWriterNum) {
       if (param.readerWriterParams(i).delayedStart) {
-        csrMap += s"#define DELAYED_START_READER_WRITER_${i} $csrBase\n"
+        csrMap += s"#define DELAYED_START_READER_WRITER_${i} $csrBase // 0x${csrBase.toHexString}\n"
         csrBase += 1
         emittedStart += 1
       }
@@ -657,16 +662,16 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
   }
 
   csrMap += "// Status register\n"
-  csrMap += s"#define STREAMER_START_CSR $csrBase\n"
+  csrMap += s"#define STREAMER_START_CSR $csrBase // 0x${csrBase.toHexString}\n"
   csrBase += 1
 
   // streamer busy csr
   csrMap += "// Read only CSRs\n"
-  csrMap += s"#define STREAMER_BUSY_CSR $csrBase\n"
+  csrMap += s"#define STREAMER_BUSY_CSR $csrBase // 0x${csrBase.toHexString}\n"
   csrBase += 1
 
   // streamer performance counter csr
-  csrMap += s"#define STREAMER_PERFORMANCE_COUNTER_CSR $csrBase\n"
+  csrMap += s"#define STREAMER_PERFORMANCE_COUNTER_CSR $csrBase // 0x${csrBase.toHexString}\n"
 
   val macro_dir      = param.headerFilepath + "/streamer_csr_addr_map.h"
   val macro_template = s"""// Copyright 2024 KU Leuven.

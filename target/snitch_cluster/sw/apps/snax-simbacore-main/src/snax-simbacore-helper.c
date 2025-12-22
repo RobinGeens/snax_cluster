@@ -9,7 +9,9 @@
 void set_streamer_phase1(uint32_t ptr_oscore_in, uint32_t ptr_oscore_weight, uint32_t ptr_conv_weight,
                          uint32_t ptr_conv_bias, uint32_t ptr_iscore_weight, uint32_t ptr_iscore_out,
                          uint32_t ptr_conv_out) {
-    printf("Setting up Streamer and SimbaCore for Phase1...\n");
+#ifdef VERBOSE
+    printf("[%d cc] Setting up Streamer and SimbaCore for Phase1...\n", get_cycle_count());
+#endif
 
     set_streamer_csr(
 
@@ -38,7 +40,9 @@ void set_streamer_phase2(uint32_t ptr_oscore_in, uint32_t ptr_oscore_weight, uin
                          uint32_t ptr_dt_weight_1, uint32_t ptr_dt_weight_2, uint32_t ptr_dt_bias, uint32_t ptr_x,
                          uint32_t ptr_A, uint32_t ptr_BC, uint32_t ptr_D, uint32_t ptr_y, uint32_t ptr_iscore_weight,
                          uint32_t ptr_iscore_out) {
-    printf("Setting up Streamer and SimbaCore for Phase2...\n");
+#ifdef VERBOSE
+    printf("[%d cc] Setting up Streamer and SimbaCore for Phase2...\n", get_cycle_count());
+#endif
 
     set_streamer_csr(
 

@@ -335,27 +335,37 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
     if (R10_en) {
         while (read_csr(R10_DELAY_GAUGE) < R10_start_cnt);
         write_csr(DELAYED_START_READER_10, 1);
-        printf("Streamer R10 can start\n");
+#ifdef VERBOSE
+        printf("[%d cc] Streamer R10 can start\n", get_cycle_count());
+#endif
     }
 
     if (R11_en) {
         while (read_csr(R11_DELAY_GAUGE) < R11_start_cnt);
         write_csr(DELAYED_START_READER_11, 1);
-        printf("Streamer R11 can start\n");
+#ifdef VERBOSE
+        printf("[%d cc] Streamer R11 can start\n", get_cycle_count());
+#endif
     }
 }
 
 // Stall until Streamer and GEMM accelerator finish
 void wait_simbacore_and_streamer() {
-    printf("Waiting for SimbaCore to finish...\n");
+#ifdef VERBOSE
+    printf("[%d cc] Waiting for SimbaCore to finish...\n", get_cycle_count());
+#endif
     write_csr(STREAMER_START_CSR, 0);
     write_csr(SIMBACORE_START, 0);
     write_csr(DELAYED_START_READER_10, 0);
     write_csr(DELAYED_START_READER_11, 0);
     while (read_csr(SIMBACORE_BUSY));  // 1185 = 0x4a1
-    printf("SimbaCore has finished. Waiting for Streamers...\n");
+#ifdef VERBOSE
+    printf("[%d cc] SimbaCore has finished. Waiting for Streamers...\n", get_cycle_count());
+#endif
     while (read_csr(STREAMER_BUSY_CSR));  // 1177 = 0x499
-    printf("Streamers and SimbaCore have finished\n");
+#ifdef VERBOSE
+    printf("[%d cc] Streamers and SimbaCore have finished\n", get_cycle_count());
+#endif
 }
 
 // Read performance counter of the Streamer, a read-only CSR
@@ -430,4 +440,11 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
         }
     }
     return err;
+}
+
+// Initialize cycle counter (call once at program start)
+void init_cycle_counter(void) {
+    // Reset and start the cycle counter
+    snrt_reset_perf_counter(SNRT_PERF_CNT0);
+    snrt_start_perf_counter(SNRT_PERF_CNT0, SNRT_PERF_CNT_CYCLES, 0);
 }
