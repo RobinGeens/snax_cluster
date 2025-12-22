@@ -169,11 +169,16 @@ class DataGeneratorBase(ABC):
         assert all(re.match(r"^(R([0-9]|1[0-3])|W([0-9]|1[0-3]))$", key) for key in streamers.keys())
         for name in [f"R{i}" for i in range(14)] + [f"W{i}" for i in range(4)]:
             if name in streamers:
+                # Parse
                 if len(streamers[name]) == 2:
                     (bounds, strides) = streamers[name]  # pyright: ignore[reportAssignmentType]
                     spatial_stride = BANK_BYTES  # Default
                 elif len(streamers[name]) == 3:
                     (bounds, strides, spatial_stride) = streamers[name]  # pyright: ignore[reportAssignmentType]
+
+                # Validate
+                self.validate_stride(name, strides[0])
+
                 self.format_temporal_bounds_strides(name, mode_id, bounds, strides)
                 self.format_spatial_stride(name, mode_id, spatial_stride)
                 self.enable_channel(name, mode_id)
@@ -197,3 +202,12 @@ class DataGeneratorBase(ABC):
         Should be used when the input has a DecoupledDownsizer
         """
         return math.ceil(unroll_factor * elem_width / BANKWIDTH) * BANKWIDTH // elem_width
+
+    def validate_stride(self, streamer_name: str, stride: int):
+        """Validate that the stride respects the interconnect sparsity constraints"""
+        # TODO: This should be read from the hjson config
+        SPARSITY_CONFIG = {"R1": 4, "R12": 4, "R13": 4, "W4": 4}
+
+        sparsity_factor = SPARSITY_CONFIG.get(streamer_name, 1)
+        if stride % (sparsity_factor * BANK_BYTES) != 0:
+            raise ValueError(f"{streamer_name}: Stride {stride} not aligned to {sparsity_factor}x bank width")

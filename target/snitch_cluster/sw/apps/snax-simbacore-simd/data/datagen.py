@@ -28,7 +28,7 @@ class DataGenerator(DataGeneratorBase):
         self.build_SIMD()
 
     def build_SIMD(self):
-        mode_id = 5  # also mode 6, 7, 8
+        mode_id = 6  # also mode 7, 8, 9
         assert f"M{mode_id}_SIMD_ADD" in self.kwargs, "verify mode_id"
 
         dataLength = self.kwargs["numElem"]

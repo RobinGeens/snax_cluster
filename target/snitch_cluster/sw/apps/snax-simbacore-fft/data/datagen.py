@@ -28,8 +28,8 @@ class DataGenerator(DataGeneratorBase):
         self.build_data()
 
     def build_data(self):
-        mode_id = 4
-        assert f"M{mode_id}_ISGEMM" in self.kwargs, f"verify mode_id {mode_id} for ISGEMM"
+        mode_id = 5
+        assert f"M{mode_id}_ISGEMM_SQ" in self.kwargs, f"verify mode_id {mode_id} for ISGEMM_SQ"
         seqLenUnroll = self.kwargs["seqLenUnroll"]
         dInnerUnroll = self.kwargs["dInnerUnroll"]
         iscore_serial_width = self.kwargs["iscore_serial_width"]
@@ -39,15 +39,14 @@ class DataGenerator(DataGeneratorBase):
         L1_padded1 = self.kwargs["L1_padded1"]  # Padded to (seqLenUnroll x dInnerUnroll)
         L2 = self.kwargs["L2"]
 
-        a_in_width = seqLenUnroll * dInnerUnroll * FP8
-        b_in_width = self.kwargs["gemm_weight_width"]
-        b_array_width = dInnerUnroll * FP8
-
-        M = L1_padded0 // seqLenUnroll
+        M = (2 * L1) // seqLenUnroll
         K = L1_padded1 // dInnerUnroll
         N = dModel * L2
+        assert 2 * L1 == L1_padded0 and L1 % seqLenUnroll == 0, f"2*L1 must be an unpadded multiple of {seqLenUnroll}"
 
         # For input B, we transfer more bits in less cycles due to downsizer
+        b_in_width = self.kwargs["gemm_weight_width"]
+        b_array_width = seqLenUnroll * FP8  # ! In ISGEMM_SQ, the array only takes seqLenUnroll < dInnerUnroll elements
         b_downsize_factor = b_in_width / b_array_width  # >= 1
         downsized_N = int(N / b_downsize_factor)  # output channels
         assert downsized_N == N / b_downsize_factor, f"{dModel / b_downsize_factor} must be an integer"
@@ -67,18 +66,16 @@ class DataGenerator(DataGeneratorBase):
         )
 
         streamers = {
-            "R11": (  # iscore in. Stored in convFormat
-                [M * K * (a_in_width // iscore_serial_width)],
+            "R11": (  # iscore in: DFT weight, with padding. Stored in convFormat
+                [L1_padded0 * L1_padded1 * FP8 // iscore_serial_width],
                 [iscore_serial_width // 8],
             ),
             "R12": (  # iscore weight
                 [downsized_N, M, K],
-                [  # One cool hack here: input A is zero-padded. Input B is not, and hence the tiles are smaller than
-                    # b_in_width. We set the stride to the actual tile size L1_padded1 (< b_in_width//8), and the rest
-                    # is dummy data
-                    L1_padded1 * FP8 // 8,
+                [  # This is unpadded, with tilesize seqLenUnroll. Hardware takes care of the padding.
+                    b_in_width // 8,
                     0,
-                    downsized_N * (L1_padded1 * FP8) // 8,
+                    downsized_N * b_in_width // 8,
                 ],
             ),
             "R13": psum_bounds_and_strides,
@@ -87,14 +84,14 @@ class DataGenerator(DataGeneratorBase):
 
         specs = [
             ("a", L1_padded0 * L1_padded1 * FP8 // 8),
-            ("b", L1_padded1 * L2 * dModel * FP8 // 8),
-            ("cd", L1_padded0 * L2 * dModel * BF16 // 8),  # c and d use same space
+            ("b", 2 * L1 * L2 * dModel * FP8 // 8),
+            ("cd", 2 * L1 * L2 * dModel * BF16 // 8),  # c and d use same space
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
         test_data = {**{name: "uint8_t" for name in ("dft_weight", "dft_in", "expected")}}
-        tests = {"expected": L1_padded0 * L2 * dModel}
+        tests = {"expected": 2 * L1 * L2 * dModel}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
