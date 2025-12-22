@@ -135,13 +135,13 @@ int test_phase1_and_2() {
     // Allocation. Let's start by naively allocating space for each individual tensor.
     void* tcdm_base_ptr = snrt_l1_next();
     // Phase 1
-    uint8_t* ptr_oscore_in        = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_in);
-    uint8_t* ptr_oscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_weight);
+    uint8_t* ptr_oscore_in        = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_in);      // P1 & P2
+    uint8_t* ptr_oscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_weight);  // Can be tiled an overwritten
     uint8_t* ptr_conv_weight      = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_weight);
     uint8_t* ptr_conv_bias        = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_bias);
-    uint8_t* ptr_conv_out         = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_out);
-    uint8_t* ptr_iscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_iscore_weight);
-    uint16_t* ptr_iscore_out_P1   = (uint16_t*)(tcdm_base_ptr + M1_addr_iscore_out);  // holds the psums
+    uint8_t* ptr_conv_out         = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_out);       // P1 & P2
+    uint8_t* ptr_iscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_iscore_weight);  // Can be tiled and overwritten
+    uint16_t* ptr_iscore_out_P1   = (uint16_t*)(tcdm_base_ptr + M1_addr_iscore_out);    // holds the psums
 
     // Phase 2
     void* phase2_base_ptr         = ((void*)ptr_iscore_out_P1 + M1_length_iscore_out);
