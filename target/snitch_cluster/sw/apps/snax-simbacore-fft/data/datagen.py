@@ -78,16 +78,11 @@ class DataGenerator(DataGeneratorBase):
                 [iscore_serial_width // 8],
             ),
             "R12": (  # iscore B: input sequence (coming from previous phase)
-                # [downsized_N, M, K],
-                [
-                    L // (seqLenUnroll * b_downsize_factor),
-                    M,
-                    dModel,
-                ],
+                [downsized_N, M, K],
                 [  # This is unpadded, with tilesize seqLenUnroll. Hardware takes care of the padding.
-                    cd_array_width * dModel // 8,  # b_in_width // 8,
+                    b_in_width // 8,
                     0,
-                    cd_array_width // 8,
+                    downsized_N * b_in_width // 8,
                 ],
             ),
             "R13": psum_bounds_and_strides,

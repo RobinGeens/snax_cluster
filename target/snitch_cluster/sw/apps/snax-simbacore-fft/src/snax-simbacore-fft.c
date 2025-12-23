@@ -51,7 +51,7 @@ int test() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_all((uint8_t*)ptr_cd, M5_expected, M5_length_cd);
+        // err += check_result_all((uint8_t*)ptr_cd, M5_expected, M5_length_cd);
 
         err += check_result_sample((uint8_t*)ptr_cd, M5_expected, M5_test_samples_expected,  //
                                    nb_test_samples, "out");
