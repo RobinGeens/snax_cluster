@@ -34,6 +34,7 @@ class DataGenerator(DataGeneratorBase):
         dInnerUnroll = self.kwargs["dInnerUnroll"]
         iscore_serial_width = self.kwargs["iscore_serial_width"]
         dModel = self.kwargs["dModel"]
+        L = self.kwargs["seqLen"]
         L1 = self.kwargs["L1"]
         L1_padded0 = self.kwargs["L1_padded0"]  # Weight kernel will be (L1_padded0 x L1_padded1)
         L1_padded1 = self.kwargs["L1_padded1"]  # Padded to (seqLenUnroll x dInnerUnroll)
@@ -43,14 +44,20 @@ class DataGenerator(DataGeneratorBase):
         K = L1_padded1 // dInnerUnroll
         N = dModel * L2
         assert 2 * L1 == L1_padded0 and L1 % seqLenUnroll == 0, f"2*L1 must be an unpadded multiple of {seqLenUnroll}"
+        assert L1 * L2 == L
+        assert L1_padded1 // dInnerUnroll == L1 // seqLenUnroll
 
         # For input B, we transfer more bits in less cycles due to downsizer
+        # ! In ISGEMM_SQ, the array only takes seqLenUnroll < dInnerUnroll elements
         b_in_width = self.kwargs["gemm_weight_width"]
-        b_array_width = seqLenUnroll * FP8  # ! In ISGEMM_SQ, the array only takes seqLenUnroll < dInnerUnroll elements
+        b_array_width = seqLenUnroll * FP8
         b_downsize_factor = b_in_width / b_array_width  # >= 1
         downsized_N = int(N / b_downsize_factor)  # output channels
         assert downsized_N == N / b_downsize_factor, f"{dModel / b_downsize_factor} must be an integer"
         assert downsized_N * b_in_width == N * b_array_width
+
+        cd_array_width = seqLenUnroll * BF16
+        assert cd_array_width == b_in_width, "Memory layout mismatch"
 
         # First inject zeros, then (K-1) times the full output matrix
         # The initial values (C) can be at the same addresses as the output matrix
@@ -60,22 +67,27 @@ class DataGenerator(DataGeneratorBase):
                 K,  # complete reduction dimension (K)
             ],
             [
-                seqLenUnroll * BF16 // 8,
+                cd_array_width // 8,
                 0,  # Go to same addresses again
             ],
         )
 
         streamers = {
-            "R11": (  # iscore in: DFT weight, with padding. Stored in convFormat
+            "R11": (  # iscore A: DFT weight, with padding. Stored in convFormat
                 [L1_padded0 * L1_padded1 * FP8 // iscore_serial_width],
                 [iscore_serial_width // 8],
             ),
-            "R12": (  # iscore weight
-                [downsized_N, M, K],
+            "R12": (  # iscore B: input sequence (coming from previous phase)
+                # [downsized_N, M, K],
+                [
+                    L // (seqLenUnroll * b_downsize_factor),
+                    M,
+                    dModel,
+                ],
                 [  # This is unpadded, with tilesize seqLenUnroll. Hardware takes care of the padding.
-                    b_in_width // 8,
+                    cd_array_width * dModel // 8,  # b_in_width // 8,
                     0,
-                    downsized_N * b_in_width // 8,
+                    cd_array_width // 8,
                 ],
             ),
             "R13": psum_bounds_and_strides,
@@ -84,14 +96,14 @@ class DataGenerator(DataGeneratorBase):
 
         specs = [
             ("a", L1_padded0 * L1_padded1 * FP8 // 8),
-            ("b", 2 * L1 * L2 * dModel * FP8 // 8),
-            ("cd", 2 * L1 * L2 * dModel * BF16 // 8),  # c and d use same space
+            ("b", L * dModel * FP8 // 8),
+            ("cd", 2 * L * dModel * BF16 // 8),  # c and d use same space
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
         test_data = {**{name: "uint8_t" for name in ("dft_weight", "dft_in", "expected")}}
-        tests = {"expected": 2 * L1 * L2 * dModel}
+        tests = {"expected": 2 * L * dModel}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
