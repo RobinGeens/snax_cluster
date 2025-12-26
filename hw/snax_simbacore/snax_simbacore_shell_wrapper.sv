@@ -22,7 +22,7 @@ module snax_simbacore_shell_wrapper #(
     parameter int unsigned SwitchCoreInMatmulWidth       = 64,   // 1
     parameter int unsigned SwitchCoreInWeightWidth       = 64,   // 1
     parameter int unsigned SwitchCoreInBiasWidth         = 64,   // 1
-    parameter int unsigned SwitchCoreInMatmulWeightWidth = 64,   // 1
+    parameter int unsigned SwitchCoreInMatmulWeightWidth = 64,   // 4
     // 
     parameter int unsigned SUCoreInAWidth                = 64,   // 1
     parameter int unsigned SUCoreInBCWidth               = 256,  // 4

@@ -1,0 +1,5 @@
+{
+    seqLen: 32,
+    dModel: 16,
+    n_acc : 2,
+}

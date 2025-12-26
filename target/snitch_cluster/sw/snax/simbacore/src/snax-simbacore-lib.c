@@ -212,6 +212,56 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
     write_csr(T_BOUND_BASE_WRITER_2, 0);
 }
 
+// Shorthand function to set only the streamers used in SIMD
+void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t* A_ts,  //
+                            uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts) {
+    // Route input A to SUC BC: R7
+    _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_7_LOW, A_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_7 + 0, A_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_7 + 1, A_tb[1]);
+    write_csr(T_BOUND_BASE_READER_7 + 2, A_tb[2]);
+    write_csr(T_BOUND_BASE_READER_7 + 3, A_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_7 + 0, A_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_7 + 1, A_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_7 + 2, A_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_7 + 3, A_ts[3]);
+
+    // Route output C to iscore out: W3
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_WRITER_3_LOW, C_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_WRITER_3 + 0, C_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_WRITER_3 + 1, C_tb[1]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 2, C_tb[2]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 3, C_tb[3]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 0, C_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_WRITER_3 + 1, C_ts[1]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 2, C_ts[2]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 3, C_ts[3]);
+
+    // Disable all other streamers by setting bound to 0
+    write_csr(T_BOUND_BASE_READER_0, 0);
+    write_csr(T_BOUND_BASE_READER_1, 0);
+    write_csr(T_BOUND_BASE_READER_2, 0);
+    write_csr(T_BOUND_BASE_READER_3, 0);
+    write_csr(T_BOUND_BASE_READER_4, 0);
+    write_csr(T_BOUND_BASE_READER_5, 0);
+    write_csr(T_BOUND_BASE_READER_6, 0);
+    write_csr(T_BOUND_BASE_READER_8, 0);
+    write_csr(T_BOUND_BASE_READER_9, 0);
+    write_csr(T_BOUND_BASE_READER_10, 0);
+    write_csr(T_BOUND_BASE_READER_11, 0);
+    write_csr(T_BOUND_BASE_READER_12, 0);
+    write_csr(T_BOUND_BASE_READER_13, 0);
+    write_csr(T_BOUND_BASE_WRITER_0, 0);
+    write_csr(T_BOUND_BASE_WRITER_1, 0);
+    write_csr(T_BOUND_BASE_WRITER_2, 0);
+}
+
 void set_streamer_csr(
 
     uint32_t R0_ptr, int32_t* R0_ss, int32_t* R0_tb, int32_t* R0_ts, bool R0_en,       // osCore in

@@ -96,6 +96,7 @@ SUBDIRS += snax-simbacore-osgemm
 SUBDIRS += snax-simbacore-isgemm
 SUBDIRS += snax-simbacore-simd
 SUBDIRS += snax-simbacore-fft
+SUBDIRS += snax-simbacore-rmsnorm
 SUBDIRS += snax-simbacore-main-full
 endif
 

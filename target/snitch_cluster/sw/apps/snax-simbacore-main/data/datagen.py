@@ -425,7 +425,7 @@ class DataGenerator(DataGeneratorBase):
             )
         }
 
-        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests, app_name=self.APP_NAME)
+        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
 
 if __name__ == "__main__":
