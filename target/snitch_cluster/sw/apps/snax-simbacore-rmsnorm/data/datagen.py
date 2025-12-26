@@ -37,8 +37,8 @@ class DataGenerator(DataGeneratorBase):
         assert simdLanes == self.kwargs["seqLenUnroll"], "memory layout mismatch"
 
         streamers = {
-            "R7": ([(L * D // simdLanes) * BF16 // 8], [simdLanes * BF16 // 8]),
-            "W3": ([(L // simdLanes) * BF16 // 8], [simdLanes * BF16 // 8]),
+            "R7": ([L * D // simdLanes], [simdLanes * BF16 // 8]),
+            "W3": ([L // simdLanes], [simdLanes * BF16 // 8]),
         }
 
         specs = [

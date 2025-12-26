@@ -38,8 +38,8 @@ int test() {
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif
 
-        set_simd_streamer_no_b((uint32_t)ptr_x, M11_R7_ss, M11_R7_tb, M11_R7_ts,     // A
-                               (uint32_t)ptr_out, M11_W3_ss, M11_W3_tb, M11_W3_ts);  // C/D
+        set_simd_streamer_no_b((uint32_t)ptr_x, M11_R7_ss, M11_R7_tb, M11_R7_ts,  //
+                               (uint32_t)ptr_out, M11_W3_ss, M11_W3_tb, M11_W3_ts);
 
         set_simbacore_simd_mode(M11_SIMD_RMS);
         set_simbacore_simd_n_acc(dModel);
@@ -48,8 +48,6 @@ int test() {
         uint32_t end_cycles = get_cycle_count();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
-
-        // err += check_result_all((uint8_t*)ptr_cd, M5_expected, M5_length_cd);
 
         err += check_result_sample_u16(ptr_out, M11_xSqSum, M11_test_samples_expected,  //
                                        nb_test_samples, "out");

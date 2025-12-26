@@ -1,5 +1,5 @@
 {
-    seqLen: 32,
-    dModel: 16,
-    n_acc : 2,
+    seqLen: 64,
+    dModel: 32,
+    n_acc : 4,
 }
