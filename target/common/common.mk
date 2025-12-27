@@ -39,15 +39,18 @@ MATCH_END := '/+incdir+/ s/$$/\/*\/*/'
 MATCH_BGN := 's/+incdir+//g'
 SED_SRCS  := sed -e ${MATCH_END} -e ${MATCH_BGN}
 
+# Skip Bender commands during clean operations to avoid git credential prompts
+IS_CLEAN = $(filter clean%,$(MAKECMDGOALS))
+
 VSIM_BENDER   += -t test -t rtl -t simulation -t vsim
-VSIM_SOURCES   = $(shell ${BENDER} script flist ${VSIM_BENDER} | ${SED_SRCS})
+VSIM_SOURCES   = $(if $(IS_CLEAN),,$(shell ${BENDER} script flist ${VSIM_BENDER} | ${SED_SRCS}))
 VSIM_BUILDDIR ?= work-vsim
 VOPT_FLAGS     = +acc
 
 # VCS_BUILDDIR should to be the same as the `DEFAULT : ./work-vcs`
 # in target/snitch_cluster/synopsys_sim.setup
 VCS_BENDER   += -t test -t rtl -t simulation -t vcs
-VCS_SOURCES   = $(shell ${BENDER} script flist ${VCS_BENDER} | ${SED_SRCS})
+VCS_SOURCES   = $(if $(IS_CLEAN),,$(shell ${BENDER} script flist ${VCS_BENDER} | ${SED_SRCS}))
 VCS_BUILDDIR := work-vcs
 
 # For synthesis with DC compiler
@@ -69,7 +72,7 @@ endif
 ifeq ($(SIM_TYPE), gate_level_sim)
         VSIM_BENDER += -t gate_level_sim
 endif
-SYN_SOURCES = $(shell ${BENDER} script synopsys ${SYN_BENDER})
+SYN_SOURCES = $(if $(IS_CLEAN),,$(shell ${BENDER} script synopsys ${SYN_BENDER}))
 SYN_BUILDDIR := work-syn
 
 # fesvr is being installed here
@@ -77,7 +80,7 @@ FESVR         ?= ${MKFILE_DIR}work
 FESVR_VERSION ?= 98d2c29e431f3b14feefbda48c5f70c2f451acf2
 
 VLT_BENDER   += -t rtl
-VLT_SOURCES   = $(shell ${BENDER} script flist ${VLT_BENDER} | ${SED_SRCS})
+VLT_SOURCES   = $(if $(IS_CLEAN),,$(shell ${BENDER} script flist ${VLT_BENDER} | ${SED_SRCS}))
 VLT_BUILDDIR := work-vlt
 VLT_FESVR     = $(VLT_BUILDDIR)/riscv-isa-sim
 ifeq ($(VERILATOR_VERSION), 5)
