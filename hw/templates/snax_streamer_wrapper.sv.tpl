@@ -153,11 +153,13 @@ module ${cfg["tag_name"]}_streamer_wrapper #(
       tcdm_req_o[i].q.user.is_core = '0;
       tcdm_req_o[i].q.user.tcdm_priority = tcdm_req_priority [i];
       tcdm_req_o[i].q_valid        = tcdm_req_q_valid[i];
-
-      tcdm_rsp_q_ready[i] = tcdm_rsp_i[i].q_ready;
-      tcdm_rsp_p_valid[i] = tcdm_rsp_i[i].p_valid;
-      tcdm_rsp_data   [i] = tcdm_rsp_i[i].p.data ;
     end
+  end
+
+  for (genvar i = 0; i < TCDMNumPorts; i++) begin : gen_tcdm_rsp_assign
+    assign tcdm_rsp_q_ready[i] = tcdm_rsp_i[i].q_ready;
+    assign tcdm_rsp_p_valid[i] = tcdm_rsp_i[i].p_valid;
+    assign tcdm_rsp_data   [i] = tcdm_rsp_i[i].p.data;
   end
 
 

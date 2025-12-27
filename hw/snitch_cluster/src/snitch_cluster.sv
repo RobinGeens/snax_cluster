@@ -130,9 +130,7 @@ module snitch_cluster
     /// index of ssr max to avoid its underflow (Error reported in Synopsys VCS)
     parameter int SsrMaxIndex = (NumSsrsMax > 0) ? (NumSsrsMax - 1) : 0,
     /// Per-core internal parameters for each SSR.
-    parameter snitch_ssr_pkg::ssr_cfg_t [SsrMaxIndex:0] SsrCfgs[NrCores] = '{
-        default: '0
-    },
+    parameter snitch_ssr_pkg::ssr_cfg_t [SsrMaxIndex:0] SsrCfgs[NrCores] = '{default: '0},
     /// Per-core register indices for each SSR.
     parameter logic [SsrMaxIndex:0][4:0] SsrRegs[NrCores] = '{default: 0},
     /// Per-core amount of sequencer instructions for IPU and FPU if enabled.
@@ -328,18 +326,14 @@ module snitch_cluster
 
   // Core Requests, SoC Request, PTW, XDMA
   localparam int unsigned NrNarrowMasters = 4;
-  localparam int unsigned NarrowIdWidthOut = $clog2(
-      NrNarrowMasters
-  ) + NarrowIdWidthIn;
+  localparam int unsigned NarrowIdWidthOut = $clog2(NrNarrowMasters) + NarrowIdWidthIn;
 
   localparam int unsigned NrSlaves = 4;
   localparam int unsigned NrRules = NrSlaves - 1;
 
   // DMA, SoC Request, XDMA, `n` instruction caches.
   localparam int unsigned NrWideMasters = 3 + NrHives;
-  localparam int unsigned WideIdWidthOut = $clog2(
-      NrWideMasters
-  ) + WideIdWidthIn;
+  localparam int unsigned WideIdWidthOut = $clog2(NrWideMasters) + WideIdWidthIn;
   // DMA X-BAR configuration
   localparam int unsigned NrWideSlaves = 3;
   localparam int unsigned NrWideRules = NrWideSlaves - 1;
@@ -384,8 +378,7 @@ module snitch_cluster
     return n;
   endfunction
 
-  function automatic int unsigned get_core_position(int unsigned hive_id,
-                                                    int unsigned core_id);
+  function automatic int unsigned get_core_position(int unsigned hive_id, int unsigned core_id);
     automatic int n = 0;
     for (int i = 0; i < NrCores; i++) begin
       if (core_id == i) break;
@@ -421,10 +414,8 @@ module snitch_cluster
   // Regbus peripherals.
   `AXI_TYPEDEF_ALL(axi_mst, addr_t, id_mst_t, data_t, strb_t, user_t)
   `AXI_TYPEDEF_ALL(axi_slv, addr_t, id_slv_t, data_t, strb_t, user_t)
-  `AXI_TYPEDEF_ALL(axi_mst_dma, addr_t, id_dma_mst_t, data_dma_t, strb_dma_t,
-                   user_dma_t)
-  `AXI_TYPEDEF_ALL(axi_slv_dma, addr_t, id_dma_slv_t, data_dma_t, strb_dma_t,
-                   user_dma_t)
+  `AXI_TYPEDEF_ALL(axi_mst_dma, addr_t, id_dma_mst_t, data_dma_t, strb_dma_t, user_dma_t)
+  `AXI_TYPEDEF_ALL(axi_slv_dma, addr_t, id_dma_slv_t, data_dma_t, strb_dma_t, user_dma_t)
 
   `REQRSP_TYPEDEF_ALL(reqrsp, addr_t, data_t, strb_t)
 
@@ -651,11 +642,7 @@ DmaXbarCfg.NoMstPorts
 
   assign dma_xbar_default_port = '{default: SoCDMAOut};
   assign dma_xbar_rule = '{
-          '{
-              idx: TCDMDMA,
-              start_addr: tcdm_start_address,
-              end_addr: tcdm_end_address
-          },
+          '{idx: TCDMDMA, start_addr: tcdm_start_address, end_addr: tcdm_end_address},
           '{
               idx: WideXDMAOut,
               start_addr: xdma_mmio_data_start_address,
@@ -725,25 +712,25 @@ DmaXbarCfg.NoMstPorts
   assign ext_dma_req.q.amo  = reqrsp_pkg::AMONone;
   assign ext_dma_req.q.user = '0;
 
-    snitch_tcdm_interconnect #(
-        .NumInp(1),
-        .NumOut(NrSuperBanks),
-        .tcdm_req_t(tcdm_dma_req_t),
-        .tcdm_rsp_t(tcdm_dma_rsp_t),
-        .mem_req_t(mem_dma_req_t),
-        .mem_rsp_t(mem_dma_rsp_t),
-        .user_t(logic),
-        .MemAddrWidth(TCDMMemAddrWidth),
-        .DataWidth(WideDataWidth),
-        .MemoryResponseLatency(MemoryMacroLatency)
-    ) i_dma_interconnect (
-        .clk_i,
-        .rst_ni,
-        .req_i(ext_dma_req),
-        .rsp_o(ext_dma_rsp),
-        .mem_req_o(sb_dma_req),
-        .mem_rsp_i(sb_dma_rsp)
-    );
+  snitch_tcdm_interconnect #(
+      .NumInp(1),
+      .NumOut(NrSuperBanks),
+      .tcdm_req_t(tcdm_dma_req_t),
+      .tcdm_rsp_t(tcdm_dma_rsp_t),
+      .mem_req_t(mem_dma_req_t),
+      .mem_rsp_t(mem_dma_rsp_t),
+      .user_t(logic),
+      .MemAddrWidth(TCDMMemAddrWidth),
+      .DataWidth(WideDataWidth),
+      .MemoryResponseLatency(MemoryMacroLatency)
+  ) i_dma_interconnect (
+      .clk_i,
+      .rst_ni,
+      .req_i(ext_dma_req),
+      .rsp_o(ext_dma_rsp),
+      .mem_req_o(sb_dma_req),
+      .mem_rsp_i(sb_dma_rsp)
+  );
 
   // ----------------
   // Memory Subsystem
@@ -853,47 +840,47 @@ DmaXbarCfg.NoMstPorts
   // if this happens
   if ((TotalSnaxNarrowTcdmPorts > 0)) begin : gen_yes_snax_tcdm_interconnect
 
-    if (Topology == snitch_pkg::SparseInterconnect) begin: gen_sparse_interconnect
-    sparse_interconnect_wrapper #(
-        .NumInp(NumTCDMIn + TotalSnaxNarrowTcdmPorts),
-        .NumOut(NrBanks),
-        .tcdm_req_t(tcdm_req_t),
-        .tcdm_rsp_t(tcdm_rsp_t),
-        .mem_req_t(mem_req_t),
-        .mem_rsp_t(mem_rsp_t)
-    ) i_tcdm_interconnect (
-        .clk_i,
-        .rst_ni,
-        .req_i({axi_soc_req, tcdm_req, snax_tcdm_req_i}),
-        //snax_tcdm_req_i[TotalSnaxTcdmPorts-1:TotalSnaxTcdmPorts-TotalSnaxNarrowTcdmPorts]}),
-        .rsp_o({axi_soc_rsp, tcdm_rsp, snax_tcdm_rsp_o}),
-        .mem_req_o(ic_req),
-        .mem_rsp_i(ic_rsp)
-    );
-    end else begin: gen_logarithmic_interconnect
-    snitch_tcdm_interconnect #(
-        .NumInp(NumTCDMIn + TotalSnaxNarrowTcdmPorts),
-        .NumOut(NrBanks),
-        .tcdm_req_t(tcdm_req_t),
-        .tcdm_rsp_t(tcdm_rsp_t),
-        .mem_req_t(mem_req_t),
-        .mem_rsp_t(mem_rsp_t),
-        .MemAddrWidth(TCDMMemAddrWidth),
-        .DataWidth(NarrowDataWidth),
-        .user_t(tcdm_user_t),
-        .MemoryResponseLatency(1 + RegisterTCDMCuts),
-        .Radix(Radix),
-        .Topology(Topology)
-    ) i_tcdm_interconnect (
-        .clk_i,
-        .rst_ni,
-        .req_i({axi_soc_req, tcdm_req, snax_tcdm_req_i}),
-        //snax_tcdm_req_i[TotalSnaxTcdmPorts-1:TotalSnaxTcdmPorts-TotalSnaxNarrowTcdmPorts]}),
-        .rsp_o({axi_soc_rsp, tcdm_rsp, snax_tcdm_rsp_o}),
-        .mem_req_o(ic_req),
-        .mem_rsp_i(ic_rsp)
-    );
-  end
+    if (Topology == snitch_pkg::SparseInterconnect) begin : gen_sparse_interconnect
+      sparse_interconnect_wrapper #(
+          .NumInp(NumTCDMIn + TotalSnaxNarrowTcdmPorts),
+          .NumOut(NrBanks),
+          .tcdm_req_t(tcdm_req_t),
+          .tcdm_rsp_t(tcdm_rsp_t),
+          .mem_req_t(mem_req_t),
+          .mem_rsp_t(mem_rsp_t)
+      ) i_tcdm_interconnect (
+          .clk_i,
+          .rst_ni,
+          .req_i({axi_soc_req, tcdm_req, snax_tcdm_req_i}),
+          //snax_tcdm_req_i[TotalSnaxTcdmPorts-1:TotalSnaxTcdmPorts-TotalSnaxNarrowTcdmPorts]}),
+          .rsp_o({axi_soc_rsp, tcdm_rsp, snax_tcdm_rsp_o}),
+          .mem_req_o(ic_req),
+          .mem_rsp_i(ic_rsp)
+      );
+    end else begin : gen_logarithmic_interconnect
+      snitch_tcdm_interconnect #(
+          .NumInp(NumTCDMIn + TotalSnaxNarrowTcdmPorts),
+          .NumOut(NrBanks),
+          .tcdm_req_t(tcdm_req_t),
+          .tcdm_rsp_t(tcdm_rsp_t),
+          .mem_req_t(mem_req_t),
+          .mem_rsp_t(mem_rsp_t),
+          .MemAddrWidth(TCDMMemAddrWidth),
+          .DataWidth(NarrowDataWidth),
+          .user_t(tcdm_user_t),
+          .MemoryResponseLatency(1 + RegisterTCDMCuts),
+          .Radix(Radix),
+          .Topology(Topology)
+      ) i_tcdm_interconnect (
+          .clk_i,
+          .rst_ni,
+          .req_i({axi_soc_req, tcdm_req, snax_tcdm_req_i}),
+          //snax_tcdm_req_i[TotalSnaxTcdmPorts-1:TotalSnaxTcdmPorts-TotalSnaxNarrowTcdmPorts]}),
+          .rsp_o({axi_soc_rsp, tcdm_rsp, snax_tcdm_rsp_o}),
+          .mem_req_o(ic_req),
+          .mem_rsp_i(ic_rsp)
+      );
+    end
   end else begin : gen_no_snax_tcdm_interconnect
 
     snitch_tcdm_interconnect #(
@@ -1371,11 +1358,7 @@ ClusterXbarCfg.NoMstPorts
   xbar_rule_t [NrRules-1:0] cluster_xbar_rules;
 
   assign cluster_xbar_rules = '{
-          '{
-              idx: TCDM,
-              start_addr: tcdm_start_address,
-              end_addr: tcdm_end_address
-          },
+          '{idx: TCDM, start_addr: tcdm_start_address, end_addr: tcdm_end_address},
           '{
               idx: ClusterPeripherals,
               start_addr: cluster_periph_start_address,
@@ -1533,8 +1516,7 @@ ClusterXbarCfg.NoMstPorts
   logic [NrTCDMPortsCores-1:0] flat_acc, flat_con;
   for (genvar i = 0; i < NrTCDMPortsCores; i++) begin : gen_event_counter
     `FFARN(flat_acc[i], tcdm_req[i].q_valid, '0, clk_i, rst_ni)
-    `FFARN(flat_con[i], tcdm_req[i].q_valid & ~tcdm_rsp[i].q_ready, '0, clk_i,
-           rst_ni)
+    `FFARN(flat_con[i], tcdm_req[i].q_valid & ~tcdm_rsp[i].q_ready, '0, clk_i, rst_ni)
   end
 
   popcount #(
