@@ -1,0 +1,40 @@
+# Large build artifacts and generated files
+post_syn_testing/
+regression_test_out/
+
+# Dependencies (already excluded but keeping for clarity)
+deps/
+.bender/
+
+# Build artifacts
+build/
+bin/
+preload/
+work-vsim/
+.Xil/
+occamy_xilinx/
+
+# Python cache
+__pycache__/
+.venv/
+*.pyc
+
+# Log files
+*.log
+*.wlf
+*.jou
+*.str
+transcript
+wlft*
+*stacktrace*
+
+# Other generated files
+modelsim.ini
+gmon.out
+.cache/
+compile_commands.json
+component.xml
+data.h
+
+# IDE files
+.vscode/

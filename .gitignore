@@ -19,6 +19,7 @@ Bender.lock
 *.bin
 *.lo
 .nfs*
+*.out
 
 # Only .bin file to be tracked
 !bootrom.bin
