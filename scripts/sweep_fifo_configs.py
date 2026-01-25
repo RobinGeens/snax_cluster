@@ -1,26 +1,38 @@
 #!/usr/bin/env python3
-"""Minimal FIFO sweep. Edit the hard-coded CONFIGS list below."""
+"""Sweep the FIFO configurations hardcoded below. Also sorts the existing summary file and filters the Pareto front."""
 
 import os
 import re
 import shlex
 import subprocess
+from typing import Literal
 from tabulate import tabulate
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CFG = os.path.join(ROOT, "target", "snitch_cluster", "cfg", "snax_simbacore_cluster.hjson")
 VSIM_DIR = os.path.join(ROOT, "target", "snitch_cluster")
-OUT_DIR = os.path.join(ROOT, "fifo_sweep")
-SUMMARY_PATH = os.path.join(OUT_DIR, "fifo_sweep_summary.txt")
 BUILD_SCRIPT = os.path.join(ROOT, "scripts", "build_sim_minimal.sh")
 PROGRAM_BIN = os.path.join(VSIM_DIR, "bin", "snitch_cluster.vsim")
-PROGRAM_ELF = os.path.join(VSIM_DIR, "sw", "apps", "snax-simbacore-main", "build", "snax-simbacore-main.elf")
+PROGRAM = "main-full"
+OUT_DIR = os.path.join(ROOT, "fifo_sweep")
+SUMMARY_PATH = os.path.join(OUT_DIR, f"fifo_sweep_summary_{PROGRAM}.txt")
+
 
 CONFIGS = [
     # 0  1  2  3  4  5  6  7  8  9  10 11 12 13 # 0  1  2  3
-    ([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 8]),
-    ([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 7]),
+    # ([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 9]),
+    # ([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], [9, 9, 9, 7]),
 ]
+
+# Number of ports (banks) per streamer
+PORT_WIDTH = ([2, 4, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 4, 4], [1, 1, 1, 4])
+
+
+def get_fifo_cost(reader, writer):
+    """Calculate FIFO cost as inner product of depths with weight vectors."""
+    reader_cost = sum(r * w for r, w in zip(reader, PORT_WIDTH[0]))
+    writer_cost = sum(w * wt for w, wt in zip(writer, PORT_WIDTH[1]))
+    return reader_cost + writer_cost
 
 
 def patch_fifo_depths(reader, writer):
@@ -43,11 +55,14 @@ def patch_fifo_depths(reader, writer):
     open(CFG, "w").write(txt)
 
 
-def run_build_and_sim(build_log_path, sim_log_path):
+def run_build_and_sim(program: Literal["main", "main-full"], build_log_path: str, sim_log_path: str):
+    program_elf = os.path.join(
+        VSIM_DIR, "sw", "apps", f"snax-simbacore-{program}", "build", f"snax-simbacore-{program}.elf"
+    )
     subprocess.check_call(
         f"bash {shlex.quote(BUILD_SCRIPT)} > {shlex.quote(build_log_path)} 2>&1", cwd=ROOT, shell=True
     )
-    subprocess.check_call(f"{PROGRAM_BIN} {PROGRAM_ELF} > {shlex.quote(sim_log_path)} 2>&1", cwd=VSIM_DIR, shell=True)
+    subprocess.check_call(f"{PROGRAM_BIN} {program_elf} > {shlex.quote(sim_log_path)} 2>&1", cwd=VSIM_DIR, shell=True)
 
 
 def parse_cycles(log_path):
@@ -81,6 +96,14 @@ def get_config_name(reader: list[int], writer: list[int]):
     return f"{reader_str}-{writer_str}"
 
 
+def get_summary_path(program: Literal["main", "main-full"]):
+    return os.path.join(OUT_DIR, f"fifo_sweep_summary_{program}.txt")
+
+
+def get_pareto_summary_path(program: Literal["main", "main-full"]):
+    return os.path.join(OUT_DIR, f"fifo_sweep_summary_{program}_pareto.txt")
+
+
 def parse_summary_line(line):
     """Parse a line from summary file, return (reader, writer, phase1, phase2, total_delay, fifo_cost) or None."""
     line = line.rstrip()
@@ -107,17 +130,17 @@ def parse_summary_line(line):
             if len(parts) > idx_offset + 4
             else (phase1 + phase2 if phase1 is not None and phase2 is not None else None)
         )
-        fifo_cost = int(parts[idx_offset + 5]) if len(parts) > idx_offset + 5 else sum(reader) + sum(writer)
+        fifo_cost = int(parts[idx_offset + 5]) if len(parts) > idx_offset + 5 else get_fifo_cost(reader, writer)
         return (reader, writer, phase1, phase2, total_delay, fifo_cost)
     except (ValueError, IndexError):
         return None
 
 
-def get_completed_configs():
+def get_completed_configs(summary_path: str):
     completed = set()
-    if not os.path.exists(SUMMARY_PATH):
+    if not os.path.exists(summary_path):
         return completed
-    with open(SUMMARY_PATH, "r") as f:
+    with open(summary_path, "r") as f:
         for line in f:
             parsed = parse_summary_line(line)
             if parsed:
@@ -125,16 +148,18 @@ def get_completed_configs():
     return completed
 
 
-def read_existing_summary():
+def read_existing_summary(summary_path: str):
     rows = []
-    if not os.path.exists(SUMMARY_PATH):
+    if not os.path.exists(summary_path):
         return rows
-    with open(SUMMARY_PATH, "r") as f:
+    with open(summary_path, "r") as f:
         for line in f:
             parsed = parse_summary_line(line)
             if parsed and parsed[2] is not None and parsed[3] is not None:
                 total_delay = parsed[4] if parsed[4] is not None else parsed[2] + parsed[3]
-                fifo_cost = parsed[5] if len(parsed) > 5 and parsed[5] is not None else sum(parsed[0]) + sum(parsed[1])
+                fifo_cost = (
+                    parsed[5] if len(parsed) > 5 and parsed[5] is not None else get_fifo_cost(parsed[0], parsed[1])
+                )
                 rows.append(
                     [
                         ",".join(map(str, parsed[0])),
@@ -148,16 +173,16 @@ def read_existing_summary():
     return rows
 
 
-def write_summary(rows):
+def write_summary(rows, summary_path: str):
     headers = ["reader_fifo_depth", "writer_fifo_depth", "phase1", "phase2", "total_delay", "total_fifo_cost"]
-    with open(SUMMARY_PATH, "w") as f:
+    with open(summary_path, "w") as f:
         f.write(tabulate(rows, headers=headers, tablefmt="simple", numalign="right", stralign="left") + "\n")
 
 
-def read_and_sort_summary():
+def read_and_sort_summary(summary_path: str):
     """Read summary, sort by total FIFO cost (sum of all FIFO depths), and write back to file."""
     rows = []
-    if not os.path.exists(SUMMARY_PATH):
+    if not os.path.exists(summary_path):
         return rows
     with open(SUMMARY_PATH, "r") as f:
         for line in f:
@@ -169,7 +194,7 @@ def read_and_sort_summary():
                     if total_delay is not None
                     else (phase1 + phase2 if phase1 is not None and phase2 is not None else 0)
                 )
-                fifo_cost = fifo_cost if fifo_cost is not None else sum(reader) + sum(writer)
+                fifo_cost = fifo_cost if fifo_cost is not None else get_fifo_cost(reader, writer)
                 rows.append(
                     {
                         "reader": reader,
@@ -192,26 +217,53 @@ def read_and_sort_summary():
     # Write sorted summary back to file
     if sorted_rows:
         write_rows = [row["row"] for row in sorted_rows]
-        write_summary(write_rows)
+        write_summary(write_rows, summary_path)
     return sorted_rows
 
 
-def process_single_config(reader, writer):
+def filter_summary_pareto(summary_path: str, pareto_summary_path: str):
+    rows = read_and_sort_summary(summary_path)
+    pareto_rows = []
+    for row in rows:
+        # A row is on the Pareto front if no other row dominates it
+        # Row A dominates row B if:
+        # - A's delay <= B's delay AND A's cost <= B's cost
+        # - AND at least one is strictly less (not equal in both)
+        is_dominated = False
+        for other in rows:
+            if other == row:
+                continue
+            # Check if 'other' dominates 'row'
+            if (
+                other["total_delay"] <= row["total_delay"]
+                and other["fifo_cost"] <= row["fifo_cost"]
+                and (other["total_delay"] < row["total_delay"] or other["fifo_cost"] < row["fifo_cost"])
+            ):
+                is_dominated = True
+                break
+        if not is_dominated:
+            pareto_rows.append(row)
+    write_rows = [row["row"] for row in pareto_rows]
+    write_summary(write_rows, pareto_summary_path)
+
+
+def process_single_config(reader, writer, program: Literal["main", "main-full"]):
     """
     Process a single FIFO config. Returns the sum of phase1 and phase2 latencies.
     If the config has already been run, parses it from the summary.
     Otherwise, runs the simulation and updates the summary.
     """
     config_name = get_config_name(reader, writer)
+    summary_path = get_summary_path(program)
     reader_tuple = tuple(reader)
     writer_tuple = tuple(writer)
 
     # Check if config is already in summary
-    completed = get_completed_configs()
+    completed = get_completed_configs(summary_path)
     if (reader_tuple, writer_tuple) in completed:
         print(f"{config_name} (SKIPPED - already logged)", flush=True)
         # Parse from existing summary
-        with open(SUMMARY_PATH, "r") as f:
+        with open(summary_path, "r") as f:
             for line in f:
                 parsed = parse_summary_line(line)
                 if parsed and parsed[0] == reader_tuple and parsed[1] == writer_tuple:
@@ -227,26 +279,27 @@ def process_single_config(reader, writer):
     # Save original config
     orig = open(CFG).read()
     try:
-        # Patch config file
-        patch_fifo_depths(reader, writer)
+        program_dir = os.path.join(OUT_DIR, program)
+        os.makedirs(program_dir, exist_ok=True)
 
-        # Run build and simulation
-        build_log_path = os.path.join(OUT_DIR, f"build_{config_name}.log")
-        sim_log_path = os.path.join(OUT_DIR, f"vsim_{config_name}.log")
-        run_build_and_sim(build_log_path, sim_log_path)
+        build_log_path = os.path.join(program_dir, f"build_{config_name}.log")
+        sim_log_path = os.path.join(program_dir, f"vsim_{config_name}.log")
+
+        patch_fifo_depths(reader, writer)
+        run_build_and_sim(program, build_log_path, sim_log_path)
 
         # Parse results
         p1, p2 = parse_cycles(sim_log_path)
-        print(f"  Result: phase1={p1}, phase2={p2}", flush=True)
+        total_delay = p1 + p2
+        fifo_cost = get_fifo_cost(reader, writer)
+        print(f"  Result: phase1={p1}, phase2={p2}, total_delay={total_delay}, fifo_cost={fifo_cost}", flush=True)
 
         # Update summary: add new entry
-        existing_rows = read_existing_summary()
-        total_delay = p1 + p2
-        fifo_cost = sum(reader) + sum(writer)
+        existing_rows = read_existing_summary(summary_path)
         existing_rows.append(
             [",".join(map(str, reader)), ",".join(map(str, writer)), str(p1), str(p2), str(total_delay), str(fifo_cost)]
         )
-        write_summary(existing_rows)
+        write_summary(existing_rows, summary_path)
 
         return p1 + p2
     finally:
@@ -259,7 +312,7 @@ def execute_sweep():
 
     for r, w in CONFIGS:
         try:
-            process_single_config(r, w)
+            process_single_config(r, w, PROGRAM)
         except Exception as e:
             print(f"  ERROR: {e}", flush=True)
             print(f"  Skipping this config and continuing...", flush=True)
@@ -270,5 +323,6 @@ def execute_sweep():
 
 
 if __name__ == "__main__":
-    read_and_sort_summary()
+    read_and_sort_summary(get_summary_path(PROGRAM))
+    filter_summary_pareto(get_summary_path(PROGRAM), get_pareto_summary_path(PROGRAM))
     raise SystemExit(execute_sweep())

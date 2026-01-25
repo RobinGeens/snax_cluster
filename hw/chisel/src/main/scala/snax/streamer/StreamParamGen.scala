@@ -23,8 +23,8 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 2,
-      addressBufferDepth = 10,
-      dataBufferDepth = 10,
+      addressBufferDepth = 9,
+      dataBufferDepth = 9,
       configurableChannel = false,
       delayedStart = false,
       crossClockDomain = hasCrossClockDomain
@@ -38,38 +38,8 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 4,
-      addressBufferDepth = 4,
-      dataBufferDepth = 4,
-      configurableChannel = false,
-      delayedStart = false,
-      crossClockDomain = hasCrossClockDomain
-   ), 
-    new ReaderWriterParam(
-      spatialBounds = List(
-        1
-      ),
-      temporalDimension = 4,
-      tcdmDataWidth = 64,
-      tcdmSize = 1024,
-      tcdmLogicWordSize = Seq(256),
-      numChannel = 1,
-      addressBufferDepth = 10,
-      dataBufferDepth = 10,
-      configurableChannel = false,
-      delayedStart = false,
-      crossClockDomain = hasCrossClockDomain
-   ), 
-    new ReaderWriterParam(
-      spatialBounds = List(
-        1
-      ),
-      temporalDimension = 4,
-      tcdmDataWidth = 64,
-      tcdmSize = 1024,
-      tcdmLogicWordSize = Seq(256),
-      numChannel = 1,
-      addressBufferDepth = 2,
-      dataBufferDepth = 2,
+      addressBufferDepth = 5,
+      dataBufferDepth = 5,
       configurableChannel = false,
       delayedStart = false,
       crossClockDomain = hasCrossClockDomain
@@ -98,36 +68,6 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 1,
-      addressBufferDepth = 2,
-      dataBufferDepth = 2,
-      configurableChannel = false,
-      delayedStart = false,
-      crossClockDomain = hasCrossClockDomain
-   ), 
-    new ReaderWriterParam(
-      spatialBounds = List(
-        1
-      ),
-      temporalDimension = 4,
-      tcdmDataWidth = 64,
-      tcdmSize = 1024,
-      tcdmLogicWordSize = Seq(256),
-      numChannel = 1,
-      addressBufferDepth = 6,
-      dataBufferDepth = 6,
-      configurableChannel = false,
-      delayedStart = false,
-      crossClockDomain = hasCrossClockDomain
-   ), 
-    new ReaderWriterParam(
-      spatialBounds = List(
-        4
-      ),
-      temporalDimension = 4,
-      tcdmDataWidth = 64,
-      tcdmSize = 1024,
-      tcdmLogicWordSize = Seq(256),
-      numChannel = 4,
       addressBufferDepth = 3,
       dataBufferDepth = 3,
       configurableChannel = false,
@@ -143,40 +83,10 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 1,
-      addressBufferDepth = 1,
-      dataBufferDepth = 1,
+      addressBufferDepth = 8,
+      dataBufferDepth = 8,
       configurableChannel = false,
       delayedStart = false,
-      crossClockDomain = hasCrossClockDomain
-   ), 
-    new ReaderWriterParam(
-      spatialBounds = List(
-        1
-      ),
-      temporalDimension = 4,
-      tcdmDataWidth = 64,
-      tcdmSize = 1024,
-      tcdmLogicWordSize = Seq(256),
-      numChannel = 1,
-      addressBufferDepth = 1,
-      dataBufferDepth = 1,
-      configurableChannel = false,
-      delayedStart = false,
-      crossClockDomain = hasCrossClockDomain
-   ), 
-    new ReaderWriterParam(
-      spatialBounds = List(
-        1
-      ),
-      temporalDimension = 4,
-      tcdmDataWidth = 64,
-      tcdmSize = 1024,
-      tcdmLogicWordSize = Seq(256),
-      numChannel = 1,
-      addressBufferDepth = 5,
-      dataBufferDepth = 5,
-      configurableChannel = false,
-      delayedStart = true,
       crossClockDomain = hasCrossClockDomain
    ), 
     new ReaderWriterParam(
@@ -191,20 +101,20 @@ object StreamerParametersGen {
       addressBufferDepth = 4,
       dataBufferDepth = 4,
       configurableChannel = false,
-      delayedStart = true,
+      delayedStart = false,
       crossClockDomain = hasCrossClockDomain
    ), 
     new ReaderWriterParam(
       spatialBounds = List(
-        4
+        1
       ),
       temporalDimension = 4,
       tcdmDataWidth = 64,
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
-      numChannel = 4,
-      addressBufferDepth = 6,
-      dataBufferDepth = 6,
+      numChannel = 1,
+      addressBufferDepth = 1,
+      dataBufferDepth = 1,
       configurableChannel = false,
       delayedStart = false,
       crossClockDomain = hasCrossClockDomain
@@ -223,10 +133,22 @@ object StreamerParametersGen {
       configurableChannel = false,
       delayedStart = false,
       crossClockDomain = hasCrossClockDomain
-    )
-  )
-
-  def writerParams = Seq(
+   ), 
+    new ReaderWriterParam(
+      spatialBounds = List(
+        1
+      ),
+      temporalDimension = 4,
+      tcdmDataWidth = 64,
+      tcdmSize = 1024,
+      tcdmLogicWordSize = Seq(256),
+      numChannel = 1,
+      addressBufferDepth = 3,
+      dataBufferDepth = 3,
+      configurableChannel = false,
+      delayedStart = false,
+      crossClockDomain = hasCrossClockDomain
+   ), 
     new ReaderWriterParam(
       spatialBounds = List(
         1
@@ -251,10 +173,10 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 1,
-      addressBufferDepth = 9,
-      dataBufferDepth = 9,
+      addressBufferDepth = 8,
+      dataBufferDepth = 8,
       configurableChannel = false,
-      delayedStart = false,
+      delayedStart = true,
       crossClockDomain = hasCrossClockDomain
    ), 
     new ReaderWriterParam(
@@ -266,8 +188,23 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 1,
-      addressBufferDepth = 2,
-      dataBufferDepth = 2,
+      addressBufferDepth = 6,
+      dataBufferDepth = 6,
+      configurableChannel = false,
+      delayedStart = true,
+      crossClockDomain = hasCrossClockDomain
+   ), 
+    new ReaderWriterParam(
+      spatialBounds = List(
+        4
+      ),
+      temporalDimension = 4,
+      tcdmDataWidth = 64,
+      tcdmSize = 1024,
+      tcdmLogicWordSize = Seq(256),
+      numChannel = 4,
+      addressBufferDepth = 6,
+      dataBufferDepth = 6,
       configurableChannel = false,
       delayedStart = false,
       crossClockDomain = hasCrossClockDomain
@@ -281,8 +218,71 @@ object StreamerParametersGen {
       tcdmSize = 1024,
       tcdmLogicWordSize = Seq(256),
       numChannel = 4,
-      addressBufferDepth = 4,
-      dataBufferDepth = 4,
+      addressBufferDepth = 6,
+      dataBufferDepth = 6,
+      configurableChannel = false,
+      delayedStart = false,
+      crossClockDomain = hasCrossClockDomain
+    )
+  )
+
+  def writerParams = Seq(
+    new ReaderWriterParam(
+      spatialBounds = List(
+        1
+      ),
+      temporalDimension = 4,
+      tcdmDataWidth = 64,
+      tcdmSize = 1024,
+      tcdmLogicWordSize = Seq(256),
+      numChannel = 1,
+      addressBufferDepth = 6,
+      dataBufferDepth = 6,
+      configurableChannel = false,
+      delayedStart = false,
+      crossClockDomain = hasCrossClockDomain
+   ), 
+    new ReaderWriterParam(
+      spatialBounds = List(
+        1
+      ),
+      temporalDimension = 4,
+      tcdmDataWidth = 64,
+      tcdmSize = 1024,
+      tcdmLogicWordSize = Seq(256),
+      numChannel = 1,
+      addressBufferDepth = 5,
+      dataBufferDepth = 5,
+      configurableChannel = false,
+      delayedStart = false,
+      crossClockDomain = hasCrossClockDomain
+   ), 
+    new ReaderWriterParam(
+      spatialBounds = List(
+        1
+      ),
+      temporalDimension = 4,
+      tcdmDataWidth = 64,
+      tcdmSize = 1024,
+      tcdmLogicWordSize = Seq(256),
+      numChannel = 1,
+      addressBufferDepth = 1,
+      dataBufferDepth = 1,
+      configurableChannel = false,
+      delayedStart = false,
+      crossClockDomain = hasCrossClockDomain
+   ), 
+    new ReaderWriterParam(
+      spatialBounds = List(
+        4
+      ),
+      temporalDimension = 4,
+      tcdmDataWidth = 64,
+      tcdmSize = 1024,
+      tcdmLogicWordSize = Seq(256),
+      numChannel = 4,
+      addressBufferDepth = 3,
+      dataBufferDepth = 3,
       configurableChannel = false,
       delayedStart = false,
       crossClockDomain = hasCrossClockDomain
