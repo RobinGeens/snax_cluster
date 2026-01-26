@@ -13,7 +13,7 @@ module snax_simbacore_streamer_wrapper #(
   // Parameters related to TCDM
   parameter int unsigned TCDMDataWidth = 64,
   parameter int unsigned TCDMNumPorts  = 34,
-  parameter int unsigned TCDMAddrWidth = 20
+  parameter int unsigned TCDMAddrWidth = 19
 )(
   //-----------------------------
   // Clocks and reset

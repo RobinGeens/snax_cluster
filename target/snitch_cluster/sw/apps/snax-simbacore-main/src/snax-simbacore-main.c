@@ -84,8 +84,6 @@ int test_phase2() {
     uint8_t* ptr_z             = (uint8_t*)(tcdm_base_ptr + M2_addr_z);  // osCore out
     uint8_t* ptr_dt_in         = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_BC);
     uint8_t* ptr_BC            = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_BC + M2_dt_to_BC_offset);  //
-    // TODO test of dit hetzelfde is
-    // uint8_t* ptr_BC            = (void*)ptr_dt_in + M2_dt_to_BC_offset);  //
     uint8_t* ptr_dt_weight_1   = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_weight_1);
     uint8_t* ptr_dt_weight_2   = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_weight_2);
     uint8_t* ptr_dt_bias       = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_bias);

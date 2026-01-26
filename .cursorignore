@@ -36,5 +36,3 @@ compile_commands.json
 component.xml
 data.h
 
-# IDE files
-.vscode/

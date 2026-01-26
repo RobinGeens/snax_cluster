@@ -18,7 +18,7 @@ module snax_simbacore_wrapper # (
   parameter int unsigned SnaxTcdmPorts      = 34,
   // Addr width is pre-computed in the generator
   // TCDMAddrWidth = log2(TCDMBankNum * TCDMDepth * (TCDMDataWidth/8))
-  parameter int unsigned TCDMAddrWidth      = 20,
+  parameter int unsigned TCDMAddrWidth      = 19,
   // Don't touch parameters (or modify at your own risk)
   parameter int unsigned RegDataWidth       = 32,
   parameter int unsigned RegAddrWidth       = 32

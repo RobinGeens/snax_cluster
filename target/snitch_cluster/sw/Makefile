@@ -54,5 +54,5 @@ apps: math $(RUNTIME) snax/snax-alu snax/mac snax/data-reshuffler snax/gemmx sna
 tests: math $(RUNTIME) snax/snax-alu snax/mac snax/data-reshuffler snax/gemmx snax/versacore-to snax/versacore-dse snax/xdma snax/hypercorex
 	$(MAKE) -C $@ $(TARGET)
 
-runtime/rtl runtime/banshee runtime/rtl-generic math snax/snax-alu snax/mac snax/data-reshuffler snax/gemmx snax/versacore-to snax/simbacore snax/versacore-dse snax/xdma snax/hypercorex snax/simbacore:
+runtime/rtl runtime/banshee runtime/rtl-generic math snax/snax-alu snax/mac snax/data-reshuffler snax/gemmx snax/versacore-to snax/simbacore snax/versacore-dse snax/xdma snax/hypercorex:
 	$(MAKE) -C $@ $(TARGET)

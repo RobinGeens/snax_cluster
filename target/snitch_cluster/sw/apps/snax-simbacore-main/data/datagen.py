@@ -8,6 +8,7 @@
 import pathlib
 import sys
 import os
+import math
 
 # Add data utility path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/sim/"))
@@ -62,24 +63,47 @@ class DataGenerator(DataGeneratorBase):
     def get_safe_to_start_delay(self):
         """In Phase2, the SU core reads the OS core output from memory, in a different order. The program must ensure
         that when the SU core streamer starts, all memory contents will be valid by the time they are read. The
-        safe-to-start time depends on (self.seqLen, self.dModel, self.dInner), as the relative throughput of the OS and SU cores
+        safe-to-start time depends on (seqLen, dModel, dInner), as the relative throughput of the OS and SU cores
         changes. The same is true for the SU core output to IS core input.
 
         This function returns after how many OS core tiles the SU core can start, and after SU core output elements the
-        IS core can start. Both values can be compared to the CSR registers.
+        IS core can start. Both values can be compared to the CSR registers directly.
         The safe-to-start time is computed as: (time to complete one window) * max(throughput ratio, 1)
         """
+        # The differences in throughput will be non-ideal due to bank contention
+        MARGIN = 0.2  # 20%
+        # For GEMM, we compare to the tile count, not the element or cycle count (this is what the CSR is counting)
         # OS core and IS core have same throughput
+        gemm_cycles_per_tile = self.dModel
         gemm_total_nb_tiles = (self.seqLen // self.seqLenUnroll) * (self.dInner // self.dInnerUnroll)
+        gemm_cycles = gemm_total_nb_tiles * gemm_cycles_per_tile
+
+        # gemm_tp = 1 / (gemm_total_nb_tiles * self.dModel)  # dModel cc / tile
+        # suc_tp = 1 / suc_total_nb_elements  # 1 cc / elem
+        suc_cycles_per_element = 1
         suc_total_nb_elements = self.seqLen * self.dInner
-        gemm_tp = 1 / (gemm_total_nb_tiles * self.dModel)  # dModel / tile
-        suc_tp = 1 / suc_total_nb_elements  # 1 cc / elem
+        suc_cycles = suc_total_nb_elements * suc_cycles_per_element
 
         gemm_window_cnt = self.seqLen // self.seqLenUnroll  # expressed in OS core tiles
         suc_window_cnt = self.seqLen * self.dInnerUnroll  # expressed in SUC output elements
 
-        suc_safe_to_start = gemm_window_cnt + gemm_total_nb_tiles * max(suc_tp / gemm_tp, 1)  # [tiles]
-        iscore_safe_to_start = suc_window_cnt + suc_total_nb_elements * max(gemm_tp / suc_tp, 1)  # [elements]
+        # We align the end times of GeMM and SUC core (t_gemm = suc_delta + t_suc)
+        suc_delta = (gemm_cycles - suc_cycles) / gemm_cycles_per_tile  # [tiles]
+        iscore_delta = (suc_cycles - gemm_cycles) / suc_cycles_per_element  # [elements]
+
+        # Absolute minimum is the number of Gemm tiles. Add margin
+        suc_safe_to_start = math.ceil(max(gemm_window_cnt, suc_delta) * (1 + MARGIN))  # [tiles]
+        iscore_safe_to_start = math.ceil(max(suc_window_cnt, iscore_delta) * (1 + MARGIN))  # [elements]
+
+        print(f"// DEBUG safe-to-start delays:")
+        print(f"//      OScore cycles: {gemm_cycles}")
+        print(f"//      OScore window: {gemm_window_cnt}")
+        print(f"//      SUC cycles: {suc_cycles}")
+        print(f"//      SUC delta: {suc_delta}")
+        print(f"//      SUC safe to start: {suc_safe_to_start}")
+        print(f"//      SUC window: {suc_window_cnt}")
+        print(f"//      IScore delta: {iscore_delta}")
+        print(f"//      IScore safe to start: {iscore_safe_to_start}")
 
         # Make sure the delay does not exceed the total number of tiles or elements
         return int(min(suc_safe_to_start, gemm_total_nb_tiles)), int(min(iscore_safe_to_start, suc_total_nb_elements))

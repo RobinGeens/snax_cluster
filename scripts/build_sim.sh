@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Bundle makefile commands to build RTL, software and simulator.
 # Supports running in and outside of the SNAX container.
 
 
-set -e
+set -euo pipefail
 
 
 CONTAINER_CMD="podman run --rm -i -v \"$(pwd)\":\"$(pwd)\" -w \"$(pwd)\" ghcr.io/kuleuven-micas/snax:main bash -s"
