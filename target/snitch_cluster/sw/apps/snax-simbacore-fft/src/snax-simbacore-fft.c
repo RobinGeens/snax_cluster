@@ -35,7 +35,7 @@ int test() {
     // Call compute core
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: DFT partition 1\n\n");
-        uint32_t start_cycles = get_cycle_count();
+        uint32_t start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif
@@ -47,7 +47,7 @@ int test() {
         set_simbacore_csr(M5_ISGEMM_SQ, L1_padded0, 1, L1_padded1, 1, (dModel * L2));
         start_simbacore_and_streamers(M5_R10_en, 0, M5_R11_en, 0);
         wait_simbacore_and_streamer();
-        uint32_t end_cycles = get_cycle_count();
+        uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 

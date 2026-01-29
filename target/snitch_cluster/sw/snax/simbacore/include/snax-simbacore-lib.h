@@ -95,6 +95,3 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
 
 // Initialize cycle counter (call once at program start)
 void init_cycle_counter(void);
-
-// Get current cycle count
-static inline uint32_t get_cycle_count(void) { return snrt_get_perf_counter(SNRT_PERF_CNT0); }

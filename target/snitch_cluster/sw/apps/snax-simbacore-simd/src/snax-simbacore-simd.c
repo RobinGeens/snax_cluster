@@ -38,12 +38,12 @@ int test_simd() {
     // Call compute core
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: SIMD\n\n");
-        uint32_t start_cycles = get_cycle_count();
+        uint32_t start_cycles = snrt_mcycle();
 
 // CMUL
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
-        printf("[%d cc] CMUL\n", get_cycle_count());
+        printf("[%d cc] CMUL\n", snrt_mcycle());
 #endif
         set_simd_streamer_csr((uint32_t)ptr_a, M6_R7_ss, M6_R7_tb, M6_R7_ts,        // SUC BC
                               (uint32_t)ptr_b, M6_R13_ss, M6_R13_tb, M6_R13_ts,     // isCore psum
@@ -56,7 +56,7 @@ int test_simd() {
 
         // ADD
 #ifdef VERBOSE
-        printf("[%d cc] ADD\n", get_cycle_count());
+        printf("[%d cc] ADD\n", snrt_mcycle());
 #endif
         write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_add);
         set_simbacore_simd_mode(M6_SIMD_ADD);
@@ -65,7 +65,7 @@ int test_simd() {
 
         // SUB
 #ifdef VERBOSE
-        printf("[%d cc] SUB\n", get_cycle_count());
+        printf("[%d cc] SUB\n", snrt_mcycle());
 #endif
         write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_sub);
         set_simbacore_simd_mode(M7_SIMD_SUB);
@@ -74,7 +74,7 @@ int test_simd() {
 
         // MUL
 #ifdef VERBOSE
-        printf("[%d cc] MUL\n", get_cycle_count());
+        printf("[%d cc] MUL\n", snrt_mcycle());
 #endif
         write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_mul);
         set_simbacore_simd_mode(M8_SIMD_MUL);
@@ -83,7 +83,7 @@ int test_simd() {
 
         // INPROD
 #ifdef VERBOSE
-        printf("[%d cc] INPROD\n", get_cycle_count());
+        printf("[%d cc] INPROD\n", snrt_mcycle());
 #endif
         set_simd_streamer_csr((uint32_t)ptr_a, M6_R7_ss, M6_R7_tb, M6_R7_ts,     // SUC BC
                               (uint32_t)ptr_b, M6_R13_ss, M6_R13_tb, M6_R13_ts,  // isCore psum
@@ -96,7 +96,7 @@ int test_simd() {
 
         // RMS
 #ifdef VERBOSE
-        printf("[%d cc] RMS\n", get_cycle_count());
+        printf("[%d cc] RMS\n", snrt_mcycle());
 #endif
         set_simd_streamer_no_b((uint32_t)ptr_a, M6_R7_ss, M6_R7_tb, M6_R7_ts,                            // SUC BC
                                (uint32_t)ptr_out_rms, M6_W3_reduce_ss, M6_W3_reduce_tb, M6_W3_reduce_ts  // isCore out
@@ -106,7 +106,7 @@ int test_simd() {
         start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
         wait_simbacore_and_streamer();
 
-        uint32_t end_cycles = get_cycle_count();
+        uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 

@@ -11,13 +11,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 
-# eval "${CONTAINER_CMD}" <<'IN_CONTAINER'
-# set -e
-# cd target/snitch_cluster
-# make clean
-# IN_CONTAINER
+eval "${CONTAINER_CMD}" <<'IN_CONTAINER'
+set -e
+cd target/snitch_cluster
+make clean
+IN_CONTAINER
 
-# bender update --fetch
+bender update --fetch
 
 eval "${CONTAINER_CMD}" <<'IN_CONTAINER'
 set -e
