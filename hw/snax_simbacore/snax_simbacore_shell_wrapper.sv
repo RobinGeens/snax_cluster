@@ -132,7 +132,7 @@ module snax_simbacore_shell_wrapper #(
   logic burner_en;
   always @(posedge clk_i) begin
     if (~rst_ni) burner_en <= 0;
-    else if (csr_reg_set_valid_i && csr_reg_set_ready_o)
+    else if (csr_reg_set_valid_i) // TODO depend on  && csr_reg_set_ready_o) ?
       burner_en <= (csr_reg_set_i[0] == BURNER_MODE);
     else burner_en <= burner_en;
   end

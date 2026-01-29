@@ -31,6 +31,7 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-simd/build/snax-simbacore-simd.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-fft/build/snax-simbacore-fft.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-main-full/build/snax-simbacore-main-full.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/snax-simbacore-burner/build/snax-simbacore-burner.elf | tee vsim.log`
 
 [bash|target] Run SimbaCore test program in GUI (with VNC)
 
