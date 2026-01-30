@@ -5,9 +5,9 @@
 # Xiaoling Yi <xiaoling.yi@esat.kuleuven.be>
 # Robin Geens <robin.geens@esat.kuleuven.be>
 
-APP = snax-simbacore-burner
+APP = snax-simbacore-streamer-burner
 
-INCDIRS = ../snax-simbacore-main/data \
+INCDIRS = ../snax-simbacore-main-full/data \
           ../../snax/simbacore/include \
           ../snax-simbacore-main/src
 
@@ -18,10 +18,10 @@ SIMBACORE_LIB_OBJ := $(SIMBACORE_LIB_DIR)/build/snax-simbacore-lib.o
 # Include this binary in the final build
 RISCV_LDFLAGS += $(SIMBACORE_LIB_OBJ)
 
-SRCS = src/snax-simbacore-burner.c
+SRCS = src/snax-simbacore-streamer-burner.c
 
 include ../common.mk
-include ../snax-simbacore-main/data/Makefile
+include ../snax-simbacore-main-full/data/Makefile
 
 $(ELF): $(SIMBACORE_LIB_OBJ)
 

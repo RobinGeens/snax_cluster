@@ -84,7 +84,8 @@ SUBDIRS += snax-simbacore-simd
 SUBDIRS += snax-simbacore-fft
 SUBDIRS += snax-simbacore-rmsnorm
 SUBDIRS += snax-simbacore-main-full
-SUBDIRS += snax-simbacore-burner
+SUBDIRS += snax-simbacore-streamer-burner
+SUBDIRS += snax-simbacore-core-burner
 endif
 
 .PHONY: all clean $(SUBDIRS)

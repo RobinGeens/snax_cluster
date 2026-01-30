@@ -43,7 +43,8 @@ declare -a TESTS=(
   "snax-simbacore-isgemm"
   "snax-simbacore-simd"
   "snax-simbacore-main-full"
-  "snax-simbacore-burner"
+  "snax-simbacore-streamer-burner"
+  "snax-simbacore-core-burner"
 )
 
 pushd "${TARGET_DIR}" >/dev/null
