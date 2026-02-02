@@ -39,22 +39,56 @@ class DataGenerator(DataGeneratorBase):
         bounds_and_strides_LD = ([L * D // simdLanes], [simdLanes * BF16 // 8])
         bounds_and_strides_L = ([L // simdLanes], [simdLanes * BF16 // 8])
         streamers = {
-            "R7_LD": bounds_and_strides_LD,
-            "R7_L": bounds_and_strides_L,
-            "W3_LD": bounds_and_strides_LD,
-            "W3_L": bounds_and_strides_L,
+            # full x matrix
+            "R7_x": bounds_and_strides_LD,
+            "W3_x": bounds_and_strides_LD,
+            # processing RMS vector
+            "R7_rms": bounds_and_strides_L,
+            "W3_rms": bounds_and_strides_L,
+            # x * rms
+            "R13_x_rms": (
+                [D, L // simdLanes],
+                [
+                    0,  # Keep stationary for D (one rms norm per token)
+                    simdLanes * BF16 // 8,  # Move to next set of lanes
+                ],
+            ),
+            # x * weight
+            "R7_x_w": (  # x matrix
+                # Weights are per channel and duplicated over simd lanes
+                # We keep the weights stationary and finish x channel by channel
+                [L // simdLanes, D],
+                [
+                    D * simdLanes * BF16 // 8,
+                    simdLanes * BF16 // 8,
+                ],
+            ),
+            "R13_x_w": (  # weight vector
+                [L // simdLanes, D],
+                [
+                    0,  # Keep weight stationary for L
+                    simdLanes * BF16 // 8,
+                ],
+            ),
+            "W3_x_w": (  # output x matrix
+                [L // simdLanes, D],
+                [
+                    D * simdLanes * BF16 // 8,
+                    simdLanes * BF16 // 8,
+                ],
+            ),
         }
 
         specs = [
             ("x", L * D * BF16 // 8),
             ("d_inverse", simdLanes * BF16 // 8),
-            ("weight", D * BF16 // 8),
-            ("meanSq", L * BF16 // 8),
+            ("weight", simdLanes * D * BF16 // 8),  # Weights are duplicated over simd lanes
+            ("rms", L * BF16 // 8),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint16_t" for name in ("x", "weight", "meanSq")}}
+        test_data = {**{name: "uint16_t" for name in ("x", "weight", "denom", "invRms", "normalized", "out")}}
         tests = {"expected": L}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
