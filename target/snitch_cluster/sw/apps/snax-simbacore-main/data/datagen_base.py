@@ -186,6 +186,7 @@ class DataGeneratorBase(ABC):
         """
         # Iterate over all streamer names
         assert all(re.match(r"^(R([0-9]|1[0-3])|W([0-9]|1[0-3]))(_.*)?$", key) for key in streamers.keys())
+        # TODO number of streamers is hardcoded here
         standard_names = [f"R{i}" for i in range(14)] + [f"W{i}" for i in range(4)]
 
         # Make sure all standard streamer names are formatted

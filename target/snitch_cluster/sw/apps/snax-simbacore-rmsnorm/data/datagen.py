@@ -36,20 +36,25 @@ class DataGenerator(DataGeneratorBase):
         simdLanes = self.kwargs["simdLanes"]
         assert simdLanes == self.kwargs["seqLenUnroll"], "memory layout mismatch"
 
+        bounds_and_strides_LD = ([L * D // simdLanes], [simdLanes * BF16 // 8])
+        bounds_and_strides_L = ([L // simdLanes], [simdLanes * BF16 // 8])
         streamers = {
-            "R7": ([L * D // simdLanes], [simdLanes * BF16 // 8]),
-            "W3": ([L // simdLanes], [simdLanes * BF16 // 8]),
+            "R7_LD": bounds_and_strides_LD,
+            "R7_L": bounds_and_strides_L,
+            "W3_LD": bounds_and_strides_LD,
+            "W3_L": bounds_and_strides_L,
         }
 
         specs = [
             ("x", L * D * BF16 // 8),
+            ("d_inverse", simdLanes * BF16 // 8),
             ("weight", D * BF16 // 8),
-            ("xSqSum", L * BF16 // 8),
+            ("meanSq", L * BF16 // 8),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint16_t" for name in ("x", "weight", "xSqSum")}}
+        test_data = {**{name: "uint16_t" for name in ("x", "weight", "meanSq")}}
         tests = {"expected": L}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)

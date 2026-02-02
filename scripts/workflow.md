@@ -33,6 +33,7 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-main-full/build/snax-simbacore-main-full.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-streamer-burner/build/snax-simbacore-streamer-burner.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-core-burner/build/snax-simbacore-core-burner.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/snax-simbacore-rmsnorm/build/snax-simbacore-rmsnorm.elf | tee vsim.log`
 
 [bash|target] Run SimbaCore test program in GUI (with VNC)
 

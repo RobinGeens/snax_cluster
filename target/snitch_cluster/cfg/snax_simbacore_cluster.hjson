@@ -97,12 +97,12 @@ Naming convention:
     }
   },
   snax_simbacore_core_template: {
-    isa: "rv32ima",
+    isa: "rv32imafd",  // F = single-precision, D = double-precision (both are needed for FP32 div)
     xssr: false,
     xfrep: false,
     xdma: false,
-    xf16: false,
-    xf16alt: false,
+    xf16: true,   // FP16; needed for 16-bit FP ops
+    xf16alt: true,  // BF16; fmode CSR selects FP16 vs BF16 at runtime
     xf8: false,
     xf8alt: false,
     xfdotp: false,
