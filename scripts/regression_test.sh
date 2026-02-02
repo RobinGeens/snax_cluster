@@ -58,7 +58,9 @@ pushd "${TARGET_DIR}" >/dev/null
     echo "Build: ❌ FAILED (rc=${build_rc})"
   fi
   echo
-  echo "Tests:"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf "%-30s %10s %18s %18s\n" "Test Name" "Errors" "SimbaCore Cycles" "Total Cycles"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 } > "${SUMMARY_FILE}"
 
 for name in "${TESTS[@]}"; do
@@ -85,7 +87,25 @@ for name in "${TESTS[@]}"; do
     # Fall back to process return code.
     errors="${rc}"
   fi
-  echo "  ${name}: errors=${errors}" >> "${SUMMARY_FILE}"
+  
+  # Parse cycle counts from this test's log
+  simbacore_cycles=""
+  total_cycles=""
+  parsed_simbacore="$(sed -n 's/.*Simbacore elapsed time:[[:space:]]\+\([0-9]\+\)[[:space:]]\+cycles.*/\1/p' "${test_log}" | tail -n1)"
+  parsed_total="$(sed -n 's/.*Snitch elapsed time:[[:space:]]\+\([0-9]\+\)[[:space:]]\+cycles.*/\1/p' "${test_log}" | tail -n1)"
+  if [ -n "${parsed_simbacore}" ]; then
+    simbacore_cycles="${parsed_simbacore}"
+  fi
+  if [ -n "${parsed_total}" ]; then
+    total_cycles="${parsed_total}"
+  fi
+  
+  # Format output as table row
+  simbacore_display="${simbacore_cycles:-N/A}"
+  total_display="${total_cycles:-N/A}"
+  printf "%-30s %10s %18s %18s\n" "${name}" "${errors}" "${simbacore_display}" "${total_display}" >> "${SUMMARY_FILE}"
 done
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "${SUMMARY_FILE}"
 
 popd >/dev/null

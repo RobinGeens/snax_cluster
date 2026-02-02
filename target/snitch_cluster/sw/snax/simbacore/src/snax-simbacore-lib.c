@@ -12,22 +12,46 @@ void set_osgemm_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32
                              uint32_t B_ptr, int32_t* B_ss, int32_t* B_tb, int32_t* B_ts,  //
                              uint32_t D_ptr, int32_t* D_ss, int32_t* D_tb, int32_t* D_ts) {
     // osCore input R0
-    write_csr(BASE_PTR_READER_0_LOW, A_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_0; i++) csrw_ss(S_STRIDE_BASE_READER_0 + i, A_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_0; i++) csrw_ss(T_BOUND_BASE_READER_0 + i, A_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_0; i++) csrw_ss(T_STRIDE_BASE_READER_0 + i, A_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_0 == 1 && T_BOUND_NUM_READER_0 == 4 && T_STRIDE_NUM_READER_0 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_0_LOW, A_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_0 + 0, A_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_0 + 0, A_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_0 + 1, A_tb[1]);
+    write_csr(T_BOUND_BASE_READER_0 + 2, A_tb[2]);
+    write_csr(T_BOUND_BASE_READER_0 + 3, A_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_0 + 0, A_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_0 + 1, A_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_0 + 2, A_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_0 + 3, A_ts[3]);
 
     // osCore weight R1
-    write_csr(BASE_PTR_READER_1_LOW, B_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_1; i++) csrw_ss(S_STRIDE_BASE_READER_1 + i, B_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_1; i++) csrw_ss(T_BOUND_BASE_READER_1 + i, B_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_1; i++) csrw_ss(T_STRIDE_BASE_READER_1 + i, B_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_1 == 1 && T_BOUND_NUM_READER_1 == 4 && T_STRIDE_NUM_READER_1 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_1_LOW, B_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_1 + 0, B_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_1 + 0, B_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_1 + 1, B_tb[1]);
+    write_csr(T_BOUND_BASE_READER_1 + 2, B_tb[2]);
+    write_csr(T_BOUND_BASE_READER_1 + 3, B_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_1 + 0, B_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_1 + 1, B_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_1 + 2, B_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_1 + 3, B_ts[3]);
 
     // osCore output W0
-    write_csr(BASE_PTR_WRITER_0_LOW, D_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_WRITER_0; i++) csrw_ss(S_STRIDE_BASE_WRITER_0 + i, D_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_WRITER_0; i++) csrw_ss(T_BOUND_BASE_WRITER_0 + i, D_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_WRITER_0; i++) csrw_ss(T_STRIDE_BASE_WRITER_0 + i, D_ts[i]);
+    _Static_assert(S_STRIDE_NUM_WRITER_0 == 1 && T_BOUND_NUM_WRITER_0 == 4 && T_STRIDE_NUM_WRITER_0 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_WRITER_0_LOW, D_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_0 + 0, D_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_WRITER_0 + 0, D_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_WRITER_0 + 1, D_tb[1]);
+    write_csr(T_BOUND_BASE_WRITER_0 + 2, D_tb[2]);
+    write_csr(T_BOUND_BASE_WRITER_0 + 3, D_tb[3]);
+    write_csr(T_STRIDE_BASE_WRITER_0 + 0, D_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_WRITER_0 + 1, D_ts[1]);
+    write_csr(T_STRIDE_BASE_WRITER_0 + 2, D_ts[2]);
+    write_csr(T_STRIDE_BASE_WRITER_0 + 3, D_ts[3]);
 
     // Disable all other streamers by setting bound to 0
     write_csr(T_BOUND_BASE_READER_2, 0);
@@ -52,28 +76,60 @@ void set_isgemm_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32
                              uint32_t B_ptr, int32_t* B_ss, int32_t* B_tb, int32_t* B_ts,  //
                              uint32_t CD_ptr, int32_t* CD_ss, int32_t* CD_tb, int32_t* CD_ts) {
     // iscore input R11
-    write_csr(BASE_PTR_READER_11_LOW, A_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_11; i++) csrw_ss(S_STRIDE_BASE_READER_11 + i, A_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_11; i++) csrw_ss(T_BOUND_BASE_READER_11 + i, A_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_11; i++) csrw_ss(T_STRIDE_BASE_READER_11 + i, A_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_11 == 1 && T_BOUND_NUM_READER_11 == 4 && T_STRIDE_NUM_READER_11 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_11_LOW, A_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_11 + 0, A_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_11 + 0, A_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_11 + 1, A_tb[1]);
+    write_csr(T_BOUND_BASE_READER_11 + 2, A_tb[2]);
+    write_csr(T_BOUND_BASE_READER_11 + 3, A_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_11 + 0, A_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_11 + 1, A_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_11 + 2, A_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_11 + 3, A_ts[3]);
 
     // iscore weight R12
-    write_csr(BASE_PTR_READER_12_LOW, B_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_12; i++) csrw_ss(S_STRIDE_BASE_READER_12 + i, B_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_12; i++) csrw_ss(T_BOUND_BASE_READER_12 + i, B_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_12; i++) csrw_ss(T_STRIDE_BASE_READER_12 + i, B_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_12 == 1 && T_BOUND_NUM_READER_12 == 4 && T_STRIDE_NUM_READER_12 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_12_LOW, B_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_12 + 0, B_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_12 + 0, B_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_12 + 1, B_tb[1]);
+    write_csr(T_BOUND_BASE_READER_12 + 2, B_tb[2]);
+    write_csr(T_BOUND_BASE_READER_12 + 3, B_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_12 + 0, B_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_12 + 1, B_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_12 + 2, B_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_12 + 3, B_ts[3]);
 
     // iscore bias/psum R13
-    write_csr(BASE_PTR_READER_13_LOW, CD_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_13; i++) csrw_ss(S_STRIDE_BASE_READER_13 + i, CD_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_13; i++) csrw_ss(T_BOUND_BASE_READER_13 + i, CD_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_13; i++) csrw_ss(T_STRIDE_BASE_READER_13 + i, CD_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_13 == 1 && T_BOUND_NUM_READER_13 == 4 && T_STRIDE_NUM_READER_13 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_13_LOW, CD_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_13 + 0, CD_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_13 + 0, CD_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_13 + 1, CD_tb[1]);
+    write_csr(T_BOUND_BASE_READER_13 + 2, CD_tb[2]);
+    write_csr(T_BOUND_BASE_READER_13 + 3, CD_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_13 + 0, CD_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_13 + 1, CD_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_13 + 2, CD_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_13 + 3, CD_ts[3]);
 
     // iscore output W3
-    write_csr(BASE_PTR_WRITER_3_LOW, CD_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_WRITER_3; i++) csrw_ss(S_STRIDE_BASE_WRITER_3 + i, CD_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_WRITER_3; i++) csrw_ss(T_BOUND_BASE_WRITER_3 + i, CD_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_WRITER_3; i++) csrw_ss(T_STRIDE_BASE_WRITER_3 + i, CD_ts[i]);
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_WRITER_3_LOW, CD_ptr);        // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_3, CD_ss[0]);     // Spatial stride
+    write_csr(T_BOUND_BASE_WRITER_3 + 0, CD_tb[0]);  // Temporal bound
+    write_csr(T_BOUND_BASE_WRITER_3 + 1, CD_tb[1]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 2, CD_tb[2]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 3, CD_tb[3]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 0, CD_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_WRITER_3 + 1, CD_ts[1]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 2, CD_ts[2]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 3, CD_ts[3]);
 
     // Disable all other streamers by setting bound to 0
     write_csr(T_BOUND_BASE_READER_0, 0);
@@ -97,22 +153,46 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
                            uint32_t B_ptr, int32_t* B_ss, int32_t* B_tb, int32_t* B_ts,  //
                            uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts) {
     // Route input A to SUC BC: R7
-    write_csr(BASE_PTR_READER_7_LOW, A_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_7; i++) csrw_ss(S_STRIDE_BASE_READER_7 + i, A_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_7; i++) csrw_ss(T_BOUND_BASE_READER_7 + i, A_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_7; i++) csrw_ss(T_STRIDE_BASE_READER_7 + i, A_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_7_LOW, A_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_7 + 0, A_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_7 + 1, A_tb[1]);
+    write_csr(T_BOUND_BASE_READER_7 + 2, A_tb[2]);
+    write_csr(T_BOUND_BASE_READER_7 + 3, A_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_7 + 0, A_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_7 + 1, A_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_7 + 2, A_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_7 + 3, A_ts[3]);
 
     // Route input B to iscore psum: R13
-    write_csr(BASE_PTR_READER_13_LOW, B_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_READER_13; i++) csrw_ss(S_STRIDE_BASE_READER_13 + i, B_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_READER_13; i++) csrw_ss(T_BOUND_BASE_READER_13 + i, B_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_READER_13; i++) csrw_ss(T_STRIDE_BASE_READER_13 + i, B_ts[i]);
+    _Static_assert(S_STRIDE_NUM_READER_13 == 1 && T_BOUND_NUM_READER_13 == 4 && T_STRIDE_NUM_READER_13 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_13_LOW, B_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_13 + 0, B_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_13 + 0, B_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_13 + 1, B_tb[1]);
+    write_csr(T_BOUND_BASE_READER_13 + 2, B_tb[2]);
+    write_csr(T_BOUND_BASE_READER_13 + 3, B_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_13 + 0, B_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_13 + 1, B_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_13 + 2, B_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_13 + 3, B_ts[3]);
 
     // Route output C to iscore out: W3
-    write_csr(BASE_PTR_WRITER_3_LOW, C_ptr);
-    for (int i = 0; i < S_STRIDE_NUM_WRITER_3; i++) csrw_ss(S_STRIDE_BASE_WRITER_3 + i, C_ss[i]);
-    for (int i = 0; i < T_BOUND_NUM_WRITER_3; i++) csrw_ss(T_BOUND_BASE_WRITER_3 + i, C_tb[i]);
-    for (int i = 0; i < T_STRIDE_NUM_WRITER_3; i++) csrw_ss(T_STRIDE_BASE_WRITER_3 + i, C_ts[i]);
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_WRITER_3_LOW, C_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_WRITER_3 + 0, C_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_WRITER_3 + 1, C_tb[1]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 2, C_tb[2]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 3, C_tb[3]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 0, C_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_WRITER_3 + 1, C_ts[1]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 2, C_ts[2]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 3, C_ts[3]);
 
     // Disable all other streamers by setting bound to 0
     write_csr(T_BOUND_BASE_READER_0, 0);
@@ -127,6 +207,56 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
     write_csr(T_BOUND_BASE_READER_10, 0);
     write_csr(T_BOUND_BASE_READER_11, 0);
     write_csr(T_BOUND_BASE_READER_12, 0);
+    write_csr(T_BOUND_BASE_WRITER_0, 0);
+    write_csr(T_BOUND_BASE_WRITER_1, 0);
+    write_csr(T_BOUND_BASE_WRITER_2, 0);
+}
+
+// Shorthand function to set only the streamers used in SIMD
+void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t* A_ts,  //
+                            uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts) {
+    // Route input A to SUC BC: R7
+    _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_READER_7_LOW, A_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_READER_7 + 0, A_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_READER_7 + 1, A_tb[1]);
+    write_csr(T_BOUND_BASE_READER_7 + 2, A_tb[2]);
+    write_csr(T_BOUND_BASE_READER_7 + 3, A_tb[3]);
+    write_csr(T_STRIDE_BASE_READER_7 + 0, A_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_READER_7 + 1, A_ts[1]);
+    write_csr(T_STRIDE_BASE_READER_7 + 2, A_ts[2]);
+    write_csr(T_STRIDE_BASE_READER_7 + 3, A_ts[3]);
+
+    // Route output C to iscore out: W3
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+                   "loop unroll mismatch");
+    write_csr(BASE_PTR_WRITER_3_LOW, C_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride
+    write_csr(T_BOUND_BASE_WRITER_3 + 0, C_tb[0]);   // Temporal bound
+    write_csr(T_BOUND_BASE_WRITER_3 + 1, C_tb[1]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 2, C_tb[2]);
+    write_csr(T_BOUND_BASE_WRITER_3 + 3, C_tb[3]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 0, C_ts[0]);  // Temporal stride
+    write_csr(T_STRIDE_BASE_WRITER_3 + 1, C_ts[1]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 2, C_ts[2]);
+    write_csr(T_STRIDE_BASE_WRITER_3 + 3, C_ts[3]);
+
+    // Disable all other streamers by setting bound to 0
+    write_csr(T_BOUND_BASE_READER_0, 0);
+    write_csr(T_BOUND_BASE_READER_1, 0);
+    write_csr(T_BOUND_BASE_READER_2, 0);
+    write_csr(T_BOUND_BASE_READER_3, 0);
+    write_csr(T_BOUND_BASE_READER_4, 0);
+    write_csr(T_BOUND_BASE_READER_5, 0);
+    write_csr(T_BOUND_BASE_READER_6, 0);
+    write_csr(T_BOUND_BASE_READER_8, 0);
+    write_csr(T_BOUND_BASE_READER_9, 0);
+    write_csr(T_BOUND_BASE_READER_10, 0);
+    write_csr(T_BOUND_BASE_READER_11, 0);
+    write_csr(T_BOUND_BASE_READER_12, 0);
+    write_csr(T_BOUND_BASE_READER_13, 0);
     write_csr(T_BOUND_BASE_WRITER_0, 0);
     write_csr(T_BOUND_BASE_WRITER_1, 0);
     write_csr(T_BOUND_BASE_WRITER_2, 0);
@@ -155,163 +285,307 @@ void set_streamer_csr(
     uint32_t W3_ptr, int32_t* W3_ss, int32_t* W3_tb, int32_t* W3_ts, bool W3_en   // isCore out
 ) {
     if (R0_en) {
-        write_csr(BASE_PTR_READER_0_LOW, R0_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_0; i++) csrw_ss(S_STRIDE_BASE_READER_0 + i, R0_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_0; i++) csrw_ss(T_BOUND_BASE_READER_0 + i, R0_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_0; i++) csrw_ss(T_STRIDE_BASE_READER_0 + i, R0_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_0 == 1 && T_BOUND_NUM_READER_0 == 4 && T_STRIDE_NUM_READER_0 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_0_LOW, R0_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_0 + 0, R0_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_0 + 0, R0_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_0 + 1, R0_tb[1]);
+        write_csr(T_BOUND_BASE_READER_0 + 2, R0_tb[2]);
+        write_csr(T_BOUND_BASE_READER_0 + 3, R0_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_0 + 0, R0_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_0 + 1, R0_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_0 + 2, R0_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_0 + 3, R0_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_0, 0);
     }
 
     if (R1_en) {
-        write_csr(BASE_PTR_READER_1_LOW, R1_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_1; i++) csrw_ss(S_STRIDE_BASE_READER_1 + i, R1_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_1; i++) csrw_ss(T_BOUND_BASE_READER_1 + i, R1_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_1; i++) csrw_ss(T_STRIDE_BASE_READER_1 + i, R1_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_1 == 1 && T_BOUND_NUM_READER_1 == 4 && T_STRIDE_NUM_READER_1 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_1_LOW, R1_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_1 + 0, R1_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_1 + 0, R1_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_1 + 1, R1_tb[1]);
+        write_csr(T_BOUND_BASE_READER_1 + 2, R1_tb[2]);
+        write_csr(T_BOUND_BASE_READER_1 + 3, R1_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_1 + 0, R1_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_1 + 1, R1_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_1 + 2, R1_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_1 + 3, R1_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_1, 0);
     }
 
     if (R2_en) {
-        write_csr(BASE_PTR_READER_2_LOW, R2_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_2; i++) csrw_ss(S_STRIDE_BASE_READER_2 + i, R2_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_2; i++) csrw_ss(T_BOUND_BASE_READER_2 + i, R2_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_2; i++) csrw_ss(T_STRIDE_BASE_READER_2 + i, R2_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_2 == 1 && T_BOUND_NUM_READER_2 == 4 && T_STRIDE_NUM_READER_2 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_2_LOW, R2_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_2 + 0, R2_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_2 + 0, R2_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_2 + 1, R2_tb[1]);
+        write_csr(T_BOUND_BASE_READER_2 + 2, R2_tb[2]);
+        write_csr(T_BOUND_BASE_READER_2 + 3, R2_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_2 + 0, R2_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_2 + 1, R2_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_2 + 2, R2_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_2 + 3, R2_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_2, 0);
     }
 
     if (R3_en) {
-        write_csr(BASE_PTR_READER_3_LOW, R3_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_3; i++) csrw_ss(S_STRIDE_BASE_READER_3 + i, R3_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_3; i++) csrw_ss(T_BOUND_BASE_READER_3 + i, R3_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_3; i++) csrw_ss(T_STRIDE_BASE_READER_3 + i, R3_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_3 == 1 && T_BOUND_NUM_READER_3 == 4 && T_STRIDE_NUM_READER_3 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_3_LOW, R3_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_3 + 0, R3_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_3 + 0, R3_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_3 + 1, R3_tb[1]);
+        write_csr(T_BOUND_BASE_READER_3 + 2, R3_tb[2]);
+        write_csr(T_BOUND_BASE_READER_3 + 3, R3_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_3 + 0, R3_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_3 + 1, R3_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_3 + 2, R3_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_3 + 3, R3_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_3, 0);
     }
 
     if (R4_en) {
-        write_csr(BASE_PTR_READER_4_LOW, R4_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_4; i++) csrw_ss(S_STRIDE_BASE_READER_4 + i, R4_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_4; i++) csrw_ss(T_BOUND_BASE_READER_4 + i, R4_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_4; i++) csrw_ss(T_STRIDE_BASE_READER_4 + i, R4_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_4 == 1 && T_BOUND_NUM_READER_4 == 4 && T_STRIDE_NUM_READER_4 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_4_LOW, R4_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_4 + 0, R4_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_4 + 0, R4_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_4 + 1, R4_tb[1]);
+        write_csr(T_BOUND_BASE_READER_4 + 2, R4_tb[2]);
+        write_csr(T_BOUND_BASE_READER_4 + 3, R4_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_4 + 0, R4_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_4 + 1, R4_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_4 + 2, R4_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_4 + 3, R4_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_4, 0);
     }
 
     if (R5_en) {
-        write_csr(BASE_PTR_READER_5_LOW, R5_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_5; i++) csrw_ss(S_STRIDE_BASE_READER_5 + i, R5_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_5; i++) csrw_ss(T_BOUND_BASE_READER_5 + i, R5_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_5; i++) csrw_ss(T_STRIDE_BASE_READER_5 + i, R5_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_5 == 1 && T_BOUND_NUM_READER_5 == 4 && T_STRIDE_NUM_READER_5 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_5_LOW, R5_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_5 + 0, R5_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_5 + 0, R5_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_5 + 1, R5_tb[1]);
+        write_csr(T_BOUND_BASE_READER_5 + 2, R5_tb[2]);
+        write_csr(T_BOUND_BASE_READER_5 + 3, R5_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_5 + 0, R5_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_5 + 1, R5_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_5 + 2, R5_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_5 + 3, R5_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_5, 0);
     }
 
     if (R6_en) {
-        write_csr(BASE_PTR_READER_6_LOW, R6_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_6; i++) csrw_ss(S_STRIDE_BASE_READER_6 + i, R6_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_6; i++) csrw_ss(T_BOUND_BASE_READER_6 + i, R6_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_6; i++) csrw_ss(T_STRIDE_BASE_READER_6 + i, R6_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_6 == 1 && T_BOUND_NUM_READER_6 == 4 && T_STRIDE_NUM_READER_6 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_6_LOW, R6_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_6 + 0, R6_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_6 + 0, R6_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_6 + 1, R6_tb[1]);
+        write_csr(T_BOUND_BASE_READER_6 + 2, R6_tb[2]);
+        write_csr(T_BOUND_BASE_READER_6 + 3, R6_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_6 + 0, R6_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_6 + 1, R6_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_6 + 2, R6_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_6 + 3, R6_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_6, 0);
     }
 
     if (R7_en) {
-        write_csr(BASE_PTR_READER_7_LOW, R7_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_7; i++) csrw_ss(S_STRIDE_BASE_READER_7 + i, R7_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_7; i++) csrw_ss(T_BOUND_BASE_READER_7 + i, R7_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_7; i++) csrw_ss(T_STRIDE_BASE_READER_7 + i, R7_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_7_LOW, R7_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_7 + 0, R7_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_7 + 0, R7_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_7 + 1, R7_tb[1]);
+        write_csr(T_BOUND_BASE_READER_7 + 2, R7_tb[2]);
+        write_csr(T_BOUND_BASE_READER_7 + 3, R7_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_7 + 0, R7_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_7 + 1, R7_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_7 + 2, R7_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_7 + 3, R7_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_7, 0);
     }
 
     if (R8_en) {
-        write_csr(BASE_PTR_READER_8_LOW, R8_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_8; i++) csrw_ss(S_STRIDE_BASE_READER_8 + i, R8_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_8; i++) csrw_ss(T_BOUND_BASE_READER_8 + i, R8_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_8; i++) csrw_ss(T_STRIDE_BASE_READER_8 + i, R8_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_8 == 1 && T_BOUND_NUM_READER_8 == 4 && T_STRIDE_NUM_READER_8 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_8_LOW, R8_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_8 + 0, R8_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_8 + 0, R8_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_8 + 1, R8_tb[1]);
+        write_csr(T_BOUND_BASE_READER_8 + 2, R8_tb[2]);
+        write_csr(T_BOUND_BASE_READER_8 + 3, R8_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_8 + 0, R8_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_8 + 1, R8_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_8 + 2, R8_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_8 + 3, R8_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_8, 0);
     }
 
     if (R9_en) {
-        write_csr(BASE_PTR_READER_9_LOW, R9_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_9; i++) csrw_ss(S_STRIDE_BASE_READER_9 + i, R9_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_9; i++) csrw_ss(T_BOUND_BASE_READER_9 + i, R9_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_9; i++) csrw_ss(T_STRIDE_BASE_READER_9 + i, R9_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_9 == 1 && T_BOUND_NUM_READER_9 == 4 && T_STRIDE_NUM_READER_9 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_9_LOW, R9_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_9 + 0, R9_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_9 + 0, R9_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_9 + 1, R9_tb[1]);
+        write_csr(T_BOUND_BASE_READER_9 + 2, R9_tb[2]);
+        write_csr(T_BOUND_BASE_READER_9 + 3, R9_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_9 + 0, R9_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_9 + 1, R9_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_9 + 2, R9_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_9 + 3, R9_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_9, 0);
     }
 
     if (R10_en) {
-        write_csr(BASE_PTR_READER_10_LOW, R10_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_10; i++) csrw_ss(S_STRIDE_BASE_READER_10 + i, R10_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_10; i++) csrw_ss(T_BOUND_BASE_READER_10 + i, R10_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_10; i++) csrw_ss(T_STRIDE_BASE_READER_10 + i, R10_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_10 == 1 && T_BOUND_NUM_READER_10 == 4 && T_STRIDE_NUM_READER_10 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_10_LOW, R10_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_10 + 0, R10_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_10 + 0, R10_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_10 + 1, R10_tb[1]);
+        write_csr(T_BOUND_BASE_READER_10 + 2, R10_tb[2]);
+        write_csr(T_BOUND_BASE_READER_10 + 3, R10_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_10 + 0, R10_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_10 + 1, R10_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_10 + 2, R10_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_10 + 3, R10_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_10, 0);
     }
 
     if (R11_en) {
-        write_csr(BASE_PTR_READER_11_LOW, R11_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_11; i++) csrw_ss(S_STRIDE_BASE_READER_11 + i, R11_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_11; i++) csrw_ss(T_BOUND_BASE_READER_11 + i, R11_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_11; i++) csrw_ss(T_STRIDE_BASE_READER_11 + i, R11_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_11 == 1 && T_BOUND_NUM_READER_11 == 4 && T_STRIDE_NUM_READER_11 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_11_LOW, R11_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_11 + 0, R11_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_11 + 0, R11_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_11 + 1, R11_tb[1]);
+        write_csr(T_BOUND_BASE_READER_11 + 2, R11_tb[2]);
+        write_csr(T_BOUND_BASE_READER_11 + 3, R11_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_11 + 0, R11_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_11 + 1, R11_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_11 + 2, R11_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_11 + 3, R11_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_11, 0);
     }
 
     if (R12_en) {
-        write_csr(BASE_PTR_READER_12_LOW, R12_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_12; i++) csrw_ss(S_STRIDE_BASE_READER_12 + i, R12_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_12; i++) csrw_ss(T_BOUND_BASE_READER_12 + i, R12_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_12; i++) csrw_ss(T_STRIDE_BASE_READER_12 + i, R12_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_12 == 1 && T_BOUND_NUM_READER_12 == 4 && T_STRIDE_NUM_READER_12 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_12_LOW, R12_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_12 + 0, R12_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_12 + 0, R12_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_12 + 1, R12_tb[1]);
+        write_csr(T_BOUND_BASE_READER_12 + 2, R12_tb[2]);
+        write_csr(T_BOUND_BASE_READER_12 + 3, R12_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_12 + 0, R12_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_12 + 1, R12_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_12 + 2, R12_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_12 + 3, R12_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_12, 0);
     }
 
     if (R13_en) {
-        write_csr(BASE_PTR_READER_13_LOW, R13_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_READER_13; i++) csrw_ss(S_STRIDE_BASE_READER_13 + i, R13_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_READER_13; i++) csrw_ss(T_BOUND_BASE_READER_13 + i, R13_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_READER_13; i++) csrw_ss(T_STRIDE_BASE_READER_13 + i, R13_ts[i]);
+        _Static_assert(S_STRIDE_NUM_READER_13 == 1 && T_BOUND_NUM_READER_13 == 4 && T_STRIDE_NUM_READER_13 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_READER_13_LOW, R13_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_READER_13 + 0, R13_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_READER_13 + 0, R13_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_READER_13 + 1, R13_tb[1]);
+        write_csr(T_BOUND_BASE_READER_13 + 2, R13_tb[2]);
+        write_csr(T_BOUND_BASE_READER_13 + 3, R13_tb[3]);
+        write_csr(T_STRIDE_BASE_READER_13 + 0, R13_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_READER_13 + 1, R13_ts[1]);
+        write_csr(T_STRIDE_BASE_READER_13 + 2, R13_ts[2]);
+        write_csr(T_STRIDE_BASE_READER_13 + 3, R13_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_READER_13, 0);
     }
 
     if (W0_en) {
-        write_csr(BASE_PTR_WRITER_0_LOW, W0_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_WRITER_0; i++) csrw_ss(S_STRIDE_BASE_WRITER_0 + i, W0_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_WRITER_0; i++) csrw_ss(T_BOUND_BASE_WRITER_0 + i, W0_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_WRITER_0; i++) csrw_ss(T_STRIDE_BASE_WRITER_0 + i, W0_ts[i]);
+        _Static_assert(S_STRIDE_NUM_WRITER_0 == 1 && T_BOUND_NUM_WRITER_0 == 4 && T_STRIDE_NUM_WRITER_0 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_WRITER_0_LOW, W0_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_WRITER_0 + 0, W0_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_WRITER_0 + 0, W0_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_WRITER_0 + 1, W0_tb[1]);
+        write_csr(T_BOUND_BASE_WRITER_0 + 2, W0_tb[2]);
+        write_csr(T_BOUND_BASE_WRITER_0 + 3, W0_tb[3]);
+        write_csr(T_STRIDE_BASE_WRITER_0 + 0, W0_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_WRITER_0 + 1, W0_ts[1]);
+        write_csr(T_STRIDE_BASE_WRITER_0 + 2, W0_ts[2]);
+        write_csr(T_STRIDE_BASE_WRITER_0 + 3, W0_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_WRITER_0, 0);
     }
 
     if (W1_en) {
-        write_csr(BASE_PTR_WRITER_1_LOW, W1_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_WRITER_1; i++) csrw_ss(S_STRIDE_BASE_WRITER_1 + i, W1_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_WRITER_1; i++) csrw_ss(T_BOUND_BASE_WRITER_1 + i, W1_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_WRITER_1; i++) csrw_ss(T_STRIDE_BASE_WRITER_1 + i, W1_ts[i]);
+        _Static_assert(S_STRIDE_NUM_WRITER_1 == 1 && T_BOUND_NUM_WRITER_1 == 4 && T_STRIDE_NUM_WRITER_1 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_WRITER_1_LOW, W1_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_WRITER_1 + 0, W1_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_WRITER_1 + 0, W1_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_WRITER_1 + 1, W1_tb[1]);
+        write_csr(T_BOUND_BASE_WRITER_1 + 2, W1_tb[2]);
+        write_csr(T_BOUND_BASE_WRITER_1 + 3, W1_tb[3]);
+        write_csr(T_STRIDE_BASE_WRITER_1 + 0, W1_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_WRITER_1 + 1, W1_ts[1]);
+        write_csr(T_STRIDE_BASE_WRITER_1 + 2, W1_ts[2]);
+        write_csr(T_STRIDE_BASE_WRITER_1 + 3, W1_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_WRITER_1, 0);
     }
 
     if (W2_en) {
-        write_csr(BASE_PTR_WRITER_2_LOW, W2_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_WRITER_2; i++) csrw_ss(S_STRIDE_BASE_WRITER_2 + i, W2_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_WRITER_2; i++) csrw_ss(T_BOUND_BASE_WRITER_2 + i, W2_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_WRITER_2; i++) csrw_ss(T_STRIDE_BASE_WRITER_2 + i, W2_ts[i]);
+        _Static_assert(S_STRIDE_NUM_WRITER_2 == 1 && T_BOUND_NUM_WRITER_2 == 4 && T_STRIDE_NUM_WRITER_2 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_WRITER_2_LOW, W2_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_WRITER_2 + 0, W2_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_WRITER_2 + 0, W2_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_WRITER_2 + 1, W2_tb[1]);
+        write_csr(T_BOUND_BASE_WRITER_2 + 2, W2_tb[2]);
+        write_csr(T_BOUND_BASE_WRITER_2 + 3, W2_tb[3]);
+        write_csr(T_STRIDE_BASE_WRITER_2 + 0, W2_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_WRITER_2 + 1, W2_ts[1]);
+        write_csr(T_STRIDE_BASE_WRITER_2 + 2, W2_ts[2]);
+        write_csr(T_STRIDE_BASE_WRITER_2 + 3, W2_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_WRITER_2, 0);
     }
 
     if (W3_en) {
-        write_csr(BASE_PTR_WRITER_3_LOW, W3_ptr);
-        for (int i = 0; i < S_STRIDE_NUM_WRITER_3; i++) csrw_ss(S_STRIDE_BASE_WRITER_3 + i, W3_ss[i]);
-        for (int i = 0; i < T_BOUND_NUM_WRITER_3; i++) csrw_ss(T_BOUND_BASE_WRITER_3 + i, W3_tb[i]);
-        for (int i = 0; i < T_STRIDE_NUM_WRITER_3; i++) csrw_ss(T_STRIDE_BASE_WRITER_3 + i, W3_ts[i]);
+        _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+                       "loop unroll mismatch");
+        write_csr(BASE_PTR_WRITER_3_LOW, W3_ptr);         // Base ptr
+        write_csr(S_STRIDE_BASE_WRITER_3 + 0, W3_ss[0]);  // Spatial stride
+        write_csr(T_BOUND_BASE_WRITER_3 + 0, W3_tb[0]);   // Temporal bound
+        write_csr(T_BOUND_BASE_WRITER_3 + 1, W3_tb[1]);
+        write_csr(T_BOUND_BASE_WRITER_3 + 2, W3_tb[2]);
+        write_csr(T_BOUND_BASE_WRITER_3 + 3, W3_tb[3]);
+        write_csr(T_STRIDE_BASE_WRITER_3 + 0, W3_ts[0]);  // Temporal stride
+        write_csr(T_STRIDE_BASE_WRITER_3 + 1, W3_ts[1]);
+        write_csr(T_STRIDE_BASE_WRITER_3 + 2, W3_ts[2]);
+        write_csr(T_STRIDE_BASE_WRITER_3 + 3, W3_ts[3]);
     } else {
         write_csr(T_BOUND_BASE_WRITER_3, 0);
     }
@@ -335,27 +609,37 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
     if (R10_en) {
         while (read_csr(R10_DELAY_GAUGE) < R10_start_cnt);
         write_csr(DELAYED_START_READER_10, 1);
-        printf("Streamer R10 can start\n");
+#ifdef VERBOSE
+        printf("[%d cc] Streamer R10 can start\n", get_cycle_count());
+#endif
     }
 
     if (R11_en) {
         while (read_csr(R11_DELAY_GAUGE) < R11_start_cnt);
         write_csr(DELAYED_START_READER_11, 1);
-        printf("Streamer R11 can start\n");
+#ifdef VERBOSE
+        printf("[%d cc] Streamer R11 can start\n", get_cycle_count());
+#endif
     }
 }
 
 // Stall until Streamer and GEMM accelerator finish
 void wait_simbacore_and_streamer() {
-    printf("Waiting for SimbaCore to finish...\n");
+#ifdef VERBOSE
+    printf("[%d cc] Waiting for SimbaCore to finish...\n", get_cycle_count());
+#endif
     write_csr(STREAMER_START_CSR, 0);
     write_csr(SIMBACORE_START, 0);
     write_csr(DELAYED_START_READER_10, 0);
     write_csr(DELAYED_START_READER_11, 0);
     while (read_csr(SIMBACORE_BUSY));  // 1185 = 0x4a1
-    printf("SimbaCore has finished. Waiting for Streamers...\n");
+#ifdef VERBOSE
+    printf("[%d cc] SimbaCore has finished. Waiting for Streamers...\n", get_cycle_count());
+#endif
     while (read_csr(STREAMER_BUSY_CSR));  // 1177 = 0x499
-    printf("Streamers and SimbaCore have finished\n");
+#ifdef VERBOSE
+    printf("[%d cc] Streamers and SimbaCore have finished\n", get_cycle_count());
+#endif
 }
 
 // Read performance counter of the Streamer, a read-only CSR
@@ -430,4 +714,11 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
         }
     }
     return err;
+}
+
+// Initialize cycle counter (call once at program start)
+void init_cycle_counter(void) {
+    // Reset and start the cycle counter
+    snrt_reset_perf_counter(SNRT_PERF_CNT0);
+    snrt_start_perf_counter(SNRT_PERF_CNT0, SNRT_PERF_CNT_CYCLES, 0);
 }

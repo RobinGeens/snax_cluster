@@ -11,7 +11,9 @@
 
 #pragma once
 
-// SimbaCore CSR: 5
+// #define VERBOSE
+
+// SimbaCore CSR
 #define SIMBACORE_CSR_ADDR_BASE (STREAMER_PERFORMANCE_COUNTER_CSR + 1)
 #define MODE (SIMBACORE_CSR_ADDR_BASE + 0)
 #define SEQ_LEN (SIMBACORE_CSR_ADDR_BASE + 1)
@@ -59,8 +61,12 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
                            uint32_t B_ptr, int32_t* B_ss, int32_t* B_tb, int32_t* B_ts,  //
                            uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts);
 
+void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t* A_ts,  //
+                            uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts);
+
 // Only stets the mode: rest is not used for SIMD
-static inline void set_simbacore_simd_csr(uint32_t mode) { write_csr(MODE, mode); }
+static inline void set_simbacore_simd_mode(uint32_t mode) { write_csr(MODE, mode); }
+static inline void set_simbacore_simd_n_acc(uint32_t n_acc) { write_csr(D_MODEL, n_acc); }
 
 // Set GEMM configuration CSR. dFinal is the IScore output dimension (either xProjDim or dModel)
 void set_simbacore_csr(uint32_t mode, uint32_t seqLen, uint32_t dModel, uint32_t dInner, uint32_t dtRank,
@@ -86,3 +92,9 @@ uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* s
                              int32_t test_sample_count, const char* tensor_name);
 uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
                                  int32_t test_sample_count, const char* tensor_name);
+
+// Initialize cycle counter (call once at program start)
+void init_cycle_counter(void);
+
+// Get current cycle count
+static inline uint32_t get_cycle_count(void) { return snrt_get_perf_counter(SNRT_PERF_CNT0); }

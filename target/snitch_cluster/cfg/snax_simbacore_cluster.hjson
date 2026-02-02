@@ -158,7 +158,7 @@ Naming convention:
       spatial_bounds:       [[2], [4], [1], [1], [1], [1], [1], [4], [1], [1], [1], [1], [4], [4]],
       temporal_dim:         [ 4,   4,   4,   4,   4,   4,   4,   4,   4,   4,   4,   4,   4,   4 ],
       num_channel:          [ 2,   4,   1,   1,   1,   1,   1,   4,   1,   1,   1,   1,   4,   4 ], 
-      fifo_depth:           [ 9,   9,   9,   9,   9,   9,   9,   9,   9,   9,   9,   9,   9,   9 ],
+      fifo_depth:           [ 8,   3,   8,   1,   6,   3,   2,   4,   1,   6,   7,   2,   6,   4 ],
       configurable_channel: [ 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 ],
       delayed_start:        [ 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   0,   0 ]
     },
@@ -166,7 +166,7 @@ Naming convention:
       spatial_bounds:       [[1], [1], [1], [4]],
       temporal_dim:         [ 4,   4,   4,   4 ],
       num_channel:          [ 1,   1,   1,   4 ],
-      fifo_depth:           [ 9,   9,   9,   9 ],
+      fifo_depth:           [ 4,   8,   3,   4 ],
       configurable_channel: [ 0,   0,   0,   0 ],
       delayed_start:        [ 0,   0,   0,   0 ]
     },

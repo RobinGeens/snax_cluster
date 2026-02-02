@@ -43,7 +43,7 @@ include $(ROOT)/target/common/common.mk
 # Programs #
 ############
 
-REGGEN          ?= $(shell $(BENDER) path register_interface)/vendor/lowrisc_opentitan/util/regtool.py
+REGGEN          ?= $(shell if [ -f "$(ROOT)/Bender.lock" ]; then echo "$$($(BENDER) path register_interface 2>/dev/null)/vendor/lowrisc_opentitan/util/regtool.py"; else echo "/vendor/lowrisc_opentitan/util/regtool.py"; fi)
 CLUSTER_GEN     ?= $(ROOT)/util/clustergen.py
 CLUSTER_GEN_SRC ?= $(wildcard $(ROOT)/util/clustergen/*.py)
 WRAPPER_GEN     ?= $(ROOT)/util/snaxgen/snaxgen.py
@@ -81,10 +81,10 @@ SNAX_CHISEL_FILES ?= $(shell find $(ROOT)/hw/chisel/src -type f -name '*.scala' 
 RTL_GEN_STAMP := $(GENERATED_DIR)/.rtl_gen.stamp
 
 # Adds targets from the generated bender target file
-VSIM_BENDER := $(VSIM_BENDER) $(shell cat $(GENERATED_DIR)/bender_targets.tmp)
-VLT_BENDER  := $(VLT_BENDER)  $(shell cat $(GENERATED_DIR)/bender_targets.tmp)
-VCS_BENDER  := $(VCS_BENDER)  $(shell cat $(GENERATED_DIR)/bender_targets.tmp)
-SYN_BENDER  := $(SYN_BENDER)  $(shell cat $(GENERATED_DIR)/bender_targets.tmp)
+VSIM_BENDER := $(VSIM_BENDER) $(shell [ -f $(GENERATED_DIR)/bender_targets.tmp ] && cat $(GENERATED_DIR)/bender_targets.tmp || true)
+VLT_BENDER  := $(VLT_BENDER)  $(shell [ -f $(GENERATED_DIR)/bender_targets.tmp ] && cat $(GENERATED_DIR)/bender_targets.tmp || true)
+VCS_BENDER  := $(VCS_BENDER)  $(shell [ -f $(GENERATED_DIR)/bender_targets.tmp ] && cat $(GENERATED_DIR)/bender_targets.tmp || true)
+SYN_BENDER  := $(SYN_BENDER)  $(shell [ -f $(GENERATED_DIR)/bender_targets.tmp ] && cat $(GENERATED_DIR)/bender_targets.tmp || true)
 
 # List manual conditions for different configurations
 
@@ -437,7 +437,7 @@ clean-work:
 	rm -rf work
 
 clean-bender:
-	rm -rf $(ROOT)/Bender.lock $(ROOT)/.bender/
+	- rm -rf $(ROOT)/Bender.lock $(ROOT)/.bender/
 
 clean-logs:
 	rm -rf $(LOGS_DIR)

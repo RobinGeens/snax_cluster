@@ -69,27 +69,22 @@ typedef struct {
     volatile perf_reg32_t perf_counter[SNRT_PERF_N_CNT];
 } perf_regs_t;
 
-inline perf_regs_t* snrt_perf_counters() {
-    return (perf_regs_t*)snrt_cluster_perf_counters_addr();
-}
+inline perf_regs_t* snrt_perf_counters() { return (perf_regs_t*)snrt_cluster_perf_counters_addr(); }
 
 // Enable a specific perf_counter
-inline void snrt_start_perf_counter(enum snrt_perf_cnt perf_cnt,
-                                    enum snrt_perf_cnt_type perf_cnt_type,
+inline void snrt_start_perf_counter(enum snrt_perf_cnt perf_cnt, enum snrt_perf_cnt_type perf_cnt_type,
                                     uint32_t hart_id) {
     snrt_perf_counters()->hart_select[perf_cnt].value |= hart_id;
     snrt_perf_counters()->enable[perf_cnt].value = (0x1 << perf_cnt_type);
 }
 
 // Stops the counter but does not reset it
-inline void snrt_stop_perf_counter(enum snrt_perf_cnt perf_cnt) {
-    snrt_perf_counters()->enable[perf_cnt].value = 0x0;
-}
+inline void snrt_stop_perf_counter(enum snrt_perf_cnt perf_cnt) { snrt_perf_counters()->enable[perf_cnt].value = 0x0; }
 
 // Resets the counter completely
 inline void snrt_reset_perf_counter(enum snrt_perf_cnt perf_cnt) {
-    snrt_perf_counters()->enable[perf_cnt].value = 0x0;
-    snrt_perf_counters()->hart_select[perf_cnt].value = 0x0;
+    snrt_perf_counters()->enable[perf_cnt].value       = 0x0;
+    snrt_perf_counters()->hart_select[perf_cnt].value  = 0x0;
     snrt_perf_counters()->perf_counter[perf_cnt].value = 0x0;
 }
 

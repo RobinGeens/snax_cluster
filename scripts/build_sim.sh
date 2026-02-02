@@ -1,17 +1,25 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Bundle makefile commands to build RTL, software and simulator.
 # Supports running in and outside of the SNAX container.
 
 
-set -e
+set -euo pipefail
 
 
+CONTAINER_CMD="podman run --rm -i -v \"$(pwd)\":\"$(pwd)\" -w \"$(pwd)\" ghcr.io/kuleuven-micas/snax:main bash -s"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
+
+eval "${CONTAINER_CMD}" <<'IN_CONTAINER'
+set -e
+cd target/snitch_cluster
+make clean
+IN_CONTAINER
+
 bender update --fetch
 
-podman run --rm -i -v "$(pwd)":"$(pwd)" -w "$(pwd)" ghcr.io/kuleuven-micas/snax:main bash -s <<'IN_CONTAINER'
+eval "${CONTAINER_CMD}" <<'IN_CONTAINER'
 set -e
 cd target/snitch_cluster
 make CFG_OVERRIDE=cfg/snax_simbacore_cluster.hjson rtl-gen

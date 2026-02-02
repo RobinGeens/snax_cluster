@@ -19,6 +19,11 @@ int test_phase1() {
     uint8_t* ptr_iscore_weight = (uint8_t*)(tcdm_base_ptr + M1_addr_iscore_weight);
     uint16_t* ptr_iscore_out   = (uint16_t*)(tcdm_base_ptr + M1_addr_iscore_out);  // holds the psums
 
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
+
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_oscore_in, M1_oscore_in, M1_length_oscore_in);
@@ -36,6 +41,12 @@ int test_phase1() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: Phase1\n\n");
+        uint32_t start_cycles = get_cycle_count();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
+
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight,   //
                             (uint32_t)ptr_conv_weight, (uint32_t)ptr_conv_bias,     //
                             (uint32_t)ptr_iscore_weight, (uint32_t)ptr_iscore_out,  //
@@ -44,7 +55,9 @@ int test_phase1() {
         set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInner, dtRank, xProjDim);
         start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
         wait_simbacore_and_streamer();
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
+        uint32_t end_cycles = get_cycle_count();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_conv_out, M1_conv_out, M1_test_samples_conv_out,  //
                                    nb_test_samples, "conv_out");
@@ -53,8 +66,8 @@ int test_phase1() {
         err += check_result_sample((uint8_t*)ptr_iscore_out, M1_iscore_out, M1_test_samples_iscore_out,  //
                                    nb_test_samples, "iscore_out");
 
-        printf("Test Phase1: seqLen=%d, dModel=%d. %s: %u/%d errors.\n", seqLen, dModel, err ? "FAIL" : "PASS", err,
-               2 * nb_test_samples);
+        printf("Test Phase1: seqLen=%d, dModel=%d\n", seqLen, dModel);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 2 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();
@@ -71,8 +84,6 @@ int test_phase2() {
     uint8_t* ptr_z             = (uint8_t*)(tcdm_base_ptr + M2_addr_z);  // osCore out
     uint8_t* ptr_dt_in         = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_BC);
     uint8_t* ptr_BC            = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_BC + M2_dt_to_BC_offset);  //
-    // TODO test of dit hetzelfde is
-    // uint8_t* ptr_BC            = (void*)ptr_dt_in + M2_dt_to_BC_offset);  //
     uint8_t* ptr_dt_weight_1   = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_weight_1);
     uint8_t* ptr_dt_weight_2   = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_weight_2);
     uint8_t* ptr_dt_bias       = (uint8_t*)(tcdm_base_ptr + M2_addr_dt_bias);
@@ -82,6 +93,11 @@ int test_phase2() {
     uint8_t* ptr_y             = (uint8_t*)(tcdm_base_ptr + M2_addr_y);  // SUC out
     uint8_t* ptr_iscore_weight = (uint8_t*)(tcdm_base_ptr + M2_addr_iscore_weight);
     uint16_t* ptr_iscore_out   = (uint16_t*)(tcdm_base_ptr + M2_addr_iscore_out);
+
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
 
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
@@ -103,6 +119,12 @@ int test_phase2() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: Phase2\n\n");
+        uint32_t start_cycles = get_cycle_count();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
+
         set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight,                         //
                             (uint32_t)ptr_z, (uint32_t)ptr_dt_in,                                         //
                             (uint32_t)ptr_dt_weight_1, (uint32_t)ptr_dt_weight_2, (uint32_t)ptr_dt_bias,  //
@@ -112,7 +134,9 @@ int test_phase2() {
         set_simbacore_csr(M2_PHASE2, seqLen, dModel, dInner, dtRank, dModel);
         start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
         wait_simbacore_and_streamer();
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
+        uint32_t end_cycles = get_cycle_count();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_z, M2_oscore_expected, M2_test_samples_z,  //
                                    nb_test_samples, "z (osCore out)");
@@ -121,8 +145,8 @@ int test_phase2() {
         err += check_result_sample((uint8_t*)ptr_iscore_out, M2_iscore_expected,  //
                                    M2_test_samples_iscore_out, nb_test_samples, "iscore_out");
 
-        printf("Test Phase2: seqLen=%d, dModel=%d. %s: %u/%d errors.\n", seqLen, dModel, err ? "FAIL" : "PASS", err,
-               3 * nb_test_samples);
+        printf("Test Phase2: seqLen=%d, dModel=%d\n", seqLen, dModel);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 3 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();
@@ -135,13 +159,13 @@ int test_phase1_and_2() {
     // Allocation. Let's start by naively allocating space for each individual tensor.
     void* tcdm_base_ptr = snrt_l1_next();
     // Phase 1
-    uint8_t* ptr_oscore_in        = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_in);
-    uint8_t* ptr_oscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_weight);
+    uint8_t* ptr_oscore_in        = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_in);      // P1 & P2
+    uint8_t* ptr_oscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_weight);  // Can be tiled an overwritten
     uint8_t* ptr_conv_weight      = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_weight);
     uint8_t* ptr_conv_bias        = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_bias);
-    uint8_t* ptr_conv_out         = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_out);
-    uint8_t* ptr_iscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_iscore_weight);
-    uint16_t* ptr_iscore_out_P1   = (uint16_t*)(tcdm_base_ptr + M1_addr_iscore_out);  // holds the psums
+    uint8_t* ptr_conv_out         = (uint8_t*)(tcdm_base_ptr + M1_addr_conv_out);       // P1 & P2
+    uint8_t* ptr_iscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_iscore_weight);  // Can be tiled and overwritten
+    uint16_t* ptr_iscore_out_P1   = (uint16_t*)(tcdm_base_ptr + M1_addr_iscore_out);    // holds the psums
 
     // Phase 2
     void* phase2_base_ptr         = ((void*)ptr_iscore_out_P1 + M1_length_iscore_out);
@@ -159,6 +183,11 @@ int test_phase1_and_2() {
     uint8_t* ptr_iscore_weight_P2 = (uint8_t*)(phase2_base_ptr + M2_addr_iscore_weight);
     uint16_t* ptr_iscore_out_P2   = (uint16_t*)(phase2_base_ptr + M2_addr_iscore_out);
 
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
+
     // Transfer Phase1 data
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_oscore_in, M1_oscore_in, M1_length_oscore_in);
@@ -173,7 +202,15 @@ int test_phase1_and_2() {
 
     snrt_cluster_hw_barrier();
 
+    uint32_t start_cycles            = 0;
+    uint32_t simbacore_cycles_phase1 = 0;
     if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: Mamba main (Phase1 and Phase2)\n\n");
+        start_cycles = get_cycle_count();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
+
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1,      //
                             (uint32_t)ptr_conv_weight, (uint32_t)ptr_conv_bias,           //
                             (uint32_t)ptr_iscore_weight_P1, (uint32_t)ptr_iscore_out_P1,  //
@@ -182,13 +219,12 @@ int test_phase1_and_2() {
         set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInner, dtRank, xProjDim);
         start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
         wait_simbacore_and_streamer();
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
+        simbacore_cycles_phase1 = read_simbacore_perf_counter();
 
-        // err += check_result_sample(ptr_conv_out, M1_conv_out, M1_test_samples_conv_out,  //
-        //                            nb_test_samples, "conv_out");
-
-        // err += check_result_sample((uint8_t*)ptr_iscore_out_P1, M1_iscore_out, M1_test_samples_iscore_out,  //
-        //                            nb_test_samples, "iscore_out");
+#ifdef VERBOSE
+        uint32_t end_cycles_phase1 = get_cycle_count();
+        printf("[%d cc] SimbaCore Phase1 took %u cycles\n", end_cycles_phase1, simbacore_cycles_phase1);
+#endif
     }
 
     // Disable to transfer to L1 in parallel with Phase1 computation
@@ -210,6 +246,8 @@ int test_phase1_and_2() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
+        uint32_t start_cycles_phase2 = get_cycle_count();
+
         set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2,                      //
                             (uint32_t)ptr_z, (uint32_t)ptr_dt_in,                                         //
                             (uint32_t)ptr_dt_weight_1, (uint32_t)ptr_dt_weight_2, (uint32_t)ptr_dt_bias,  //
@@ -219,8 +257,13 @@ int test_phase1_and_2() {
         set_simbacore_csr(M2_PHASE2, seqLen, dModel, dInner, dtRank, dModel);
         start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
         wait_simbacore_and_streamer();
-        printf("SimbaCore took %u cycles\n", read_simbacore_perf_counter());
-        printf("Current CPU cycle count: %u\n", snrt_mcycle());
+
+        uint32_t simbacore_cycles_phase2 = read_simbacore_perf_counter();
+        uint32_t end_cycles              = get_cycle_count();
+        printf("[%d cc] Simbacore Phase1 took %u cycles\n", end_cycles, simbacore_cycles_phase1);
+        printf("[%d cc] Simbacore Phase2 took %u cycles\n", end_cycles, simbacore_cycles_phase2);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_phase2);
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_z, M2_oscore_expected, M2_test_samples_z,  //
                                    nb_test_samples, "z (osCore out)");
@@ -229,8 +272,8 @@ int test_phase1_and_2() {
         err += check_result_sample((uint8_t*)ptr_iscore_out_P2, M2_iscore_expected,  //
                                    M2_test_samples_iscore_out, nb_test_samples, "iscore_out");
 
-        printf("Test Phase2: seqLen=%d, dModel=%d. %s: %u/%d errors.\n", seqLen, dModel, err ? "FAIL" : "PASS", err,
-               5 * nb_test_samples);
+        printf("Test Phase1 and Phase2: seqLen=%d, dModel=%d\n", seqLen, dModel);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 5 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();

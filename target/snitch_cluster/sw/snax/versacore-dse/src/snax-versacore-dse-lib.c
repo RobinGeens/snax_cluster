@@ -15,21 +15,17 @@ int32_t gen_subtraction_config(int8_t subtraction_a, int8_t subtraction_b) {
     return ((uint8_t)subtraction_b << 8) | (uint8_t)subtraction_a;
 }
 
-void set_versacore_streamer_csr(
-    int32_t delta_local_a, int32_t* Aslstride, int32_t* Atlbound,
-    int32_t* Atlstride, int32_t set_addr_remap_index_A, int32_t transpose_A,
-    int32_t* channel_en_A,
+void set_versacore_streamer_csr(int32_t delta_local_a, int32_t* Aslstride, int32_t* Atlbound, int32_t* Atlstride,
+                                int32_t set_addr_remap_index_A, int32_t transpose_A, int32_t* channel_en_A,
 
-    int32_t delta_local_b, int32_t* Bslstride, int32_t* Btlbound,
-    int32_t* Btlstride, int32_t set_addr_remap_index_B, int32_t transpose_B,
-    int32_t* channel_en_B,
+                                int32_t delta_local_b, int32_t* Bslstride, int32_t* Btlbound, int32_t* Btlstride,
+                                int32_t set_addr_remap_index_B, int32_t transpose_B, int32_t* channel_en_B,
 
-    int32_t delta_local_c, int32_t* Cslstride, int32_t* Ctlbound,
-    int32_t* Ctlstride, int32_t set_addr_remap_index_C, int32_t* channel_en_C,
+                                int32_t delta_local_c, int32_t* Cslstride, int32_t* Ctlbound, int32_t* Ctlstride,
+                                int32_t set_addr_remap_index_C, int32_t* channel_en_C,
 
-    int32_t delta_local_d32, int32_t* D32slstride, int32_t* D32tlbound,
-    int32_t* D32tlstride, int32_t set_addr_remap_index_D32,
-    int32_t* channel_en_D) {
+                                int32_t delta_local_d32, int32_t* D32slstride, int32_t* D32tlbound,
+                                int32_t* D32tlstride, int32_t set_addr_remap_index_D32, int32_t* channel_en_D) {
 #ifdef SNAX_VERSACORE_OUTPUT_STATIONARY_ONLY
 
     // ----------------------------------A-----------------------------------
@@ -102,8 +98,7 @@ void set_versacore_streamer_csr(
     // ----------------------------------C-----------------------------------
     // ----------------------------------C-----------------------------------
     // base ptr for C
-    csrw_ss(BASE_PTR_READER_WRITER_0_LOW,
-            (uint32_t)(delta_local_c + snrt_l1_next()));
+    csrw_ss(BASE_PTR_READER_WRITER_0_LOW, (uint32_t)(delta_local_c + snrt_l1_next()));
 
     // spatial strides for C
     for (int i = 0; i < S_STRIDE_NUM_READER_WRITER_0; i++) {
@@ -136,8 +131,7 @@ void set_versacore_streamer_csr(
     // ----------------------------------D32-----------------------------------
     // ----------------------------------D32-----------------------------------
     // base ptr for D32
-    csrw_ss(BASE_PTR_READER_WRITER_1_LOW,
-            (uint32_t)(delta_local_d32 + snrt_l1_next()));
+    csrw_ss(BASE_PTR_READER_WRITER_1_LOW, (uint32_t)(delta_local_d32 + snrt_l1_next()));
 
     // spatial strides for D32
     for (int i = 0; i < S_STRIDE_NUM_READER_WRITER_1; i++) {
@@ -284,8 +278,7 @@ void set_versacore_streamer_csr(
     // ----------------------------------D32-----------------------------------
     // ----------------------------------D32-----------------------------------
     // base ptr for D32
-    csrw_ss(BASE_PTR_WRITER_0_LOW,
-            (uint32_t)(delta_local_d32 + snrt_l1_next()));
+    csrw_ss(BASE_PTR_WRITER_0_LOW, (uint32_t)(delta_local_d32 + snrt_l1_next()));
 
     // spatial strides for D32
     for (int i = 0; i < S_STRIDE_NUM_WRITER_0; i++) {
@@ -332,10 +325,8 @@ void set_versacore_streamer_csr(
 }
 
 // Set GEMM configuration CSR
-void set_versacore_csr(uint32_t take_in_new_c,
-                       uint32_t a_b_input_times_one_output,
-                       uint32_t output_times, uint32_t subtractions,
-                       uint32_t array_shape, uint32_t data_type) {
+void set_versacore_csr(uint32_t take_in_new_c, uint32_t a_b_input_times_one_output, uint32_t output_times,
+                       uint32_t subtractions, uint32_t array_shape, uint32_t data_type) {
     // set loop bounds, from innermost to outermost, aka from K to N to M
     csrw_ss(OVERWRITE_ACCUM, take_in_new_c);
     csrw_ss(ACCUM_BOUND, a_b_input_times_one_output);
@@ -380,16 +371,14 @@ uint32_t read_versacore_perf_counter() {
     return perf_counter;
 }
 
-uint32_t check_versacore_result_D32(int8_t* output, int8_t* output_golden,
-                                    int32_t data_length,
+uint32_t check_versacore_result_D32(int8_t* output, int8_t* output_golden, int32_t data_length,
                                     bool banked_data_layout) {
     uint32_t err = 0;
 
     if (banked_data_layout) {
         for (int i = 0; i < data_length / 16; i += 1) {
             for (int j = 0; j < 16; j++) {
-                if (*(output + i * (256 / 4) + j) !=
-                    output_golden[i * 16 + j]) {
+                if (*(output + i * (256 / 4) + j) != output_golden[i * 16 + j]) {
                     err++;
                 }
             }
@@ -398,8 +387,7 @@ uint32_t check_versacore_result_D32(int8_t* output, int8_t* output_golden,
         for (int i = 0; i < data_length; i++) {
             if (output[i] != output_golden[i]) {
                 err++;
-                printf("Unequals. output[%d] = %d, output_golden[%d] = %d\n", i,
-                       output[i], i, output_golden[i]);
+                printf("Unequals. output[%d] = %d, output_golden[%d] = %d\n", i, output[i], i, output_golden[i]);
             }
         }
     }

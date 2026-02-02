@@ -13,7 +13,7 @@ module snax_simbacore_streamer_wrapper #(
   // Parameters related to TCDM
   parameter int unsigned TCDMDataWidth = 64,
   parameter int unsigned TCDMNumPorts  = 34,
-  parameter int unsigned TCDMAddrWidth = 20
+  parameter int unsigned TCDMAddrWidth = 19
 )(
   //-----------------------------
   // Clocks and reset
@@ -130,6 +130,7 @@ module snax_simbacore_streamer_wrapper #(
   logic [TCDMNumPorts-1:0][                3:0] tcdm_req_amo;
   logic [TCDMNumPorts-1:0][  TCDMDataWidth-1:0] tcdm_req_data;
   logic [TCDMNumPorts-1:0][TCDMDataWidth/8-1:0] tcdm_req_strb;
+  logic [TCDMNumPorts-1:0]                      tcdm_req_priority;
   //Note that tcdm_req_user_core_id_i is 5 bits based on Snitch definition
   logic [TCDMNumPorts-1:0][                4:0] tcdm_req_user_core_id;
   logic [TCDMNumPorts-1:0]                      tcdm_req_user_is_core;
@@ -160,7 +161,7 @@ module snax_simbacore_streamer_wrapper #(
       tcdm_req_o[i].q.strb         = tcdm_req_strb   [i];
       tcdm_req_o[i].q.user.core_id = '0;
       tcdm_req_o[i].q.user.is_core = '0;
-      tcdm_req_o[i].q.user.tcdm_priority = '0;
+      tcdm_req_o[i].q.user.tcdm_priority = tcdm_req_priority [i];
       tcdm_req_o[i].q_valid        = tcdm_req_q_valid[i];
 
       tcdm_rsp_q_ready[i] = tcdm_rsp_i[i].q_ready;
@@ -168,11 +169,11 @@ module snax_simbacore_streamer_wrapper #(
       tcdm_rsp_data   [i] = tcdm_rsp_i[i].p.data ;
     end
   end
-  
+
 
   // Streamer module that is generated
   // with template mechanics
-  snax_simbacore_Streamer i_snax_simbacore_streamer_top (	
+  snax_simbacore_Streamer i_snax_simbacore_streamer_top (
     //-----------------------------
     // Clocks and reset
     //-----------------------------
@@ -403,204 +404,238 @@ module snax_simbacore_streamer_wrapper #(
     .io_data_tcdm_req_0_bits_write ( tcdm_req_write  [0] ),
     .io_data_tcdm_req_0_bits_data  ( tcdm_req_data   [0] ),
     .io_data_tcdm_req_0_bits_strb  ( tcdm_req_strb   [0] ),
+    .io_data_tcdm_req_0_bits_priority  ( tcdm_req_priority   [0] ),
 
     .io_data_tcdm_req_1_valid      ( tcdm_req_q_valid[1] ),
     .io_data_tcdm_req_1_bits_addr  ( tcdm_req_addr   [1] ),
     .io_data_tcdm_req_1_bits_write ( tcdm_req_write  [1] ),
     .io_data_tcdm_req_1_bits_data  ( tcdm_req_data   [1] ),
     .io_data_tcdm_req_1_bits_strb  ( tcdm_req_strb   [1] ),
+    .io_data_tcdm_req_1_bits_priority  ( tcdm_req_priority   [1] ),
 
     .io_data_tcdm_req_2_valid      ( tcdm_req_q_valid[2] ),
     .io_data_tcdm_req_2_bits_addr  ( tcdm_req_addr   [2] ),
     .io_data_tcdm_req_2_bits_write ( tcdm_req_write  [2] ),
     .io_data_tcdm_req_2_bits_data  ( tcdm_req_data   [2] ),
     .io_data_tcdm_req_2_bits_strb  ( tcdm_req_strb   [2] ),
+    .io_data_tcdm_req_2_bits_priority  ( tcdm_req_priority   [2] ),
 
     .io_data_tcdm_req_3_valid      ( tcdm_req_q_valid[3] ),
     .io_data_tcdm_req_3_bits_addr  ( tcdm_req_addr   [3] ),
     .io_data_tcdm_req_3_bits_write ( tcdm_req_write  [3] ),
     .io_data_tcdm_req_3_bits_data  ( tcdm_req_data   [3] ),
     .io_data_tcdm_req_3_bits_strb  ( tcdm_req_strb   [3] ),
+    .io_data_tcdm_req_3_bits_priority  ( tcdm_req_priority   [3] ),
 
     .io_data_tcdm_req_4_valid      ( tcdm_req_q_valid[4] ),
     .io_data_tcdm_req_4_bits_addr  ( tcdm_req_addr   [4] ),
     .io_data_tcdm_req_4_bits_write ( tcdm_req_write  [4] ),
     .io_data_tcdm_req_4_bits_data  ( tcdm_req_data   [4] ),
     .io_data_tcdm_req_4_bits_strb  ( tcdm_req_strb   [4] ),
+    .io_data_tcdm_req_4_bits_priority  ( tcdm_req_priority   [4] ),
 
     .io_data_tcdm_req_5_valid      ( tcdm_req_q_valid[5] ),
     .io_data_tcdm_req_5_bits_addr  ( tcdm_req_addr   [5] ),
     .io_data_tcdm_req_5_bits_write ( tcdm_req_write  [5] ),
     .io_data_tcdm_req_5_bits_data  ( tcdm_req_data   [5] ),
     .io_data_tcdm_req_5_bits_strb  ( tcdm_req_strb   [5] ),
+    .io_data_tcdm_req_5_bits_priority  ( tcdm_req_priority   [5] ),
 
     .io_data_tcdm_req_6_valid      ( tcdm_req_q_valid[6] ),
     .io_data_tcdm_req_6_bits_addr  ( tcdm_req_addr   [6] ),
     .io_data_tcdm_req_6_bits_write ( tcdm_req_write  [6] ),
     .io_data_tcdm_req_6_bits_data  ( tcdm_req_data   [6] ),
     .io_data_tcdm_req_6_bits_strb  ( tcdm_req_strb   [6] ),
+    .io_data_tcdm_req_6_bits_priority  ( tcdm_req_priority   [6] ),
 
     .io_data_tcdm_req_7_valid      ( tcdm_req_q_valid[7] ),
     .io_data_tcdm_req_7_bits_addr  ( tcdm_req_addr   [7] ),
     .io_data_tcdm_req_7_bits_write ( tcdm_req_write  [7] ),
     .io_data_tcdm_req_7_bits_data  ( tcdm_req_data   [7] ),
     .io_data_tcdm_req_7_bits_strb  ( tcdm_req_strb   [7] ),
+    .io_data_tcdm_req_7_bits_priority  ( tcdm_req_priority   [7] ),
 
     .io_data_tcdm_req_8_valid      ( tcdm_req_q_valid[8] ),
     .io_data_tcdm_req_8_bits_addr  ( tcdm_req_addr   [8] ),
     .io_data_tcdm_req_8_bits_write ( tcdm_req_write  [8] ),
     .io_data_tcdm_req_8_bits_data  ( tcdm_req_data   [8] ),
     .io_data_tcdm_req_8_bits_strb  ( tcdm_req_strb   [8] ),
+    .io_data_tcdm_req_8_bits_priority  ( tcdm_req_priority   [8] ),
 
     .io_data_tcdm_req_9_valid      ( tcdm_req_q_valid[9] ),
     .io_data_tcdm_req_9_bits_addr  ( tcdm_req_addr   [9] ),
     .io_data_tcdm_req_9_bits_write ( tcdm_req_write  [9] ),
     .io_data_tcdm_req_9_bits_data  ( tcdm_req_data   [9] ),
     .io_data_tcdm_req_9_bits_strb  ( tcdm_req_strb   [9] ),
+    .io_data_tcdm_req_9_bits_priority  ( tcdm_req_priority   [9] ),
 
     .io_data_tcdm_req_10_valid      ( tcdm_req_q_valid[10] ),
     .io_data_tcdm_req_10_bits_addr  ( tcdm_req_addr   [10] ),
     .io_data_tcdm_req_10_bits_write ( tcdm_req_write  [10] ),
     .io_data_tcdm_req_10_bits_data  ( tcdm_req_data   [10] ),
     .io_data_tcdm_req_10_bits_strb  ( tcdm_req_strb   [10] ),
+    .io_data_tcdm_req_10_bits_priority  ( tcdm_req_priority   [10] ),
 
     .io_data_tcdm_req_11_valid      ( tcdm_req_q_valid[11] ),
     .io_data_tcdm_req_11_bits_addr  ( tcdm_req_addr   [11] ),
     .io_data_tcdm_req_11_bits_write ( tcdm_req_write  [11] ),
     .io_data_tcdm_req_11_bits_data  ( tcdm_req_data   [11] ),
     .io_data_tcdm_req_11_bits_strb  ( tcdm_req_strb   [11] ),
+    .io_data_tcdm_req_11_bits_priority  ( tcdm_req_priority   [11] ),
 
     .io_data_tcdm_req_12_valid      ( tcdm_req_q_valid[12] ),
     .io_data_tcdm_req_12_bits_addr  ( tcdm_req_addr   [12] ),
     .io_data_tcdm_req_12_bits_write ( tcdm_req_write  [12] ),
     .io_data_tcdm_req_12_bits_data  ( tcdm_req_data   [12] ),
     .io_data_tcdm_req_12_bits_strb  ( tcdm_req_strb   [12] ),
+    .io_data_tcdm_req_12_bits_priority  ( tcdm_req_priority   [12] ),
 
     .io_data_tcdm_req_13_valid      ( tcdm_req_q_valid[13] ),
     .io_data_tcdm_req_13_bits_addr  ( tcdm_req_addr   [13] ),
     .io_data_tcdm_req_13_bits_write ( tcdm_req_write  [13] ),
     .io_data_tcdm_req_13_bits_data  ( tcdm_req_data   [13] ),
     .io_data_tcdm_req_13_bits_strb  ( tcdm_req_strb   [13] ),
+    .io_data_tcdm_req_13_bits_priority  ( tcdm_req_priority   [13] ),
 
     .io_data_tcdm_req_14_valid      ( tcdm_req_q_valid[14] ),
     .io_data_tcdm_req_14_bits_addr  ( tcdm_req_addr   [14] ),
     .io_data_tcdm_req_14_bits_write ( tcdm_req_write  [14] ),
     .io_data_tcdm_req_14_bits_data  ( tcdm_req_data   [14] ),
     .io_data_tcdm_req_14_bits_strb  ( tcdm_req_strb   [14] ),
+    .io_data_tcdm_req_14_bits_priority  ( tcdm_req_priority   [14] ),
 
     .io_data_tcdm_req_15_valid      ( tcdm_req_q_valid[15] ),
     .io_data_tcdm_req_15_bits_addr  ( tcdm_req_addr   [15] ),
     .io_data_tcdm_req_15_bits_write ( tcdm_req_write  [15] ),
     .io_data_tcdm_req_15_bits_data  ( tcdm_req_data   [15] ),
     .io_data_tcdm_req_15_bits_strb  ( tcdm_req_strb   [15] ),
+    .io_data_tcdm_req_15_bits_priority  ( tcdm_req_priority   [15] ),
 
     .io_data_tcdm_req_16_valid      ( tcdm_req_q_valid[16] ),
     .io_data_tcdm_req_16_bits_addr  ( tcdm_req_addr   [16] ),
     .io_data_tcdm_req_16_bits_write ( tcdm_req_write  [16] ),
     .io_data_tcdm_req_16_bits_data  ( tcdm_req_data   [16] ),
     .io_data_tcdm_req_16_bits_strb  ( tcdm_req_strb   [16] ),
+    .io_data_tcdm_req_16_bits_priority  ( tcdm_req_priority   [16] ),
 
     .io_data_tcdm_req_17_valid      ( tcdm_req_q_valid[17] ),
     .io_data_tcdm_req_17_bits_addr  ( tcdm_req_addr   [17] ),
     .io_data_tcdm_req_17_bits_write ( tcdm_req_write  [17] ),
     .io_data_tcdm_req_17_bits_data  ( tcdm_req_data   [17] ),
     .io_data_tcdm_req_17_bits_strb  ( tcdm_req_strb   [17] ),
+    .io_data_tcdm_req_17_bits_priority  ( tcdm_req_priority   [17] ),
 
     .io_data_tcdm_req_18_valid      ( tcdm_req_q_valid[18] ),
     .io_data_tcdm_req_18_bits_addr  ( tcdm_req_addr   [18] ),
     .io_data_tcdm_req_18_bits_write ( tcdm_req_write  [18] ),
     .io_data_tcdm_req_18_bits_data  ( tcdm_req_data   [18] ),
     .io_data_tcdm_req_18_bits_strb  ( tcdm_req_strb   [18] ),
+    .io_data_tcdm_req_18_bits_priority  ( tcdm_req_priority   [18] ),
 
     .io_data_tcdm_req_19_valid      ( tcdm_req_q_valid[19] ),
     .io_data_tcdm_req_19_bits_addr  ( tcdm_req_addr   [19] ),
     .io_data_tcdm_req_19_bits_write ( tcdm_req_write  [19] ),
     .io_data_tcdm_req_19_bits_data  ( tcdm_req_data   [19] ),
     .io_data_tcdm_req_19_bits_strb  ( tcdm_req_strb   [19] ),
+    .io_data_tcdm_req_19_bits_priority  ( tcdm_req_priority   [19] ),
 
     .io_data_tcdm_req_20_valid      ( tcdm_req_q_valid[20] ),
     .io_data_tcdm_req_20_bits_addr  ( tcdm_req_addr   [20] ),
     .io_data_tcdm_req_20_bits_write ( tcdm_req_write  [20] ),
     .io_data_tcdm_req_20_bits_data  ( tcdm_req_data   [20] ),
     .io_data_tcdm_req_20_bits_strb  ( tcdm_req_strb   [20] ),
+    .io_data_tcdm_req_20_bits_priority  ( tcdm_req_priority   [20] ),
 
     .io_data_tcdm_req_21_valid      ( tcdm_req_q_valid[21] ),
     .io_data_tcdm_req_21_bits_addr  ( tcdm_req_addr   [21] ),
     .io_data_tcdm_req_21_bits_write ( tcdm_req_write  [21] ),
     .io_data_tcdm_req_21_bits_data  ( tcdm_req_data   [21] ),
     .io_data_tcdm_req_21_bits_strb  ( tcdm_req_strb   [21] ),
+    .io_data_tcdm_req_21_bits_priority  ( tcdm_req_priority   [21] ),
 
     .io_data_tcdm_req_22_valid      ( tcdm_req_q_valid[22] ),
     .io_data_tcdm_req_22_bits_addr  ( tcdm_req_addr   [22] ),
     .io_data_tcdm_req_22_bits_write ( tcdm_req_write  [22] ),
     .io_data_tcdm_req_22_bits_data  ( tcdm_req_data   [22] ),
     .io_data_tcdm_req_22_bits_strb  ( tcdm_req_strb   [22] ),
+    .io_data_tcdm_req_22_bits_priority  ( tcdm_req_priority   [22] ),
 
     .io_data_tcdm_req_23_valid      ( tcdm_req_q_valid[23] ),
     .io_data_tcdm_req_23_bits_addr  ( tcdm_req_addr   [23] ),
     .io_data_tcdm_req_23_bits_write ( tcdm_req_write  [23] ),
     .io_data_tcdm_req_23_bits_data  ( tcdm_req_data   [23] ),
     .io_data_tcdm_req_23_bits_strb  ( tcdm_req_strb   [23] ),
+    .io_data_tcdm_req_23_bits_priority  ( tcdm_req_priority   [23] ),
 
     .io_data_tcdm_req_24_valid      ( tcdm_req_q_valid[24] ),
     .io_data_tcdm_req_24_bits_addr  ( tcdm_req_addr   [24] ),
     .io_data_tcdm_req_24_bits_write ( tcdm_req_write  [24] ),
     .io_data_tcdm_req_24_bits_data  ( tcdm_req_data   [24] ),
     .io_data_tcdm_req_24_bits_strb  ( tcdm_req_strb   [24] ),
+    .io_data_tcdm_req_24_bits_priority  ( tcdm_req_priority   [24] ),
 
     .io_data_tcdm_req_25_valid      ( tcdm_req_q_valid[25] ),
     .io_data_tcdm_req_25_bits_addr  ( tcdm_req_addr   [25] ),
     .io_data_tcdm_req_25_bits_write ( tcdm_req_write  [25] ),
     .io_data_tcdm_req_25_bits_data  ( tcdm_req_data   [25] ),
     .io_data_tcdm_req_25_bits_strb  ( tcdm_req_strb   [25] ),
+    .io_data_tcdm_req_25_bits_priority  ( tcdm_req_priority   [25] ),
 
     .io_data_tcdm_req_26_valid      ( tcdm_req_q_valid[26] ),
     .io_data_tcdm_req_26_bits_addr  ( tcdm_req_addr   [26] ),
     .io_data_tcdm_req_26_bits_write ( tcdm_req_write  [26] ),
     .io_data_tcdm_req_26_bits_data  ( tcdm_req_data   [26] ),
     .io_data_tcdm_req_26_bits_strb  ( tcdm_req_strb   [26] ),
+    .io_data_tcdm_req_26_bits_priority  ( tcdm_req_priority   [26] ),
 
     .io_data_tcdm_req_27_valid      ( tcdm_req_q_valid[27] ),
     .io_data_tcdm_req_27_bits_addr  ( tcdm_req_addr   [27] ),
     .io_data_tcdm_req_27_bits_write ( tcdm_req_write  [27] ),
     .io_data_tcdm_req_27_bits_data  ( tcdm_req_data   [27] ),
     .io_data_tcdm_req_27_bits_strb  ( tcdm_req_strb   [27] ),
+    .io_data_tcdm_req_27_bits_priority  ( tcdm_req_priority   [27] ),
 
     .io_data_tcdm_req_28_valid      ( tcdm_req_q_valid[28] ),
     .io_data_tcdm_req_28_bits_addr  ( tcdm_req_addr   [28] ),
     .io_data_tcdm_req_28_bits_write ( tcdm_req_write  [28] ),
     .io_data_tcdm_req_28_bits_data  ( tcdm_req_data   [28] ),
     .io_data_tcdm_req_28_bits_strb  ( tcdm_req_strb   [28] ),
+    .io_data_tcdm_req_28_bits_priority  ( tcdm_req_priority   [28] ),
 
     .io_data_tcdm_req_29_valid      ( tcdm_req_q_valid[29] ),
     .io_data_tcdm_req_29_bits_addr  ( tcdm_req_addr   [29] ),
     .io_data_tcdm_req_29_bits_write ( tcdm_req_write  [29] ),
     .io_data_tcdm_req_29_bits_data  ( tcdm_req_data   [29] ),
     .io_data_tcdm_req_29_bits_strb  ( tcdm_req_strb   [29] ),
+    .io_data_tcdm_req_29_bits_priority  ( tcdm_req_priority   [29] ),
 
     .io_data_tcdm_req_30_valid      ( tcdm_req_q_valid[30] ),
     .io_data_tcdm_req_30_bits_addr  ( tcdm_req_addr   [30] ),
     .io_data_tcdm_req_30_bits_write ( tcdm_req_write  [30] ),
     .io_data_tcdm_req_30_bits_data  ( tcdm_req_data   [30] ),
     .io_data_tcdm_req_30_bits_strb  ( tcdm_req_strb   [30] ),
+    .io_data_tcdm_req_30_bits_priority  ( tcdm_req_priority   [30] ),
 
     .io_data_tcdm_req_31_valid      ( tcdm_req_q_valid[31] ),
     .io_data_tcdm_req_31_bits_addr  ( tcdm_req_addr   [31] ),
     .io_data_tcdm_req_31_bits_write ( tcdm_req_write  [31] ),
     .io_data_tcdm_req_31_bits_data  ( tcdm_req_data   [31] ),
     .io_data_tcdm_req_31_bits_strb  ( tcdm_req_strb   [31] ),
+    .io_data_tcdm_req_31_bits_priority  ( tcdm_req_priority   [31] ),
 
     .io_data_tcdm_req_32_valid      ( tcdm_req_q_valid[32] ),
     .io_data_tcdm_req_32_bits_addr  ( tcdm_req_addr   [32] ),
     .io_data_tcdm_req_32_bits_write ( tcdm_req_write  [32] ),
     .io_data_tcdm_req_32_bits_data  ( tcdm_req_data   [32] ),
     .io_data_tcdm_req_32_bits_strb  ( tcdm_req_strb   [32] ),
+    .io_data_tcdm_req_32_bits_priority  ( tcdm_req_priority   [32] ),
 
     .io_data_tcdm_req_33_valid      ( tcdm_req_q_valid[33] ),
     .io_data_tcdm_req_33_bits_addr  ( tcdm_req_addr   [33] ),
     .io_data_tcdm_req_33_bits_write ( tcdm_req_write  [33] ),
     .io_data_tcdm_req_33_bits_data  ( tcdm_req_data   [33] ),
     .io_data_tcdm_req_33_bits_strb  ( tcdm_req_strb   [33] ),
+    .io_data_tcdm_req_33_bits_priority  ( tcdm_req_priority   [33] ),
 
     //-----------------------------
     // CSR control ports
@@ -614,7 +649,7 @@ module snax_simbacore_streamer_wrapper #(
     .io_csr_req_ready      ( csr_req_ready_o      ),
 
     // Response
-    .io_csr_rsp_bits_data  ( csr_rsp_bits_data_o  ),	
+    .io_csr_rsp_bits_data  ( csr_rsp_bits_data_o  ),
     .io_csr_rsp_valid      ( csr_rsp_valid_o      ),
     .io_csr_rsp_ready      ( csr_rsp_ready_i      )
   );

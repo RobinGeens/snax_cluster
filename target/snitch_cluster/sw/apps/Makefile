@@ -31,20 +31,6 @@ ifeq ($(CFG_OVERRIDE), cfg/snax_multi_alu_cluster.hjson)
 SUBDIRS += snax-alu
 SUBDIRS += snax-multi-alu
 endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_KUL_dse_cluster_3D.hjson)
-SUBDIRS += snax-data-reshuffler
-SUBDIRS += snax-gemmx-matmul
-SUBDIRS += snax-gemmx-conv
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_KUL_dse_cluster_2D.hjson)
-SUBDIRS += snax-data-reshuffler
-SUBDIRS += snax-gemmx-matmul
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_KUL_dse_cluster_1D.hjson)
-SUBDIRS += snax-data-reshuffler
-SUBDIRS += snax-gemmx-matmul
-SUBDIRS += snax-gemmx-conv
-endif
 ifeq ($(CFG_OVERRIDE), cfg/snax_KUL_cluster.hjson)
 SUBDIRS += snax-xdma-memset
 SUBDIRS += snax-xdma-reshape-comparison
@@ -95,6 +81,8 @@ SUBDIRS += snax-simbacore-main
 SUBDIRS += snax-simbacore-osgemm
 SUBDIRS += snax-simbacore-isgemm
 SUBDIRS += snax-simbacore-simd
+SUBDIRS += snax-simbacore-fft
+SUBDIRS += snax-simbacore-rmsnorm
 SUBDIRS += snax-simbacore-main-full
 endif
 
