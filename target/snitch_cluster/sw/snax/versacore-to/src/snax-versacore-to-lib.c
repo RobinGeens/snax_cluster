@@ -4,20 +4,13 @@
 //
 // Xiaoling Yi <xiaoling.yi@esat.kuleuven.be>
 
-< < < < < < < < HEAD : target / snitch_cluster / sw / snax / versacore - dse / src / snax - versacore - dse - lib.c
-#include "snax-versacore-dse-lib.h"
-    == == == ==
 #include "snax-versacore-to-lib.h"
-    >>>>>>>> 6391813a(rename current versacore to versacore_to(#585))
-    : target / snitch_cluster / sw / snax / versacore
-                 - to / src / snax - versacore - to -
-                 lib.c
 #include <stdbool.h>
 #include "snrt.h"
 #include "stdint.h"
 #include "streamer_csr_addr_map.h"
 
-                 int32_t gen_subtraction_config(int8_t subtraction_a, int8_t subtraction_b) {
+int32_t gen_subtraction_config(int8_t subtraction_a, int8_t subtraction_b) {
     return ((uint8_t)subtraction_b << 8) | (uint8_t)subtraction_a;
 }
 
