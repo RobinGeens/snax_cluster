@@ -135,11 +135,7 @@ INCDIRS += $(ROOT)/target/snitch_cluster/sw/runtime/$(RUNTIME_DIR)/include
 ## Outputs #
 ############
 
-<<<<<<<< HEAD:target/snitch_cluster/sw/snax/simbacore/Makefile
-OBJS        = $(BUILDDIR)/snax-simbacore-lib.o
-========
 OBJS        = $(BUILDDIR)/snax-versacore-to-lib.o
->>>>>>>> 6391813a (rename current versacore to versacore_to (#585)):target/snitch_cluster/sw/snax/versacore-to/Makefile
 ALL_OUTPUTS = $(OBJS)
 
 

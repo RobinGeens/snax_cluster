@@ -88,7 +88,7 @@ class DataGenerator(DataGeneratorBase):
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint16_t" for name in ("x", "weight", "denom", "invRms", "normalized", "out")}}
+        test_data = {**{name: "uint16_t" for name in ("x", "weight", "out")}}
         tests = {"expected": L}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)

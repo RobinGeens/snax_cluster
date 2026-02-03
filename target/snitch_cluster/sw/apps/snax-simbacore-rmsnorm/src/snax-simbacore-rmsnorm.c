@@ -83,6 +83,7 @@ int test() {
         wait_simbacore_and_streamer();
 
         // 3. Compute sqrt(Σ(x^2)/D)
+        uint32_t start_div_cycles = snrt_mcycle();
         for (int i = 0; i < seqLen; i++) {
             float f = bf16_to_fp32(ptr_rms[i]);
             f       = sqrt(f);
@@ -90,6 +91,7 @@ int test() {
             // TODO this truncrates instead of "quantizing", which is a mismatch with datagen
             ptr_rms[i] = fp32_to_bf16(f);
         }
+        uint32_t end_div_cycles = snrt_mcycle();
 
         // 4. Multiply x by rms (inplace)
         set_simd_streamer_csr((uint32_t)ptr_x, M11_R7_x_ss, M11_R7_x_tb, M11_R7_x_ts,
@@ -113,6 +115,7 @@ int test() {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("[%d cc] Div/sqrt took %u cycles\n", end_div_cycles, end_div_cycles - start_div_cycles);
 
         err += check_result_sample_u16(ptr_x, M11_out, M11_test_samples_expected,  //
                                        nb_test_samples, "out");
