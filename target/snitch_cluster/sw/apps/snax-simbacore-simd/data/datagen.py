@@ -54,7 +54,7 @@ class DataGenerator(DataGeneratorBase):
 
         specs = [
             (tensor_name, dataLength * BF16 // 8)
-            for tensor_name in ("in_a", "in_b", "add_out", "sub_out", "mul_out", "cmul_out")
+            for tensor_name in ("in_a", "in_b", "add_out", "sub_out", "mul_out", "cmul_out", "div_out", "sqrt_out")
         ]
         specs += [(tensor_name, dataLength_reduce * BF16 // 8) for tensor_name in ("inprod_out", "rms_out")]
 
@@ -63,7 +63,18 @@ class DataGenerator(DataGeneratorBase):
         tests = {"out": dataLength, "out_reduce": dataLength_reduce}
         test_data = {
             name: "uint16_t"
-            for name in ("simd_a", "simd_b", "add_out", "sub_out", "mul_out", "cmul_out", "inprod_out", "rms_out")
+            for name in (
+                "simd_a",
+                "simd_b",
+                "add_out",
+                "sub_out",
+                "mul_out",
+                "cmul_out",
+                "inprod_out",
+                "rms_out",
+                "div_out",
+                "sqrt_out",
+            )
         }
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)

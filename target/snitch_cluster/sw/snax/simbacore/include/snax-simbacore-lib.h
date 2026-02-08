@@ -11,7 +11,7 @@
 
 #pragma once
 
-// #define VERBOSE
+#define VERBOSE
 
 // SimbaCore CSR
 #define SIMBACORE_CSR_ADDR_BASE (STREAMER_PERFORMANCE_COUNTER_CSR + 1)

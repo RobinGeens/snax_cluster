@@ -20,6 +20,8 @@ int test_simd() {
     uint16_t* ptr_out_cmul   = (uint16_t*)(tcdm_base_ptr + M6_addr_cmul_out);
     uint16_t* ptr_out_inprod = (uint16_t*)(tcdm_base_ptr + M6_addr_inprod_out);
     uint16_t* ptr_out_rms    = (uint16_t*)(tcdm_base_ptr + M6_addr_rms_out);
+    uint16_t* ptr_out_div    = (uint16_t*)(tcdm_base_ptr + M6_addr_div_out);
+    uint16_t* ptr_out_sqrt   = (uint16_t*)(tcdm_base_ptr + M6_addr_sqrt_out);
 
     // Initialize cycle counter for timing
     if (snrt_global_core_idx() == 0) init_cycle_counter();
@@ -51,7 +53,7 @@ int test_simd() {
         );
 
         set_simbacore_csr(M9_SIMD_CMUL, 0, 0, 0, 0, 0);
-        start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
+        start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // ADD
@@ -60,7 +62,7 @@ int test_simd() {
 #endif
         write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_add);
         set_simbacore_simd_mode(M6_SIMD_ADD);
-        start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
+        start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // SUB
@@ -69,7 +71,7 @@ int test_simd() {
 #endif
         write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_sub);
         set_simbacore_simd_mode(M7_SIMD_SUB);
-        start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
+        start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // MUL
@@ -78,7 +80,16 @@ int test_simd() {
 #endif
         write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_mul);
         set_simbacore_simd_mode(M8_SIMD_MUL);
-        start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
+        // DIV
+#ifdef VERBOSE
+        printf("[%d cc] DIV\n", snrt_mcycle());
+#endif
+        write_csr(BASE_PTR_WRITER_3_LOW, ptr_out_div);
+        set_simbacore_simd_mode(M12_SIMD_DIV);
+        start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // INPROD
@@ -91,7 +102,7 @@ int test_simd() {
         );
         set_simbacore_simd_mode(M10_SIMD_INPROD);
         set_simbacore_simd_n_acc(n_acc);
-        start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
+        start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // RMS
@@ -103,9 +114,21 @@ int test_simd() {
         );
         set_simbacore_simd_mode(M11_SIMD_RMS);
         set_simbacore_simd_n_acc(n_acc);
-        start_simbacore_and_streamers(M6_R10_en, 0, M6_R11_en, 0);
+        start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
+        // SQRT
+#ifdef VERBOSE
+        printf("[%d cc] SQRT\n", snrt_mcycle());
+#endif
+        set_simd_streamer_no_b((uint32_t)ptr_a, M6_R7_ss, M6_R7_tb, M6_R7_ts,        // SUC BC
+                               (uint32_t)ptr_out_sqrt, M6_W3_ss, M6_W3_tb, M6_W3_ts  // isCore out
+        );
+        set_simbacore_simd_mode(M13_SIMD_SQRT);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
+        // Final
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
@@ -122,9 +145,13 @@ int test_simd() {
                                        nb_test_samples, "INPROD");
         err += check_result_sample_u16(ptr_out_rms, M6_rms_out, M6_test_samples_out_reduce,  //
                                        nb_test_samples, "RMS");
+        err += check_result_sample_u16(ptr_out_div, M6_div_out, M6_test_samples_out,  //
+                                       nb_test_samples, "DIV");
+        err += check_result_sample_u16(ptr_out_sqrt, M6_sqrt_out, M6_test_samples_out,  //
+                                       nb_test_samples, "SQRT");
 
         printf("Test SIMD: numElem=%d\n", numElem);
-        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 6 * nb_test_samples);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 8 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();

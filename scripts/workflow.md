@@ -40,6 +40,7 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-main/build/snax-simbacore-main.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-osgemm/build/snax-simbacore-osgemm.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-isgemm/build/snax-simbacore-isgemm.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-simd/build/snax-simbacore-simd.elf`
 
 [snax|target] Make traces (from .dasm to .txt)
 
