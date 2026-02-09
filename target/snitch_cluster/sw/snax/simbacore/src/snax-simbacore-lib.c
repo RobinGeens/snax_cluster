@@ -673,6 +673,24 @@ uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_
     return err;
 }
 
+uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t data_length) {
+    uint32_t err         = 0;
+    int32_t num_elements = data_length / sizeof(uint16_t);
+    printf("Checking results (u16): %d bytes (%d elements)\n", data_length, num_elements);
+
+    for (int i = 0; i < num_elements; i++) {
+        uint16_t output_value = output[i];
+        uint16_t golden_value = output_golden[i];
+        if (output_value != golden_value) {
+            err++;
+            printf("FAIL out[%d] = %u,\tref = %u\n", i, output_value, golden_value);
+        } else {
+            printf("PASS out[%d] = %u,\tref = %u\n", i, output_value, golden_value);
+        }
+    }
+    return err;
+}
+
 // Check some samples of ther result to speed up verification
 uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
                              int32_t test_sample_count, const char* tensor_name) {

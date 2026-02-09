@@ -82,14 +82,21 @@ class DataGenerator(DataGeneratorBase):
         specs = [
             ("x", L * D * BF16 // 8),
             ("d_inverse", simdLanes * BF16 // 8),
+            ("ones", simdLanes * BF16 // 8),
             ("weight", simdLanes * D * BF16 // 8),  # Weights are duplicated over simd lanes
             ("rms", L * BF16 // 8),
+            ("denom", L * BF16 // 8),
+            ("invRms", L * BF16 // 8),
+            ("normalized", L * D * BF16 // 8),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint16_t" for name in ("x", "weight", "out")}}
-        tests = {"expected": L}
+        test_data = {**{name: "uint16_t" for name in ("x", "weight", "out", "denom", "invRms", "normalized")}}
+        tests = {
+            "expected": L * D,
+            "rms": L,
+        }
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 

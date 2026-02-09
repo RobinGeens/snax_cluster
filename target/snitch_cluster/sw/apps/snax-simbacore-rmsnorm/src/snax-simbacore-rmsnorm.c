@@ -26,15 +26,31 @@ static inline float bf16_to_fp32(uint16_t bf16) {
     return x.f;
 }
 
+// Temporal strides for broadcast (constant not advanced): all zeros
+static const int32_t zero_ts[4] = {0, 0, 0, 0};
+
+// Runs all sqrt/div operations on the CPU
+void batch_sqrt_div_cpu(uint16_t* ptr_rms, int32_t seqLen) {
+    for (int i = 0; i < seqLen; i++) {
+        float f = bf16_to_fp32(ptr_rms[i]);
+        f       = sqrt(f);
+        f       = bf16_to_fp32(fp32_to_bf16(f));  // Quantize
+        f       = 1.0f / f;
+        // TODO this truncrates instead of "quantizing", which is a mismatch with datagen
+        ptr_rms[i] = fp32_to_bf16(f);
+    }
+}
+
 int test() {
     int err = 0;
 
     // Define TCDM addresses
-    void* tcdm_base_ptr     = snrt_l1_next();
-    uint16_t* ptr_x         = (uint16_t*)(tcdm_base_ptr + M11_addr_x);
-    uint16_t* ptr_d_inverse = (uint16_t*)(tcdm_base_ptr + M11_addr_d_inverse);
-    uint16_t* ptr_weight    = (uint16_t*)(tcdm_base_ptr + M11_addr_weight);
-    uint16_t* ptr_rms       = (uint16_t*)(tcdm_base_ptr + M11_addr_rms);
+    void* tcdm_base_ptr    = snrt_l1_next();
+    uint16_t* ptr_x        = (uint16_t*)(tcdm_base_ptr + M11_addr_x);
+    uint16_t* ptr_constant = (uint16_t*)(tcdm_base_ptr + M11_addr_d_inverse);
+    uint16_t* ptr_ones     = (uint16_t*)(tcdm_base_ptr + M11_addr_ones);
+    uint16_t* ptr_weight   = (uint16_t*)(tcdm_base_ptr + M11_addr_weight);
+    uint16_t* ptr_rms      = (uint16_t*)(tcdm_base_ptr + M11_addr_rms);
 
     // Initialize cycle counter for timing
     if (snrt_global_core_idx() == 0) init_cycle_counter();
@@ -71,38 +87,58 @@ int test() {
         // 2. Divide by D to get average (inplace using ptr_rms)
         uint16_t d_inverse = fp32_to_bf16(1.0f / (float)dModel);  // BF16 encoding of 1/dModel
         // Fill whole lane with d_inverse
-        for (int i = 0; i < simdLanes; i++) {
-            ptr_d_inverse[i] = d_inverse;
-        }
+        for (int i = 0; i < simdLanes; i++) ptr_constant[i] = d_inverse;
+
         set_simd_streamer_csr((uint32_t)ptr_rms, M11_R7_rms_ss, M11_R7_rms_tb, M11_R7_rms_ts,  //
-                              (uint32_t)ptr_d_inverse, M11_R7_rms_ss, M11_R7_rms_tb,
-                              0,  // Same temporal bound, no stride
+                              (uint32_t)ptr_constant, M11_R7_rms_ss, M11_R7_rms_tb,
+                              (int32_t*)zero_ts,  // Same temporal bound, no stride
                               (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);  // We write inplace
+
         set_simbacore_simd_mode(M8_SIMD_MUL);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // 3. Compute sqrt(Σ(x^2)/D)
-        uint32_t start_div_cycles = snrt_mcycle();
-        for (int i = 0; i < seqLen; i++) {
-            float f = bf16_to_fp32(ptr_rms[i]);
-            f       = sqrt(f);
-            f       = 1.0f / f;
-            // TODO this truncrates instead of "quantizing", which is a mismatch with datagen
-            ptr_rms[i] = fp32_to_bf16(f);
-        }
-        uint32_t end_div_cycles = snrt_mcycle();
+        set_simd_streamer_no_b((uint32_t)ptr_rms, M11_R7_rms_ss, M11_R7_rms_tb, M11_R7_rms_ts,   //
+                               (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);  // We write inplace
 
-        // 4. Multiply x by rms (inplace)
+        set_simbacore_simd_mode(M13_SIMD_SQRT);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
+        err += check_result_sample_u16(ptr_rms, M11_denom, M11_test_samples_rms, nb_test_samples, "denom");
+
+        // 4. Compute rms = 1 / sqrt(Σ(x ^ 2) / D) Fill whole lane with ones.
+        uint16_t one = fp32_to_bf16(1.0f);
+        for (int i = 0; i < simdLanes; i++) ptr_ones[i] = 0;
+
+        set_simd_streamer_csr((uint32_t)ptr_ones, M11_R7_rms_ss, M11_R7_rms_tb,
+                              (int32_t*)zero_ts,  // Same temporal bound, no stride
+                              (uint32_t)ptr_rms, M11_R7_rms_ss, M11_R7_rms_tb, M11_R7_rms_ts,   //
+                              (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);  // We write inplace
+
+        set_simbacore_simd_mode(M12_SIMD_DIV);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
+        // batch_sqrt_div_cpu(ptr_rms, seqLen);
+        // err += check_result_all_u16(ptr_rms, M11_invRms, M11_length_rms);
+
+        // 5. Multiply x by rms (inplace)
         set_simd_streamer_csr((uint32_t)ptr_x, M11_R7_x_ss, M11_R7_x_tb, M11_R7_x_ts,
                               // Slide over D (one rms norm per token)
                               (uint32_t)ptr_rms, M11_R13_x_rms_ss, M11_R13_x_rms_tb, M11_R13_x_rms_ts,  //
                               (uint32_t)ptr_x, M11_W3_x_ss, M11_W3_x_tb, M11_W3_x_ts);  // We write inplace
-        // (We are still in MUL mode)
+
+        set_simbacore_simd_mode(M8_SIMD_MUL);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
-        // 5. Multiply x by weight (inplace)
+        err += check_result_all_u16(ptr_x, M11_normalized, M11_length_normalized);
+
+        err += check_result_sample_u16(ptr_x, M11_normalized, M11_test_samples_expected, nb_test_samples, "normalized");
+
+        // 6. Multiply x by weight (inplace)
         set_simd_streamer_csr((uint32_t)ptr_x, M11_R7_x_w_ss, M11_R7_x_w_tb, M11_R7_x_w_ts,
                               // Keep weight stationary for L
                               (uint32_t)ptr_weight, M11_R13_x_w_ss, M11_R13_x_w_tb, M11_R13_x_w_ts,  //
@@ -115,7 +151,6 @@ int test() {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
-        printf("[%d cc] Div/sqrt took %u cycles\n", end_div_cycles, end_div_cycles - start_div_cycles);
 
         err += check_result_sample_u16(ptr_x, M11_out, M11_test_samples_expected,  //
                                        nb_test_samples, "out");
