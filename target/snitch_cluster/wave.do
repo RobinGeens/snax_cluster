@@ -2,16 +2,16 @@ onerror {resume}
 quietly WaveActivateNextPane {} 0
 add wave -noupdate /tb_bin/clk_i
 add wave -noupdate -divider simbacore
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_a_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_a_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_a_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_b_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_b_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_b_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_out_d_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_out_d_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/osCore/io_data_out_d_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/osCore/io_data_out_d_ready
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_a_valid
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_a_ready
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_a_bits
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_b_valid
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_b_ready
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_in_b_bits
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_out_d_valid
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_osCore_out_d_ready
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/osCore/io_data_out_d_valid
+add wave -noupdate -expand -group {simbacore IO} -group {OS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/osCore/io_data_out_d_ready
 add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_isCore_in_a_valid
 add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_isCore_in_a_ready
 add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_isCore_in_a_bits
@@ -39,25 +39,45 @@ add wave -noupdate -expand -group {simbacore IO} -group {switch core} /tb_bin/i_
 add wave -noupdate -expand -group {simbacore IO} -group {switch core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_switchCore_in_bias_valid
 add wave -noupdate -expand -group {simbacore IO} -group {switch core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_switchCore_in_bias_ready
 add wave -noupdate -expand -group {simbacore IO} -group {switch core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_switchCore_in_bias_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_out_y_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_out_y_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_out_y_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/suCore/io_out_y_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_z_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_z_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_z_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_x_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_x_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_x_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_D_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_D_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_D_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_BC_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_A_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_A_ready
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_A_bits
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_BC_valid
-add wave -noupdate -expand -group {simbacore IO} -expand -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_BC_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_out_y_valid
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_out_y_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_out_y_bits
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/suCore/io_out_y_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_z_valid
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_z_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_z_bits
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_x_valid
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_x_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_x_bits
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_D_valid
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_D_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_D_bits
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_BC_bits
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_A_valid
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_A_ready
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_A_bits
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_BC_valid
+add wave -noupdate -expand -group {simbacore IO} -group {SU core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_suCore_in_BC_ready
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_out_valid
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_out_ready
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_out_bits_0
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_in_b_valid
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_in_b_ready
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_in_b_bits_0
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_in_a_valid
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_in_a_ready
+add wave -noupdate -expand -group {simbacore IO} -expand -group SIMD /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/simdCore/io_in_a_bits_0
+add wave -noupdate -divider {New Divider}
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_start
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_aguCfg_temporalBounds_3
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_aguCfg_temporalBounds_2
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_aguCfg_temporalBounds_1
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_aguCfg_temporalBounds_0
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/addressgen/io_cfg_temporalBounds_3
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/addressgen/io_cfg_temporalBounds_2
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/addressgen/io_cfg_temporalBounds_1
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/addressgen/io_cfg_temporalBounds_0
+add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_busy
 add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_busy_o
 add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_config_valid
 add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_config_ready
@@ -66,13 +86,13 @@ add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster
 add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/io_config_bits_dModel
 add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/io_config_bits_dtRank
 add wave -noupdate -group {simbacore cfg} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/io_config_bits_dInner
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/configIsLegal
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/initialize
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/config_reg_mode
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/osCoreState
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/switchCoreState
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/isCoreState
-add wave -noupdate -expand -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/globalState
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/configIsLegal
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/initialize
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/config_reg_mode
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/osCoreState
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/switchCoreState
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/isCoreState
+add wave -noupdate -group {simbacore ctrl} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/globalState
 add wave -noupdate -divider {shell wrapper}
 add wave -noupdate -group stream<>acc /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/acc2stream_0_valid_o
 add wave -noupdate -group stream<>acc /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/acc2stream_0_ready_i
@@ -90,24 +110,24 @@ add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_sn
 add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/streamer_finish
 add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_11/io_start
 add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/performance_counter
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_3_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_2_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_1_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_0_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_13_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_12_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_11_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_10_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_9_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_8_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_7_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_6_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_5_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_4_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_3_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_2_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_1_io_busy
-add wave -noupdate -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_0_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_3_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_2_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_1_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_writer_0_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_13_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_12_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_11_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_10_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_9_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_8_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_7_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_6_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_5_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_4_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_3_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_2_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_1_io_busy
+add wave -noupdate -expand -group {Busy signals} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/_reader_0_io_busy
 add wave -noupdate -group {Writer 0} -radix decimal /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/writer_0/io_aguCfg_temporalBounds_0
 add wave -noupdate -group {Writer 0} -radix decimal /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/writer_0/io_aguCfg_temporalBounds_1
 add wave -noupdate -group {Writer 0} -radix decimal /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/writer_0/io_aguCfg_temporalBounds_2
@@ -196,10 +216,10 @@ add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_s
 add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/Group1 -group {Region: sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/io_out1_ready
 add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/Group1 -group {Region: sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/io_out2_ready
 TreeUpdate [SetDefaultTree]
-WaveRestoreCursors {{Cursor 1} {6933097 ps} 0}
+WaveRestoreCursors {{Cursor 1} {38475239 ps} 0}
 quietly wave cursor active 1
 configure wave -namecolwidth 233
-configure wave -valuecolwidth 294
+configure wave -valuecolwidth 140
 configure wave -justifyvalue left
 configure wave -signalnamewidth 1
 configure wave -snapdistance 10
@@ -212,4 +232,4 @@ configure wave -griddelta 40
 configure wave -timeline 0
 configure wave -timelineunits ps
 update
-WaveRestoreZoom {45476437 ps} {53603573 ps}
+WaveRestoreZoom {38462414 ps} {38540139 ps}

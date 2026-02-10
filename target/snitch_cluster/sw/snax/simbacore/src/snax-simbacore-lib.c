@@ -260,6 +260,9 @@ void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_
     write_csr(T_BOUND_BASE_WRITER_0, 0);
     write_csr(T_BOUND_BASE_WRITER_1, 0);
     write_csr(T_BOUND_BASE_WRITER_2, 0);
+
+    // This fixes bug: Streamer forces the bound to 1 when stride is 0. Force stride to 1 so bound can be 0.
+    write_csr(T_STRIDE_BASE_READER_13, 1);
 }
 
 void set_streamer_csr(
