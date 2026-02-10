@@ -85,14 +85,11 @@ class DataGenerator(DataGeneratorBase):
             ("ones", simdLanes * BF16 // 8),
             ("weight", simdLanes * D * BF16 // 8),  # Weights are duplicated over simd lanes
             ("rms", L * BF16 // 8),
-            ("denom", L * BF16 // 8),
-            ("invRms", L * BF16 // 8),
-            ("normalized", L * D * BF16 // 8),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint16_t" for name in ("x", "weight", "out", "denom", "invRms", "normalized")}}
+        test_data = {**{name: "uint16_t" for name in ("x", "weight", "out")}}
         tests = {
             "expected": L * D,
             "rms": L,
