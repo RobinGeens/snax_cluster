@@ -100,9 +100,7 @@ class ComplexQueueConcat(
     // Only when all signals are valid, then ready signals in each channels can be passed to FIFO
     queues.foreach(i => i.io.deq.ready := deq_all_valid & io.out.head.ready)
     // Connect all data
-    io.out.foreach(_.bits := queues.map(i => i.io.deq.bits).reduce { (a, b) =>
-      Cat(b, a)
-    })
+    io.out.foreach(_.bits := queues.map(i => i.io.deq.bits).reduce { (a, b) => Cat(b, a) })
   }
 
   // All empty signal is a debug signal and derived from sub channels: if all fifo is empty, then this signal is empty
