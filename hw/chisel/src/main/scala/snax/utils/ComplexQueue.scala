@@ -43,20 +43,8 @@ class ComplexQueueConcat(
   require(depth > 0)
 
   val io = IO(new Bundle {
-    val in         = Flipped(
-      Vec(
-        {
-          if (inputWidth == bigWidth) 1 else numChannel
-        },
-        Decoupled(UInt(inputWidth.W))
-      )
-    )
-    val out        = Vec(
-      {
-        if (outputWidth == bigWidth) 1 else numChannel
-      },
-      Decoupled(UInt(outputWidth.W))
-    )
+    val in         = Flipped(Vec(if (inputWidth == bigWidth) 1 else numChannel, Decoupled(UInt(inputWidth.W))))
+    val out        = Vec(if (outputWidth == bigWidth) 1 else numChannel, Decoupled(UInt(outputWidth.W)))
     val allEmpty   = Output(Bool())
     val anyFull    = Output(Bool())
     val priorities = Output(Vec(numChannel, Bool()))
