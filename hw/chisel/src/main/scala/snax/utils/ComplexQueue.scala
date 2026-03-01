@@ -23,6 +23,7 @@ class ComplexQueueConcat(
   outputWidth:    Int,
   depth:          Int,
   pipe:           Boolean = false,
+  flow:           Boolean = false,
   priority_empty: Boolean = true
 ) extends Module
     with RequireAsyncReset {
@@ -51,7 +52,7 @@ class ComplexQueueConcat(
   })
 
   val queues = for (i <- 0 until numChannel) yield {
-    val queue = Module(new Queue(UInt(smallWidth.W), depth, pipe) {
+    val queue = Module(new Queue(UInt(smallWidth.W), depth, pipe, flow) {
       override val desiredName = queueModuleName
     })
     queue

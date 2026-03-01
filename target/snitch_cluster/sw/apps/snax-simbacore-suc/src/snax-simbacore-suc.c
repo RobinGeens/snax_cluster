@@ -12,6 +12,10 @@ void set_streamer_suc_only(uint32_t ptr_z, uint32_t ptr_dt_in, uint32_t ptr_dt_w
 #ifdef VERBOSE
     printf("[%d cc] Setting up Streamer and SimbaCore for SUC only...\n", snrt_mcycle());
 #endif
+    // The regular (working) memory layout gives bank conflicts because the spatial stride of BC is 16 banks, so
+    // every two elements come from the same bank. We overwrite this here with an incorrect stride, just to verify
+    // utilization.
+    uint32_t ss_BC_test[] = {16};  // 2 banks (wrong, correct one is M2_R7_ss)
 
     set_streamer_csr(
 
@@ -22,7 +26,7 @@ void set_streamer_suc_only(uint32_t ptr_z, uint32_t ptr_dt_in, uint32_t ptr_dt_w
         (uint32_t)ptr_dt_bias, M2_R4_ss, M2_R4_tb, M2_R4_ts, M2_R4_en,      // switchCore bias
         (uint32_t)ptr_dt_weight_2, M2_R5_ss, M2_R5_tb, M2_R5_ts, M2_R5_en,  // switchCore  matmul weight
         (uint32_t)ptr_A, M2_R6_ss, M2_R6_tb, M2_R6_ts, M2_R6_en,            //  SUC A
-        (uint32_t)ptr_BC, M2_R7_ss, M2_R7_tb, M2_R7_ts, M2_R7_en,           // SUC BC
+        (uint32_t)ptr_BC, ss_BC_test, M2_R7_tb, M2_R7_ts, M2_R7_en,         // SUC BC
         (uint32_t)ptr_D, M2_R8_ss, M2_R8_tb, M2_R8_ts, M2_R8_en,            // SUC  D
         (uint32_t)ptr_x, M2_R9_ss, M2_R9_tb, M2_R9_ts, M2_R9_en,            // SUC x
         (uint32_t)ptr_z, M2_R10_ss, M2_R10_tb, M2_R10_ts, M2_R10_en,        // SUC z = osCore out

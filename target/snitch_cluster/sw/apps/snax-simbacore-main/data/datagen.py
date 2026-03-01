@@ -326,6 +326,7 @@ class DataGenerator(DataGeneratorBase):
                     self.seqLenUnroll * self.xProjDim * FP8 // 8,
                     0,
                 ],
+                # ! This is problematic, because it puts 2 spatial addresses at the same bank!
                 self.seqLenUnroll * BANK_BYTES,  # Spatial stride
             ),
             "R8": (  # SUC D
