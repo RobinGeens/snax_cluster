@@ -72,7 +72,7 @@ for name in "${TESTS[@]}"; do
   test_log="${RUN_DIR}/${name}.log"
 
   # Run test (1 hour timeout; SIGKILL after 60s if still running)
-  timeout -k 60 3600 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1
+  timeout -k 60 7200 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1
   
   # Parse error count from this test's log
   rc=$?

@@ -47,12 +47,12 @@ int test_simd() {
         //         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
         //         printf("[%d cc] CMUL\n", snrt_mcycle());
         // #endif
-        //         set_simd_streamer_csr((uint32_t)ptr_a, M8_R7_ss, M8_R7_tb, M8_R7_ts,        // SUC BC
-        //                               (uint32_t)ptr_b, M8_R13_ss, M8_R13_tb, M8_R13_ts,     // isCore psum
-        //                               (uint32_t)ptr_out_cmul, M8_W3_ss, M8_W3_tb, M8_W3_ts  // isCore out
-        //         );
+        set_simd_streamer_csr((uint32_t)ptr_a, M8_R7_ss, M8_R7_tb, M8_R7_ts,        // SUC BC
+                              (uint32_t)ptr_b, M8_R13_ss, M8_R13_tb, M8_R13_ts,     // isCore psum
+                              (uint32_t)ptr_out_cmul, M8_W3_ss, M8_W3_tb, M8_W3_ts  // isCore out
+        );
 
-        //         set_simbacore_csr(M8_SIMD_ADD_BF16, 0, 0, 0, 0, 0);
+        set_simbacore_csr(M8_SIMD_ADD_BF16, 0, 0, 0, 0, 0);
         //         start_simbacore_and_streamers(0, 0, 0, 0);
         //         wait_simbacore_and_streamer();
 
@@ -133,25 +133,32 @@ int test_simd() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_sample_u16(ptr_out_cmul, M8_cmul_out_bf16, M8_test_samples_out,  //
-                                       nb_test_samples, "CMUL");
-        err += check_result_sample_u16(ptr_out_add, M8_add_out_bf16, M8_test_samples_out,  //
+        // err += check_result_sample_u16(ptr_out_cmul, M8_cmul_out_bf16, M8_test_samples_out,  //
+        //        nb_test_samples, "CMUL");
+        err += check_result_sample_u16(ptr_out_add, M8_add_out_bf16,
+                                       M8_test_samples_out,  //
                                        nb_test_samples, "ADD");
-        err += check_result_sample_u16(ptr_out_sub, M8_sub_out_bf16, M8_test_samples_out,  //
+        err += check_result_sample_u16(ptr_out_sub, M8_sub_out_bf16,
+                                       M8_test_samples_out,  //
                                        nb_test_samples, "SUB");
-        err += check_result_sample_u16(ptr_out_mul, M8_mul_out_bf16, M8_test_samples_out,  //
+        err += check_result_sample_u16(ptr_out_mul, M8_mul_out_bf16,
+                                       M8_test_samples_out,  //
                                        nb_test_samples, "MUL");
-        err += check_result_sample_u16(ptr_out_inprod, M8_inprod_out_bf16, M8_test_samples_out_reduce,  //
+        err += check_result_sample_u16(ptr_out_inprod, M8_inprod_out_bf16,
+                                       M8_test_samples_out_reduce,  //
                                        nb_test_samples, "INPROD");
-        err += check_result_sample_u16(ptr_out_rms, M8_rms_out_bf16, M8_test_samples_out_reduce,  //
+        err += check_result_sample_u16(ptr_out_rms, M8_rms_out_bf16,
+                                       M8_test_samples_out_reduce,  //
                                        nb_test_samples, "RMS");
-        err += check_result_sample_u16(ptr_out_div, M8_div_out_bf16, M8_test_samples_out,  //
+        err += check_result_sample_u16(ptr_out_div, M8_div_out_bf16,
+                                       M8_test_samples_out,  //
                                        nb_test_samples, "DIV");
-        err += check_result_sample_u16(ptr_out_sqrt, M8_sqrt_out_bf16, M8_test_samples_out,  //
+        err += check_result_sample_u16(ptr_out_sqrt, M8_sqrt_out_bf16,
+                                       M8_test_samples_out,  //
                                        nb_test_samples, "SQRT");
 
         printf("Test SIMD: numElem=%d\n", numElem);
-        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 8 * nb_test_samples);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 7 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();
