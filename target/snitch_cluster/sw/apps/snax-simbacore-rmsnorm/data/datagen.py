@@ -28,8 +28,8 @@ class DataGenerator(DataGeneratorBase):
         self.build_data()
 
     def build_data(self):
-        mode_id = 11
-        assert f"M{mode_id}_SIMD_RMS" in self.kwargs, "verify mode_id"
+        mode_id = 12
+        assert f"M{mode_id}_SIMD_INPROD_BF16" in self.kwargs, "verify mode_id"
 
         L = self.kwargs["seqLen"]
         D = self.kwargs["dModel"]

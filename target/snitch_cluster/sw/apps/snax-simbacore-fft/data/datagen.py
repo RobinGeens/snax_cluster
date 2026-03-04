@@ -28,7 +28,7 @@ class DataGenerator(DataGeneratorBase):
         self.build_data()
 
     def build_data(self):
-        mode_id = 5
+        mode_id = 6
         assert f"M{mode_id}_ISGEMM_SQ" in self.kwargs, f"verify mode_id {mode_id} for ISGEMM_SQ"
         seqLenUnroll = self.kwargs["seqLenUnroll"]
         dInnerUnroll = self.kwargs["dInnerUnroll"]
@@ -97,7 +97,7 @@ class DataGenerator(DataGeneratorBase):
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint8_t" for name in ("dft_weight", "dft_in", "expected")}}
+        test_data = {**{name: "uint8_t" for name in ("dft_weight", "dft_in", "partition1_expected")}}
         tests = {"expected": 2 * L * dModel}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)

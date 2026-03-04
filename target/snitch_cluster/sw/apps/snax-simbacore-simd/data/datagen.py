@@ -28,8 +28,8 @@ class DataGenerator(DataGeneratorBase):
         self.build_SIMD()
 
     def build_SIMD(self):
-        mode_id = 6  # also mode 7, 8, 9
-        assert f"M{mode_id}_SIMD_ADD" in self.kwargs, "verify mode_id"
+        mode_id = 8
+        assert f"M{mode_id}_SIMD_ADD_BF16" in self.kwargs, "verify mode_id"
 
         dataLength = self.kwargs["numElem"]
         n_acc = self.kwargs["n_acc"]
@@ -64,16 +64,29 @@ class DataGenerator(DataGeneratorBase):
         test_data = {
             name: "uint16_t"
             for name in (
-                "simd_a",
-                "simd_b",
-                "add_out",
-                "sub_out",
-                "mul_out",
-                "cmul_out",
-                "inprod_out",
-                "rms_out",
-                "div_out",
-                "sqrt_out",
+                "simd_a_bf16",
+                "simd_b_bf16",
+                "add_out_bf16",
+                "sub_out_bf16",
+                "mul_out_bf16",
+                "cmul_out_bf16",
+                "inprod_out_bf16",
+                "rms_out_bf16",
+                "div_out_bf16",
+                "sqrt_out_bf16",
+                "mul_out_bf16_requant",
+                # FP8
+                "simd_a_fp8",
+                "simd_b_fp8",
+                "add_out_fp8",
+                "sub_out_fp8",
+                "mul_out_fp8",
+                "cmul_out_fp8",
+                "inprod_out_fp8",
+                "rms_out_fp8",
+                "div_out_fp8",
+                "sqrt_out_fp8",
+                "mul_out_fp8_requant",
             )
         }
 

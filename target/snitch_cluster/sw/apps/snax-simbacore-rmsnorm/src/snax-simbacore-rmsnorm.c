@@ -46,11 +46,11 @@ int test() {
 
     // Define TCDM addresses
     void* tcdm_base_ptr    = snrt_l1_next();
-    uint16_t* ptr_x        = (uint16_t*)(tcdm_base_ptr + M11_addr_x);
-    uint16_t* ptr_constant = (uint16_t*)(tcdm_base_ptr + M11_addr_d_inverse);
-    uint16_t* ptr_ones     = (uint16_t*)(tcdm_base_ptr + M11_addr_ones);
-    uint16_t* ptr_weight   = (uint16_t*)(tcdm_base_ptr + M11_addr_weight);
-    uint16_t* ptr_rms      = (uint16_t*)(tcdm_base_ptr + M11_addr_rms);
+    uint16_t* ptr_x        = (uint16_t*)(tcdm_base_ptr + M12_addr_x);
+    uint16_t* ptr_constant = (uint16_t*)(tcdm_base_ptr + M12_addr_d_inverse);
+    uint16_t* ptr_ones     = (uint16_t*)(tcdm_base_ptr + M12_addr_ones);
+    uint16_t* ptr_weight   = (uint16_t*)(tcdm_base_ptr + M12_addr_weight);
+    uint16_t* ptr_rms      = (uint16_t*)(tcdm_base_ptr + M12_addr_rms);
 
     // Initialize cycle counter for timing
     if (snrt_global_core_idx() == 0) init_cycle_counter();
@@ -59,8 +59,8 @@ int test() {
 
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_x, M11_x, M11_length_x);
-        snrt_dma_start_1d(ptr_weight, M11_weight, M11_length_weight);
+        snrt_dma_start_1d(ptr_x, M12_x, M12_length_x);
+        snrt_dma_start_1d(ptr_weight, M12_weight, M12_length_weight);
         snrt_dma_wait_all();
     }
 
@@ -76,10 +76,10 @@ int test() {
 #endif
 
         // 1. Compute Σ(x^2)
-        set_simd_streamer_no_b((uint32_t)ptr_x, M11_R7_x_ss, M11_R7_x_tb, M11_R7_x_ts,  //
-                               (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);
+        set_simd_streamer_no_b((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,  //
+                               (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
 
-        set_simbacore_simd_mode(M11_SIMD_RMS);
+        set_simbacore_simd_mode(M13_SIMD_RMS_BF16);
         set_simbacore_simd_n_acc(dModel);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
@@ -89,52 +89,52 @@ int test() {
         // Fill whole lane with d_inverse
         for (int i = 0; i < simdLanes; i++) ptr_constant[i] = d_inverse;
 
-        set_simd_streamer_csr((uint32_t)ptr_rms, M11_R7_rms_ss, M11_R7_rms_tb, M11_R7_rms_ts,  //
-                              (uint32_t)ptr_constant, M11_R7_rms_ss, M11_R7_rms_tb,
+        set_simd_streamer_csr((uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,  //
+                              (uint32_t)ptr_constant, M12_R7_rms_ss, M12_R7_rms_tb,
                               (int32_t*)zero_ts,  // Same temporal bound, no stride
-                              (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);  // We write inplace
+                              (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);  // We write inplace
 
-        set_simbacore_simd_mode(M8_SIMD_MUL);
+        set_simbacore_simd_mode(M10_SIMD_MUL_BF16);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // 3. Compute sqrt(Σ(x^2)/D)
-        set_simd_streamer_no_b((uint32_t)ptr_rms, M11_R7_rms_ss, M11_R7_rms_tb, M11_R7_rms_ts,   //
-                               (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);  // We write inplace
+        set_simd_streamer_no_b((uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,   //
+                               (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);  // We write inplace
 
-        set_simbacore_simd_mode(M13_SIMD_SQRT);
+        set_simbacore_simd_mode(M15_SIMD_SQRT_BF16);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // This works fine
-        // err += check_result_sample_u16(ptr_rms, M11_denom, M11_test_samples_rms, nb_test_samples, "denom");
+        // err += check_result_sample_u16(ptr_rms, M12_denom, M12_test_samples_rms, nb_test_samples, "denom");
 
         // 4. Compute rms = 1 / sqrt(Σ(x ^ 2) / D) Fill whole lane with ones.
         uint16_t one = fp32_to_bf16(1.0f);
         for (int i = 0; i < simdLanes; i++) ptr_ones[i] = one;
 
-        set_simd_streamer_csr((uint32_t)ptr_ones, M11_R7_rms_ss, M11_R7_rms_tb,
+        set_simd_streamer_csr((uint32_t)ptr_ones, M12_R7_rms_ss, M12_R7_rms_tb,
                               (int32_t*)zero_ts,  // Same temporal bound, no stride
-                              (uint32_t)ptr_rms, M11_R7_rms_ss, M11_R7_rms_tb, M11_R7_rms_ts,   //
-                              (uint32_t)ptr_rms, M11_W3_rms_ss, M11_W3_rms_tb, M11_W3_rms_ts);  // We write inplace
+                              (uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,   //
+                              (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);  // We write inplace
 
-        set_simbacore_simd_mode(M12_SIMD_DIV);
+        set_simbacore_simd_mode(M14_SIMD_DIV_BF16);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
         // batch_sqrt_div_cpu(ptr_rms, seqLen);
         // printf("invRms (1/rms)\n");
 
-        // err += check_result_all_u16(ptr_rms, M11_invRms, M11_length_rms);
-        // err += check_result_sample_u16(ptr_rms, M11_invRms, M11_test_samples_rms, nb_test_samples, "invRms");
+        // err += check_result_all_u16(ptr_rms, M12_invRms, M12_length_rms);
+        // err += check_result_sample_u16(ptr_rms, M12_invRms, M12_test_samples_rms, nb_test_samples, "invRms");
 
         // 5. Multiply x by rms (inplace)
-        set_simd_streamer_csr((uint32_t)ptr_x, M11_R7_x_ss, M11_R7_x_tb, M11_R7_x_ts,
+        set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,
                               // Slide over D (one rms norm per token)
-                              (uint32_t)ptr_rms, M11_R13_x_rms_ss, M11_R13_x_rms_tb, M11_R13_x_rms_ts,  //
-                              (uint32_t)ptr_x, M11_W3_x_ss, M11_W3_x_tb, M11_W3_x_ts);  // We write inplace
+                              (uint32_t)ptr_rms, M12_R13_x_rms_ss, M12_R13_x_rms_tb, M12_R13_x_rms_ts,  //
+                              (uint32_t)ptr_x, M12_W3_x_ss, M12_W3_x_tb, M12_W3_x_ts);  // We write inplace
 
-        set_simbacore_simd_mode(M8_SIMD_MUL);
+        set_simbacore_simd_mode(M10_SIMD_MUL_BF16);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
@@ -143,15 +143,15 @@ int test() {
         //     printf("normalized[%d] = %u,\n", i, ptr_x[i]);
         // }
 
-        // err += check_result_all_u16(ptr_x, M11_normalized, M11_length_normalized);
-        // err += check_result_sample_u16(ptr_x, M11_normalized, M11_test_samples_expected, nb_test_samples,
+        // err += check_result_all_u16(ptr_x, M12_normalized, M12_length_normalized);
+        // err += check_result_sample_u16(ptr_x, M12_normalized, M12_test_samples_expected, nb_test_samples,
         // "normalized");
 
         // 6. Multiply x by weight (inplace)
-        set_simd_streamer_csr((uint32_t)ptr_x, M11_R7_x_w_ss, M11_R7_x_w_tb, M11_R7_x_w_ts,
+        set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_w_ss, M12_R7_x_w_tb, M12_R7_x_w_ts,
                               // Keep weight stationary for L
-                              (uint32_t)ptr_weight, M11_R13_x_w_ss, M11_R13_x_w_tb, M11_R13_x_w_ts,  //
-                              (uint32_t)ptr_x, M11_W3_x_w_ss, M11_W3_x_w_tb, M11_W3_x_w_ts);         // We write inplace
+                              (uint32_t)ptr_weight, M12_R13_x_w_ss, M12_R13_x_w_tb, M12_R13_x_w_ts,  //
+                              (uint32_t)ptr_x, M12_W3_x_w_ss, M12_W3_x_w_tb, M12_W3_x_w_ts);         // We write inplace
         // (We are still in MUL mode)
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
@@ -161,7 +161,7 @@ int test() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_sample_u16(ptr_x, M11_out, M11_test_samples_expected,  //
+        err += check_result_sample_u16(ptr_x, M12_out, M12_test_samples_expected,  //
                                        nb_test_samples, "out");
 
         printf("Test RMSNORM: (%d x %d)\n", seqLen, dModel);
