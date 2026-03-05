@@ -47,6 +47,7 @@ class DataGenerator(DataGeneratorBase):
         assert 2 * L1 == L1_padded0 and L1 % seqLenUnroll == 0, f"2*L1 must be an unpadded multiple of {seqLenUnroll}"
         assert L1 * L2 == L
         assert L1_padded1 // dInnerUnroll == L1 // seqLenUnroll
+        assert (2 * suc_serial_width_BC) // 8 == 4 * BANK_BYTES, "SIMD input width must be 4 banks "
 
         # For input B, we transfer more bits in less cycles due to downsizer
         # ! In ISGEMM_SQ, the array only takes seqLenUnroll < dInnerUnroll elements
@@ -92,22 +93,22 @@ class DataGenerator(DataGeneratorBase):
             # Step 2: Hadamard
             "R7_2": (  # SIMD: input. must also un-stride the matrix
                 [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],  # Real and imag
-                [BANK_BYTES],
+                [BANK_BYTES],  # We always take bank (i, i+L2, i+D, i+L2+D)
                 [  # We now have to spatial stride loops
                     L1 * BANK_BYTES,  # Un-stride the matrix: take the next L1 elements
-                    L * dModel * FP8 // 8,  # Take the imag part
+                    L * dModel * FP8 // 8,  # Take the imag part, one tensor further
                 ],
             ),
             "R13_2": (  # Twiddles. Real and imag are interleaved
                 [
-                    2 * L // (2 * suc_serial_width_BC),
+                    2 * L * FP8 // (2 * suc_serial_width_BC),
                     dModel,
                 ],
-                [BANK_BYTES, 0],
+                [4 * BANK_BYTES, 0],
             ),
             "W3_2": (  # SIMD output: everything in-order. Re/im will be interleaved every 16 elements
                 [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],
-                [BANK_BYTES],
+                [4 * BANK_BYTES],
             ),
         }
 

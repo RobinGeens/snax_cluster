@@ -156,8 +156,8 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
     _Static_assert(S_STRIDE_NUM_READER_7 == 2 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
                    "loop unroll mismatch");
     write_csr(BASE_PTR_READER_7_LOW, A_ptr);         // Base ptr
-    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride
-    write_csr(S_STRIDE_BASE_READER_7 + 1, A_ss[1]);  // Spatial stride
+    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride 1
+    write_csr(S_STRIDE_BASE_READER_7 + 1, A_ss[1]);  // Spatial stride 2
     write_csr(T_BOUND_BASE_READER_7 + 0, A_tb[0]);   // Temporal bound
     write_csr(T_BOUND_BASE_READER_7 + 1, A_tb[1]);
     write_csr(T_BOUND_BASE_READER_7 + 2, A_tb[2]);

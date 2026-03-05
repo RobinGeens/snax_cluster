@@ -4,7 +4,7 @@ regression_test_out/
 
 # Dependencies (already excluded but keeping for clarity)
 deps/
-.bender/
+
 
 # Build artifacts
 build/
