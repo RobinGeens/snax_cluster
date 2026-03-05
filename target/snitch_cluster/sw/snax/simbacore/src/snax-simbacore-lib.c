@@ -258,13 +258,21 @@ void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_
     write_csr(T_BOUND_BASE_READER_10, 0);
     write_csr(T_BOUND_BASE_READER_11, 0);
     write_csr(T_BOUND_BASE_READER_12, 0);
-    write_csr(T_BOUND_BASE_READER_13, 0);
     write_csr(T_BOUND_BASE_WRITER_0, 0);
     write_csr(T_BOUND_BASE_WRITER_1, 0);
     write_csr(T_BOUND_BASE_WRITER_2, 0);
 
-    // This fixes bug: Streamer forces the bound to 1 when stride is 0. Force stride to 1 so bound can be 0.
-    write_csr(T_STRIDE_BASE_READER_13, 1);
+    // Fully initialize R13 to a safe disabled state. When this function is
+    // The stride-zero bug forces bound=1 when stride=0, so all strides must be non-zero to keep R13 truly disabled.
+    write_csr(S_STRIDE_BASE_READER_13, 1);
+    write_csr(T_BOUND_BASE_READER_13 + 0, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 1, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 2, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 3, 0);
+    write_csr(T_STRIDE_BASE_READER_13 + 0, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 1, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 2, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 3, 1);
 }
 
 void set_streamer_csr(
