@@ -42,6 +42,7 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-main-full/build/snax-simbacore-main-full.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-osgemm/build/snax-simbacore-osgemm.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-isgemm/build/snax-simbacore-isgemm.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-fft/build/snax-simbacore-fft.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-simd/build/snax-simbacore-simd.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-rmsnorm/build/snax-simbacore-rmsnorm.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-suc/build/snax-simbacore-suc.elf`

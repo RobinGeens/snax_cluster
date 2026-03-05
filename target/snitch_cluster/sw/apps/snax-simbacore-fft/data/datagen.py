@@ -14,7 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../snax-simbacore-main/data"))
 sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 
-from datagen_base import DataGeneratorBase, FP8, BF16  # type: ignore[import]
+from datagen_base import DataGeneratorBase, FP8, BF16, BANK_BYTES  # type: ignore[import]
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
@@ -33,6 +33,7 @@ class DataGenerator(DataGeneratorBase):
         seqLenUnroll = self.kwargs["seqLenUnroll"]
         dInnerUnroll = self.kwargs["dInnerUnroll"]
         iscore_serial_width = self.kwargs["iscore_serial_width"]
+        suc_serial_width_BC = self.kwargs["suc_serial_width_BC"]
         dModel = self.kwargs["dModel"]
         L = self.kwargs["seqLen"]
         L1 = self.kwargs["L1"]
@@ -73,11 +74,12 @@ class DataGenerator(DataGeneratorBase):
         )
 
         streamers = {
-            "R11": (  # iscore A: DFT weight, with padding. Stored in convFormat
+            # Step 1: partition 1
+            "R11_1": (  # iscore A: DFT weight, with padding. Stored in convFormat
                 [L1_padded0 * L1_padded1 * FP8 // iscore_serial_width],
                 [iscore_serial_width // 8],
             ),
-            "R12": (  # iscore B: input sequence (coming from previous phase)
+            "R12_1": (  # iscore B: input sequence (coming from previous phase)
                 [downsized_N, M, K],
                 [  # This is unpadded, with tilesize seqLenUnroll. Hardware takes care of the padding.
                     b_in_width // 8,
@@ -85,19 +87,46 @@ class DataGenerator(DataGeneratorBase):
                     downsized_N * b_in_width // 8,
                 ],
             ),
-            "R13": psum_bounds_and_strides,
-            "W3": psum_bounds_and_strides,
+            "R13_1": psum_bounds_and_strides,
+            "W3_1": psum_bounds_and_strides,
+            # Step 2: Hadamard
+            "R7_2": (  # SIMD: input. must also un-stride the matrix
+                [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],  # Real and imag
+                [BANK_BYTES],
+                [  # We now have to spatial stride loops
+                    L1 * BANK_BYTES,  # Un-stride the matrix: take the next L1 elements
+                    L * dModel * FP8 // 8,  # Take the imag part
+                ],
+            ),
+            "R13_2": (  # Twiddles. Real and imag are interleaved
+                [
+                    2 * L // (2 * suc_serial_width_BC),
+                    dModel,
+                ],
+                [BANK_BYTES, 0],
+            ),
+            "W3_2": (  # SIMD output: everything in-order. Re/im will be interleaved every 16 elements
+                [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],
+                [BANK_BYTES],
+            ),
         }
 
         specs = [
-            ("a", L1_padded0 * L1_padded1 * FP8 // 8),
-            ("b", L * dModel * FP8 // 8),
-            ("cd", 2 * L * dModel * BF16 // 8),  # c and d use same space
+            ("weight1", L1_padded0 * L1_padded1 * FP8 // 8),
+            ("in", L * dModel * FP8 // 8),
+            ("partition1_out", 2 * L * dModel * BF16 // 8),  # c and d use same space
+            ("twiddles", 2 * L * FP8 // 8),  # Real and imag
+            ("hadamard_out", 2 * L * dModel * FP8 // 8),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint8_t" for name in ("dft_weight", "dft_in", "partition1_expected")}}
+        test_data = {
+            **{
+                name: "uint8_t"
+                for name in ("dft_weight", "dft_in", "partition1_expected", "twiddles", "hadamard_expected")
+            }
+        }
         tests = {"expected": 2 * L * dModel}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)

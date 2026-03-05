@@ -44,6 +44,7 @@ declare -a TESTS=(
   "snax-simbacore-simd"
   "snax-simbacore-main-full"
   "snax-simbacore-rmsnorm"
+  "snax-simbacore-fft"
   "snax-simbacore-streamer-burner"
   "snax-simbacore-core-burner"
   "snax-simbacore-suc"
