@@ -94,7 +94,7 @@ int main() {
                               (uint32_t)ptr_dt_weight_2, (uint32_t)ptr_dt_bias, (uint32_t)ptr_x, (uint32_t)ptr_A,
                               (uint32_t)ptr_BC, (uint32_t)ptr_D, (uint32_t)ptr_y);
 
-        set_simbacore_csr(M23_SUC_ONLY, seqLen, dModel, dInner, dtRank, dModel);
+        set_simbacore_csr(M26_SUC_ONLY, seqLen, dModel, dInner, dtRank, dModel);
         start_simbacore_and_streamers(M2_R10_en, 0, 0, 0);
         wait_simbacore_and_streamer();
         uint32_t end_cycles = snrt_mcycle();

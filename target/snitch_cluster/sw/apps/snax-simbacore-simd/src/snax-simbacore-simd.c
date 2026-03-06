@@ -23,8 +23,8 @@ int test_simd_bf16() {
     uint16_t* ptr_out_div    = (uint16_t*)(tcdm_base_ptr + M8_addr_div_out_bf16);
     uint16_t* ptr_out_sqrt   = (uint16_t*)(tcdm_base_ptr + M8_addr_sqrt_out_bf16);
 
-    uint8_t* ptr_out_mul_requant = (uint8_t*)(tcdm_base_ptr + M8_addr_mul_out_bf16_requant);
-    //     uint16_t* ptr_out_cmul_requant = (uint16_t*)(tcdm_base_ptr + M8_addr_cmul_out_requant);
+    uint8_t* ptr_out_mul_requant  = (uint8_t*)(tcdm_base_ptr + M8_addr_mul_out_bf16_requant);
+    uint8_t* ptr_out_noop_requant = (uint8_t*)(tcdm_base_ptr + M8_addr_noop_out_bf16_requant);
 
     // Initialize cycle counter for timing
     if (snrt_global_core_idx() == 0) init_cycle_counter();
@@ -146,40 +146,53 @@ int test_simd_bf16() {
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
+// NOOP_REQUANT (BF16 -> FP8)
+#ifdef VERBOSE
+        printf("[%d cc] NOOP_REQUANT\n", snrt_mcycle());
+#endif
+        set_simd_streamer_no_b((uint32_t)ptr_a, M8_R7_bf16_ss, M8_R7_bf16_tb, M8_R7_bf16_ts,
+                               (uint32_t)ptr_out_noop_requant, M8_W3_fp8_ss, M8_W3_fp8_tb, M8_W3_fp8_ts);
+        set_simbacore_simd_mode(M23_SIMD_NOOP_BF16_REQUANT);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
         // Final
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        // err += check_result_sample_u16(ptr_out_cmul, M8_cmul_out_bf16, M8_test_samples_out,  //
-        //        nb_test_samples, "CMUL");
-        // err += check_result_sample_u16(ptr_out_add, M8_add_out_bf16,
-        //                                M8_test_samples_out,  //
-        //                                nb_test_samples, "ADD");
-        // err += check_result_sample_u16(ptr_out_sub, M8_sub_out_bf16,
-        //                                M8_test_samples_out,  //
-        //                                nb_test_samples, "SUB");
-        // err += check_result_sample_u16(ptr_out_mul, M8_mul_out_bf16,
-        //                                M8_test_samples_out,  //
-        //                                nb_test_samples, "MUL");
-        // err += check_result_sample_u16(ptr_out_inprod, M8_inprod_out_bf16,
-        //                                M8_test_samples_out_reduce,  //
-        //                                nb_test_samples, "INPROD");
-        // err += check_result_sample_u16(ptr_out_rms, M8_rms_out_bf16,
-        //                                M8_test_samples_out_reduce,  //
-        //                                nb_test_samples, "RMS");
-        // err += check_result_sample_u16(ptr_out_div, M8_div_out_bf16,
-        //                                M8_test_samples_out,  //
-        //                                nb_test_samples, "DIV");
-        // err += check_result_sample_u16(ptr_out_sqrt, M8_sqrt_out_bf16,
-        //                                M8_test_samples_out,  //
-        //                                nb_test_samples, "SQRT");
+        err += check_result_sample_u16(ptr_out_cmul, M8_cmul_out_bf16, M8_test_samples_out,  //
+                                       nb_test_samples, "CMUL");
+        err += check_result_sample_u16(ptr_out_add, M8_add_out_bf16,
+                                       M8_test_samples_out,  //
+                                       nb_test_samples, "ADD");
+        err += check_result_sample_u16(ptr_out_sub, M8_sub_out_bf16,
+                                       M8_test_samples_out,  //
+                                       nb_test_samples, "SUB");
+        err += check_result_sample_u16(ptr_out_mul, M8_mul_out_bf16,
+                                       M8_test_samples_out,  //
+                                       nb_test_samples, "MUL");
+        err += check_result_sample_u16(ptr_out_inprod, M8_inprod_out_bf16,
+                                       M8_test_samples_out_reduce,  //
+                                       nb_test_samples, "INPROD");
+        err += check_result_sample_u16(ptr_out_rms, M8_rms_out_bf16,
+                                       M8_test_samples_out_reduce,  //
+                                       nb_test_samples, "RMS");
+        err += check_result_sample_u16(ptr_out_div, M8_div_out_bf16,
+                                       M8_test_samples_out,  //
+                                       nb_test_samples, "DIV");
+        err += check_result_sample_u16(ptr_out_sqrt, M8_sqrt_out_bf16,
+                                       M8_test_samples_out,  //
+                                       nb_test_samples, "SQRT");
         err += check_result_sample(ptr_out_mul_requant, M8_mul_out_bf16_requant,
                                    M8_test_samples_out,  //
                                    nb_test_samples, "MUL_REQUANT");
+        err += check_result_sample(ptr_out_noop_requant, M8_noop_out_bf16_requant,
+                                   M8_test_samples_out,  //
+                                   nb_test_samples, "NOOP_BF16_REQUANT");
 
         printf("Test SIMD: numElem=%d\n", numElem);
-        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 8 * nb_test_samples);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 9 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();
@@ -200,7 +213,9 @@ int test_simd_fp8() {
     uint8_t* ptr_out_inprod = (uint8_t*)(tcdm_base_ptr + M8_addr_inprod_out_fp8);
     uint8_t* ptr_out_rms    = (uint8_t*)(tcdm_base_ptr + M8_addr_rms_out_fp8);
 
-    uint16_t* ptr_out_mul_requant = (uint16_t*)(tcdm_base_ptr + M8_addr_mul_out_fp8_requant);
+    uint16_t* ptr_out_mul_requant  = (uint16_t*)(tcdm_base_ptr + M8_addr_mul_out_fp8_requant);
+    uint16_t* ptr_out_noop_requant = (uint16_t*)(tcdm_base_ptr + M8_addr_noop_out_fp8_requant);
+    uint8_t* ptr_out_softshrink    = (uint8_t*)(tcdm_base_ptr + M8_addr_softshrink_out_fp8);
 
     if (snrt_global_core_idx() == 0) init_cycle_counter();
 
@@ -293,6 +308,27 @@ int test_simd_fp8() {
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
+// NOOP_REQUANT (FP8 -> BF16)
+#ifdef VERBOSE
+        printf("[%d cc] NOOP_REQUANT\n", snrt_mcycle());
+#endif
+        set_simd_streamer_no_b((uint32_t)ptr_a, M8_R7_fp8_ss, M8_R7_fp8_tb, M8_R7_fp8_ts,
+                               (uint32_t)ptr_out_noop_requant, M8_W3_bf16_ss, M8_W3_bf16_tb, M8_W3_bf16_ts);
+        set_simbacore_simd_mode(M24_SIMD_NOOP_FP8_REQUANT);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
+// SOFTSHRINK (FP8)
+#ifdef VERBOSE
+        printf("[%d cc] SOFTSHRINK\n", snrt_mcycle());
+#endif
+        set_simd_streamer_csr((uint32_t)ptr_a, M8_R7_fp8_ss, M8_R7_fp8_tb, M8_R7_fp8_ts, (uint32_t)ptr_b, M8_R13_fp8_ss,
+                              M8_R13_fp8_tb, M8_R13_fp8_ts, (uint32_t)ptr_out_softshrink, M8_W3_softshrink_fp8_ss,
+                              M8_W3_softshrink_fp8_tb, M8_W3_softshrink_fp8_ts);
+        set_simbacore_simd_mode(M25_SIMD_SOFTSHRINK_FP8);
+        start_simbacore_and_streamers(0, 0, 0, 0);
+        wait_simbacore_and_streamer();
+
         // Final
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
@@ -307,9 +343,13 @@ int test_simd_fp8() {
         err += check_result_sample(ptr_out_rms, M8_rms_out_fp8, M8_test_samples_out_reduce, nb_test_samples, "RMS_FP8");
         err += check_result_sample_u16(ptr_out_mul_requant, M8_mul_out_fp8_requant, M8_test_samples_out,
                                        nb_test_samples, "MUL_FP8_REQUANT");
+        err += check_result_sample_u16(ptr_out_noop_requant, M8_noop_out_fp8_requant, M8_test_samples_out,
+                                       nb_test_samples, "NOOP_FP8_REQUANT");
+        err += check_result_sample(ptr_out_softshrink, M8_softshrink_out_fp8, M8_test_samples_out_softshrink,
+                                   nb_test_samples, "SOFTSHRINK_FP8");
 
         printf("Test SIMD FP8: numElem=%d\n", numElem);
-        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 7 * nb_test_samples);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 9 * nb_test_samples);
     }
 
     snrt_cluster_hw_barrier();

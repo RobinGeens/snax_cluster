@@ -24,7 +24,7 @@ int test() {
 
     // Transfer data from L3 to L1 using DMA only
     if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_weight1, M6_dft_weight, M6_length_weight1);
+        snrt_dma_start_1d(ptr_weight1, M6_dft_weight1, M6_length_weight1);
         snrt_dma_start_1d(ptr_in, M6_dft_in, M6_length_in);
         snrt_dma_start_1d(ptr_twiddle_factors, M6_twiddles, M6_length_twiddles);
         // Initialize ptr_partition1_out with zeros from zero memory

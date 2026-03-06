@@ -125,7 +125,7 @@ class DataGenerator(DataGeneratorBase):
         test_data = {
             **{
                 name: "uint8_t"
-                for name in ("dft_weight", "dft_in", "partition1_expected", "twiddles", "hadamard_expected")
+                for name in ("dft_weight1", "dft_in", "partition1_expected", "twiddles", "hadamard_expected")
             }
         }
         tests = {"expected": 2 * L * dModel}
