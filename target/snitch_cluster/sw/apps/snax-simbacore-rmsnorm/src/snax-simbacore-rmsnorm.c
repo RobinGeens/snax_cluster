@@ -87,7 +87,7 @@ int test() {
         // 2. Divide by D to get average (inplace using ptr_rms)
         uint16_t d_inverse = fp32_to_bf16(1.0f / (float)dModel);  // BF16 encoding of 1/dModel
         // Fill whole lane with d_inverse
-        for (int i = 0; i < simdLanes; i++) ptr_constant[i] = d_inverse;
+        for (int i = 0; i < simdLanes_bf16; i++) ptr_constant[i] = d_inverse;
 
         set_simd_streamer_csr((uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,  //
                               (uint32_t)ptr_constant, M12_R7_rms_ss, M12_R7_rms_tb,
@@ -111,7 +111,7 @@ int test() {
 
         // 4. Compute rms = 1 / sqrt(Σ(x ^ 2) / D) Fill whole lane with ones.
         uint16_t one = fp32_to_bf16(1.0f);
-        for (int i = 0; i < simdLanes; i++) ptr_ones[i] = one;
+        for (int i = 0; i < simdLanes_bf16; i++) ptr_ones[i] = one;
 
         set_simd_streamer_csr((uint32_t)ptr_ones, M12_R7_rms_ss, M12_R7_rms_tb,
                               (int32_t*)zero_ts,  // Same temporal bound, no stride

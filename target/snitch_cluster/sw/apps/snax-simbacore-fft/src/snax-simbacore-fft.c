@@ -53,12 +53,11 @@ int test() {
         wait_simbacore_and_streamer();
 
         // Step 2: Hadamard
-        // TODO
         set_simd_streamer_csr((uint32_t)ptr_partition1_out, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts,      // SUC BC
                               (uint32_t)ptr_twiddle_factors, M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts,  // isCore psum
                               (uint32_t)ptr_hadamard_out, M6_W3_2_ss, M6_W3_2_tb, M6_W3_2_ts         // isCore out
         );
-        set_simbacore_csr(M19_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
+        set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 

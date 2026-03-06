@@ -33,7 +33,7 @@ class DataGenerator(DataGeneratorBase):
 
         L = self.kwargs["seqLen"]
         D = self.kwargs["dModel"]
-        simdLanes = self.kwargs["simdLanes"]
+        simdLanes = self.kwargs["simdLanes_bf16"]
         assert simdLanes == self.kwargs["seqLenUnroll"], "memory layout mismatch"
 
         bounds_and_strides_LD = ([L * D // simdLanes], [simdLanes * BF16 // 8])
