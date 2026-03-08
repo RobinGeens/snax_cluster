@@ -152,7 +152,7 @@ int test_simd_bf16() {
 #endif
         set_simd_streamer_no_b((uint32_t)ptr_a, M8_R7_bf16_ss, M8_R7_bf16_tb, M8_R7_bf16_ts,
                                (uint32_t)ptr_out_noop_requant, M8_W3_fp8_ss, M8_W3_fp8_tb, M8_W3_fp8_ts);
-        set_simbacore_simd_mode(M23_SIMD_NOOP_BF16_REQUANT);
+        set_simbacore_simd_mode(M24_SIMD_NOOP_BF16_REQUANT);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
@@ -314,7 +314,7 @@ int test_simd_fp8() {
 #endif
         set_simd_streamer_no_b((uint32_t)ptr_a, M8_R7_fp8_ss, M8_R7_fp8_tb, M8_R7_fp8_ts,
                                (uint32_t)ptr_out_noop_requant, M8_W3_bf16_ss, M8_W3_bf16_tb, M8_W3_bf16_ts);
-        set_simbacore_simd_mode(M24_SIMD_NOOP_FP8_REQUANT);
+        set_simbacore_simd_mode(M25_SIMD_NOOP_FP8_REQUANT);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
@@ -325,7 +325,7 @@ int test_simd_fp8() {
         set_simd_streamer_csr((uint32_t)ptr_a, M8_R7_fp8_ss, M8_R7_fp8_tb, M8_R7_fp8_ts, (uint32_t)ptr_b, M8_R13_fp8_ss,
                               M8_R13_fp8_tb, M8_R13_fp8_ts, (uint32_t)ptr_out_softshrink, M8_W3_softshrink_fp8_ss,
                               M8_W3_softshrink_fp8_tb, M8_W3_softshrink_fp8_ts);
-        set_simbacore_simd_mode(M25_SIMD_SOFTSHRINK_FP8);
+        set_simbacore_simd_mode(M26_SIMD_SOFTSHRINK_FP8);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 

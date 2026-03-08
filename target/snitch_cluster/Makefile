@@ -10,7 +10,7 @@
 #######################
 
 DEBUG            ?= OFF  # ON to turn on debugging symbols
-CFG_OVERRIDE     ?=      # Override default config file
+CFG_OVERRIDE     ?= cfg/snax_simbacore_cluster.hjson # Override default config file
 SELECT_RUNTIME   ?=      # Select snRuntime implementation: "banshee", "rtl-generic(default)" or "rtl" 
 SELECT_TOOLCHAIN ?=      # Select Toolchain: "llvm-generic" = llvm17 generic (default) or "llvm-snitch" llvm 12 snitch_specific
  					     # Note that the default toolchain only works with some applications 
