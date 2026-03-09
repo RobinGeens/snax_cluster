@@ -671,7 +671,7 @@ uint32_t read_simbacore_perf_counter() {
 // Check result, word-by-word. data_length in bytes
 uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_length) {
     uint32_t err         = 0;
-    int32_t num_elements = data_length / sizeof(uint16_t);
+    int32_t num_elements = data_length / sizeof(uint8_t);
     printf("Checking results: %d bytes (%d elements)\n", data_length, num_elements);
 
     for (int i = 0; i < num_elements; i++) {

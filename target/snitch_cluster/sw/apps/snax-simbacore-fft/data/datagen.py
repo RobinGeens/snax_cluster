@@ -147,7 +147,7 @@ class DataGenerator(DataGeneratorBase):
                     4 * BANK_BYTES,  # Skips one interleaved group (16R + 16I = 32B)
                 ],
             ),
-            "W3_2B": (  # The idea is that we write everything in-order
+            "W3_2B": (  # The goal is that we write everything in-order
                 [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],
                 [4 * BANK_BYTES],
             ),

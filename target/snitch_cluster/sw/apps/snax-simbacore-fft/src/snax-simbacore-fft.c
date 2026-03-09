@@ -33,6 +33,7 @@ int test() {
         snrt_dma_start_1d(ptr_twiddle_factors, M6_twiddles, M6_length_twiddles);
         snrt_dma_start_1d(ptr_partition1_out, (void*)snrt_zero_memory_ptr(), M6_length_partition1_out);
         snrt_dma_start_1d(ptr_partition2_out, (void*)snrt_zero_memory_ptr(), M6_length_partition2_out);
+        // snrt_dma_start_1d(ptr_hadamard_reorder, (void*)snrt_zero_memory_ptr(), M6_length_hadamard_reordered);
         snrt_dma_wait_all();
     }
 
@@ -74,28 +75,35 @@ int test() {
         wait_simbacore_and_streamer();
 
         // Step 3: partition 2
-        // set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,           // A
-        //                         (uint32_t)ptr_hadamard_reorder, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,  // B
-        //                         (uint32_t)ptr_partition2_out, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);      // C/D
 
-        // set_simbacore_csr(M6_ISGEMM_SQ, 2 * L2, 1, 2 * L2_padded, 1, (dModel * L1));
-        // start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
-        // wait_simbacore_and_streamer();
+        // ! Somehow, this prevents a memory read bug in Snitch
+        check_result_sample(ptr_weight2, M6_dft_weight2, (int32_t[]){0, 2, 767, 768, 1535}, 5, "weight2");
+
+        set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,           // A
+                                (uint32_t)ptr_hadamard_reorder, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,  // B
+                                (uint32_t)ptr_partition2_out, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);      // C/D
+
+        set_simbacore_csr(M6_ISGEMM_SQ, 2 * L2, 1, 2 * L2_padded, 1, (dModel * L1));
+        start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
+        wait_simbacore_and_streamer();
 
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_sample((uint8_t*)ptr_partition1_out, M6_partition1_expected, M6_test_samples_expected,  //
+        err += check_result_sample((uint8_t*)ptr_partition1_out, M6_partition1_expected,
+                                   M6_test_samples_expected,  //
                                    nb_test_samples, "partition 1");
 
-        err += check_result_sample((uint8_t*)ptr_hadamard_out, M6_hadamard_expected, M6_test_samples_expected,  //
+        err += check_result_sample((uint8_t*)ptr_hadamard_out, M6_hadamard_expected,
+                                   M6_test_samples_expected,  //
                                    nb_test_samples, "hadamard");
-        err += check_result_sample((uint8_t*)ptr_hadamard_reorder, M6_hadamard_reordered, M6_test_samples_expected,  //
+        err += check_result_sample((uint8_t*)ptr_hadamard_reorder, M6_hadamard_reordered,
+                                   M6_test_samples_expected,  //
                                    nb_test_samples, "hadamard reordered");
-        err += check_result_sample((uint8_t*)ptr_partition2_out, M6_partition2_expected, M6_test_samples_expected,  //
+        err += check_result_sample((uint8_t*)ptr_partition2_out, M6_partition2_expected,
+                                   M6_test_samples_expected,  //
                                    nb_test_samples, "out");
-        check_result_all((uint8_t*)ptr_partition2_out, M6_partition2_expected, M6_length_partition2_out);
 
         printf("Test FFT: (%d x %d), channels=%d\n", 2 * L1, L1_padded, dModel * L2);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, nb_test_samples);

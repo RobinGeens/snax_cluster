@@ -92,7 +92,7 @@ class DataGenerator(DataGeneratorBase):
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint8_t" for name in ("A", "B", "D")}, "C": "uint16_t"}
+        test_data = {**{name: "uint8_t" for name in ("A", "B", "D")}, "C": "uint16_t", "D_no_requant": "uint16_t"}
         tests = {"D": seqLen * dModel}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
