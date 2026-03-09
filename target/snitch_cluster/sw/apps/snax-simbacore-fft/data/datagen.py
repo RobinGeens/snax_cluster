@@ -112,8 +112,14 @@ class DataGenerator(DataGeneratorBase):
             # Step 2: Hadamard
             #
             "R7_2": (  # SIMD: input. must also un-stride the matrix
-                [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],  # Real and imag
-                [BANK_BYTES],  # We always take bank (i, i+L2, i+D, i+L2+D)
+                [
+                    2 * L * FP8 // (2 * suc_serial_width_BC),  # Real and imag
+                    dModel,
+                ],
+                [
+                    BANK_BYTES,
+                    L * FP8 // 8,  # Start at next D index
+                ],  # We always take bank (i, i+L2, i+D, i+L2+D)
                 [  # We now have to spatial stride loops
                     L1 * BANK_BYTES,  # Un-stride the matrix: take the next L1 elements
                     L * dModel * FP8 // 8,  # Take the imag part, one tensor further
@@ -124,7 +130,10 @@ class DataGenerator(DataGeneratorBase):
                     2 * L * FP8 // (2 * suc_serial_width_BC),
                     dModel,
                 ],
-                [4 * BANK_BYTES, 0],
+                [
+                    4 * BANK_BYTES,
+                    0,
+                ],
             ),
             "W3_2": (  # SIMD output: everything in-order. Re/im will be interleaved every 16 elements
                 [2 * L * dModel * FP8 // (2 * suc_serial_width_BC)],
