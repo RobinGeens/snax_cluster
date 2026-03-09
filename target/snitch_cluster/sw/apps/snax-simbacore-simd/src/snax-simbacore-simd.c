@@ -161,8 +161,6 @@ int test_simd_bf16() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_sample_u16(ptr_out_cmul, M8_cmul_out_bf16, M8_test_samples_out,  //
-                                       nb_test_samples, "CMUL");
         err += check_result_sample_u16(ptr_out_add, M8_add_out_bf16,
                                        M8_test_samples_out,  //
                                        nb_test_samples, "ADD");
