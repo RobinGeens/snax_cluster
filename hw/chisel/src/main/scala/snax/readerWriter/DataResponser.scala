@@ -9,7 +9,6 @@ import snax.utils._
   * io.out.data: Decoupled(UInt), to store the data to FIFO at the outside io.out.ResponsorReady: Bool(), to determine
   * whether the Requestor can intake more data (dpending on whether the output FIFO is full)
   */
-
 class DataResponserIO(tcdmDataWidth: Int = 64, numChannel: Int = 8) extends Bundle {
   val in         = new Bundle {
     val tcdmRsp = Flipped(Valid(new RegRsp(dataWidth = tcdmDataWidth)))

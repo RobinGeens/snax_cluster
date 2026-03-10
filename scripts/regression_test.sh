@@ -43,6 +43,11 @@ declare -a TESTS=(
   "snax-simbacore-isgemm"
   "snax-simbacore-simd"
   "snax-simbacore-main-full"
+  "snax-simbacore-rmsnorm"
+  "snax-simbacore-fft"
+  "snax-simbacore-streamer-burner"
+  "snax-simbacore-core-burner"
+  "snax-simbacore-suc"
 )
 
 pushd "${TARGET_DIR}" >/dev/null
@@ -67,8 +72,8 @@ for name in "${TESTS[@]}"; do
   elf_rel="sw/apps/${name}/build/${name}.elf"
   test_log="${RUN_DIR}/${name}.log"
 
-  # Run test
-  "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1
+  # Run test (1 hour timeout; SIGKILL after 60s if still running)
+  timeout -k 60 7200 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1
   
   # Parse error count from this test's log
   rc=$?

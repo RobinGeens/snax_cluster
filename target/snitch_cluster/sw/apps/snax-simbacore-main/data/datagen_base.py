@@ -107,9 +107,15 @@ class DataGeneratorBase(ABC):
         self.lines_params += [f"int32_t M{mode_id}_{streamer_name}_tb[] = {{{', '.join(map(str, bounds))}}};"]
         self.lines_params += [f"int32_t M{mode_id}_{streamer_name}_ts[] = {{{', '.join(map(str, strides))}}};"]
 
-    def format_spatial_stride(self, streamer_name: str, mode_id: int, stride: int):
+    def format_spatial_strides(self, streamer_name: str, mode_id: int, strides: list[int]):
+        assert isinstance(strides, list), f"{streamer_name}: Spatial strides must be a list, got {type(strides)}"
+        if streamer_name.startswith("R7") and len(strides) != 2:
+            raise ValueError(f"{streamer_name}: R7 must have 2 spatial strides, got {len(strides)}")
+        elif not streamer_name.startswith("R7") and len(strides) != 1:
+            raise ValueError(f"{streamer_name}: Must have 1 spatial stride, got {len(strides)}")
+
         # self.format("uint32_t", f"M{mode_id}_{streamer_name}_ss0", stride)
-        self.lines_params += [f"int32_t M{mode_id}_{streamer_name}_ss[] = {{{stride}}};"]
+        self.lines_params += [f"int32_t M{mode_id}_{streamer_name}_ss[] = {{{', '.join(map(str, strides))}}};"]
 
     def _read_data_int(self, filename: str):
         """Read a vec from a file."""
@@ -150,22 +156,47 @@ class DataGeneratorBase(ABC):
     def __format_streamer(
         self,
         mode_id: int,
-        streamers: dict[str, tuple[list[int], list[int]]] | dict[str, tuple[list[int], list[int], int]],
+        streamers: dict[str, tuple[list[int], list[int]]] | dict[str, tuple[list[int], list[int], int | list[int]]],
         name: str,
     ):
         # Parse
         if len(streamers[name]) == 2:
             (bounds, strides) = streamers[name]  # pyright: ignore[reportAssignmentType]
-            spatial_stride = BANK_BYTES  # Default
+            spatial_stride_raw = BANK_BYTES  # Default
         elif len(streamers[name]) == 3:
-            (bounds, strides, spatial_stride) = streamers[name]  # pyright: ignore[reportAssignmentType]
+            (bounds, strides, spatial_stride_raw) = streamers[name]  # pyright: ignore[reportAssignmentType]
 
         # Validate
         self.validate_stride(name, strides[0])
-
+        spatial_strides = self.process_spatial_stride(name, spatial_stride_raw)
         self.format_temporal_bounds_strides(name, mode_id, bounds, strides)
-        self.format_spatial_stride(name, mode_id, spatial_stride)
+        self.format_spatial_strides(name, mode_id, spatial_strides)
         self.enable_channel(name, mode_id)
+
+    def process_spatial_stride(self, name: str, spatial_stride_raw: list[int] | int):
+        """User input can be integer or list. Output must be a list with the length equal to the spatial loop bounds.
+
+        Only R7 has 2 loop bounds, all other streamers have 1 loop bound.
+        """
+        if not name.startswith("R7"):
+            if isinstance(spatial_stride_raw, int):
+                return [spatial_stride_raw]
+            elif isinstance(spatial_stride_raw, list):
+                assert (
+                    len(spatial_stride_raw) == 1
+                ), f"{name}: Spatial stride must be a list with length 1, got {len(spatial_stride_raw)}"
+                return spatial_stride_raw
+
+        else:
+            if isinstance(spatial_stride_raw, int):
+                # TODO we have hardcodeded loopsize 2
+                return [spatial_stride_raw, 2 * spatial_stride_raw]
+            elif isinstance(spatial_stride_raw, list):
+                assert (
+                    len(spatial_stride_raw) == 2
+                ), f"{name}: Spatial stride must be a list with length 2, got {len(spatial_stride_raw)}"
+                return spatial_stride_raw
+        raise ValueError(f"{name}: Spatial stride must be an integer or a list, got {type(spatial_stride_raw)}")
 
     def build_mode(
         self,
@@ -186,6 +217,7 @@ class DataGeneratorBase(ABC):
         """
         # Iterate over all streamer names
         assert all(re.match(r"^(R([0-9]|1[0-3])|W([0-9]|1[0-3]))(_.*)?$", key) for key in streamers.keys())
+        # TODO number of streamers is hardcoded here
         standard_names = [f"R{i}" for i in range(14)] + [f"W{i}" for i in range(4)]
 
         # Make sure all standard streamer names are formatted

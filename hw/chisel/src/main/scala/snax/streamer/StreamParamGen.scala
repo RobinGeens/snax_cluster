@@ -121,7 +121,8 @@ object StreamerParametersGen {
    ), 
     new ReaderWriterParam(
       spatialBounds = List(
-        4
+        2,
+        2
       ),
       temporalDimension = 4,
       tcdmDataWidth = 64,

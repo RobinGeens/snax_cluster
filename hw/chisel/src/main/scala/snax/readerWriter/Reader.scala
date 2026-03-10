@@ -85,12 +85,8 @@ class Reader(param: ReaderWriterParam, moduleNamePrefix: String = "unnamed_clust
     responsers.io.foreach(_.enable := true.B)
   }
 
-  if (param.configurableByteMask)
-    requestors.io.foreach(_.in.strb := io.readerwriterCfg.enabledByte)
-  else
-    requestors.io.foreach { case requestor =>
-      requestor.in.strb := Fill(requestor.in.strb.getWidth, 1.U)
-    }
+  if (param.configurableByteMask) requestors.io.foreach(_.in.strb := io.readerwriterCfg.enabledByte)
+  else requestors.io.foreach { case requestor => requestor.in.strb := Fill(requestor.in.strb.getWidth, 1.U) }
 
   // ReqRsp Link to exchange necessary data
   requestors.io.zip(responsers.io).foreach {
@@ -114,15 +110,11 @@ class Reader(param: ReaderWriterParam, moduleNamePrefix: String = "unnamed_clust
     }
   }
   responsers.io.zip(io.tcdmRsp).foreach {
-    case (responser, tcdmRsp) => {
-      responser.in.tcdmRsp <> tcdmRsp
-    }
+    case (responser, tcdmRsp) => { responser.in.tcdmRsp <> tcdmRsp }
   }
   // Responser <> DataBuffer, Data Link + dataFifoPopped
   dataBuffer.io.in.zip(responsers.io).foreach {
-    case (buffer, responser) => {
-      buffer <> responser.out.data
-    }
+    case (buffer, responser) => { buffer <> responser.out.data }
   }
   responsers.io.foreach(_.out.dataFifoPopped := dataBuffer.io.out.head.fire)
 

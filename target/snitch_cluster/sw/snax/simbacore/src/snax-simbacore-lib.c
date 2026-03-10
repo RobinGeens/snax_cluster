@@ -153,10 +153,11 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
                            uint32_t B_ptr, int32_t* B_ss, int32_t* B_tb, int32_t* B_ts,  //
                            uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts) {
     // Route input A to SUC BC: R7
-    _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+    _Static_assert(S_STRIDE_NUM_READER_7 == 2 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
                    "loop unroll mismatch");
     write_csr(BASE_PTR_READER_7_LOW, A_ptr);         // Base ptr
-    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride
+    write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride 1
+    write_csr(S_STRIDE_BASE_READER_7 + 1, A_ss[1]);  // Spatial stride 2
     write_csr(T_BOUND_BASE_READER_7 + 0, A_tb[0]);   // Temporal bound
     write_csr(T_BOUND_BASE_READER_7 + 1, A_tb[1]);
     write_csr(T_BOUND_BASE_READER_7 + 2, A_tb[2]);
@@ -216,10 +217,11 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
 void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t* A_ts,  //
                             uint32_t C_ptr, int32_t* C_ss, int32_t* C_tb, int32_t* C_ts) {
     // Route input A to SUC BC: R7
-    _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+    _Static_assert(S_STRIDE_NUM_READER_7 == 2 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
                    "loop unroll mismatch");
     write_csr(BASE_PTR_READER_7_LOW, A_ptr);         // Base ptr
     write_csr(S_STRIDE_BASE_READER_7 + 0, A_ss[0]);  // Spatial stride
+    write_csr(S_STRIDE_BASE_READER_7 + 1, A_ss[1]);  // Spatial stride
     write_csr(T_BOUND_BASE_READER_7 + 0, A_tb[0]);   // Temporal bound
     write_csr(T_BOUND_BASE_READER_7 + 1, A_tb[1]);
     write_csr(T_BOUND_BASE_READER_7 + 2, A_tb[2]);
@@ -256,10 +258,21 @@ void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_
     write_csr(T_BOUND_BASE_READER_10, 0);
     write_csr(T_BOUND_BASE_READER_11, 0);
     write_csr(T_BOUND_BASE_READER_12, 0);
-    write_csr(T_BOUND_BASE_READER_13, 0);
     write_csr(T_BOUND_BASE_WRITER_0, 0);
     write_csr(T_BOUND_BASE_WRITER_1, 0);
     write_csr(T_BOUND_BASE_WRITER_2, 0);
+
+    // Fully initialize R13 to a safe disabled state. When this function is
+    // The stride-zero bug forces bound=1 when stride=0, so all strides must be non-zero to keep R13 truly disabled.
+    write_csr(S_STRIDE_BASE_READER_13, 1);
+    write_csr(T_BOUND_BASE_READER_13 + 0, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 1, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 2, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 3, 0);
+    write_csr(T_STRIDE_BASE_READER_13 + 0, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 1, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 2, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 3, 1);
 }
 
 void set_streamer_csr(
@@ -404,10 +417,11 @@ void set_streamer_csr(
     }
 
     if (R7_en) {
-        _Static_assert(S_STRIDE_NUM_READER_7 == 1 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
+        _Static_assert(S_STRIDE_NUM_READER_7 == 2 && T_BOUND_NUM_READER_7 == 4 && T_STRIDE_NUM_READER_7 == 4,
                        "loop unroll mismatch");
         write_csr(BASE_PTR_READER_7_LOW, R7_ptr);         // Base ptr
-        write_csr(S_STRIDE_BASE_READER_7 + 0, R7_ss[0]);  // Spatial stride
+        write_csr(S_STRIDE_BASE_READER_7 + 0, R7_ss[0]);  // Spatial stride 0
+        write_csr(S_STRIDE_BASE_READER_7 + 1, R7_ss[1]);  // Spatial stride 1
         write_csr(T_BOUND_BASE_READER_7 + 0, R7_tb[0]);   // Temporal bound
         write_csr(T_BOUND_BASE_READER_7 + 1, R7_tb[1]);
         write_csr(T_BOUND_BASE_READER_7 + 2, R7_tb[2]);
@@ -610,7 +624,7 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
         while (read_csr(R10_DELAY_GAUGE) < R10_start_cnt);
         write_csr(DELAYED_START_READER_10, 1);
 #ifdef VERBOSE
-        printf("[%d cc] Streamer R10 can start\n", get_cycle_count());
+        printf("[%d cc] Streamer R10 can start\n", snrt_mcycle());
 #endif
     }
 
@@ -618,7 +632,7 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
         while (read_csr(R11_DELAY_GAUGE) < R11_start_cnt);
         write_csr(DELAYED_START_READER_11, 1);
 #ifdef VERBOSE
-        printf("[%d cc] Streamer R11 can start\n", get_cycle_count());
+        printf("[%d cc] Streamer R11 can start\n", snrt_mcycle());
 #endif
     }
 }
@@ -626,7 +640,7 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
 // Stall until Streamer and GEMM accelerator finish
 void wait_simbacore_and_streamer() {
 #ifdef VERBOSE
-    printf("[%d cc] Waiting for SimbaCore to finish...\n", get_cycle_count());
+    printf("[%d cc] Waiting for SimbaCore to finish...\n", snrt_mcycle());
 #endif
     write_csr(STREAMER_START_CSR, 0);
     write_csr(SIMBACORE_START, 0);
@@ -634,11 +648,11 @@ void wait_simbacore_and_streamer() {
     write_csr(DELAYED_START_READER_11, 0);
     while (read_csr(SIMBACORE_BUSY));  // 1185 = 0x4a1
 #ifdef VERBOSE
-    printf("[%d cc] SimbaCore has finished. Waiting for Streamers...\n", get_cycle_count());
+    printf("[%d cc] SimbaCore has finished. Waiting for Streamers...\n", snrt_mcycle());
 #endif
     while (read_csr(STREAMER_BUSY_CSR));  // 1177 = 0x499
 #ifdef VERBOSE
-    printf("[%d cc] Streamers and SimbaCore have finished\n", get_cycle_count());
+    printf("[%d cc] Streamers and SimbaCore have finished\n", snrt_mcycle());
 #endif
 }
 
@@ -657,7 +671,7 @@ uint32_t read_simbacore_perf_counter() {
 // Check result, word-by-word. data_length in bytes
 uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_length) {
     uint32_t err         = 0;
-    int32_t num_elements = data_length / sizeof(uint16_t);
+    int32_t num_elements = data_length / sizeof(uint8_t);
     printf("Checking results: %d bytes (%d elements)\n", data_length, num_elements);
 
     for (int i = 0; i < num_elements; i++) {
@@ -668,6 +682,24 @@ uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_
             printf("FAIL out[%d] = %d,\tref = %d\n", i, output_value, golden_value);
         } else {
             printf("PASS out[%d] = %d,\tref = %d\n", i, output_value, golden_value);
+        }
+    }
+    return err;
+}
+
+uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t data_length) {
+    uint32_t err         = 0;
+    int32_t num_elements = data_length / sizeof(uint16_t);
+    printf("Checking results (u16): %d bytes (%d elements)\n", data_length, num_elements);
+
+    for (int i = 0; i < num_elements; i++) {
+        uint16_t output_value = output[i];
+        uint16_t golden_value = output_golden[i];
+        if (output_value != golden_value) {
+            err++;
+            printf("FAIL out[%d] = %u,\tref = %u\n", i, output_value, golden_value);
+        } else {
+            printf("PASS out[%d] = %u,\tref = %u\n", i, output_value, golden_value);
         }
     }
     return err;

@@ -34,7 +34,7 @@ int test_isgemm() {
     // Call compute core
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: ISGEMM\n\n");
-        uint32_t start_cycles = get_cycle_count();
+        uint32_t start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif
@@ -46,7 +46,7 @@ int test_isgemm() {
         set_simbacore_csr(M4_ISGEMM, dim0, 1, dim1, 1, dim2);
         start_simbacore_and_streamers(M4_R10_en, 0, M4_R11_en, 0);
         wait_simbacore_and_streamer();
-        uint32_t end_cycles = get_cycle_count();
+        uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
@@ -62,4 +62,65 @@ int test_isgemm() {
     return err;
 }
 
-int main() { return test_isgemm(); }
+int test_isgemm_no_requant() {
+    int err = 0;
+
+    // Define TCDM addresses
+    void* tcdm_base_ptr = snrt_l1_next();
+    uint8_t* ptr_a      = (uint8_t*)(tcdm_base_ptr + M4_addr_a);
+    uint8_t* ptr_b      = (uint8_t*)(tcdm_base_ptr + M4_addr_b);
+    uint16_t* ptr_cd    = (uint16_t*)(tcdm_base_ptr + M4_addr_cd);
+
+    // Initialize cycle counter for timing
+    if (snrt_global_core_idx() == 0) init_cycle_counter();
+
+    snrt_cluster_hw_barrier();
+
+    // Transfer data from L3 to L1 using DMA only
+    if (snrt_is_dm_core()) {
+        snrt_dma_start_1d(ptr_a, M4_A, M4_length_a);
+        snrt_dma_start_1d(ptr_b, M4_B, M4_length_b);
+        snrt_dma_start_1d(ptr_cd, M4_C, M4_length_cd);
+        snrt_dma_wait_all();
+    }
+
+    // Wait for DMA to finish
+    snrt_cluster_hw_barrier();
+
+    // Call compute core
+    if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: ISGEMM\n\n");
+        uint32_t start_cycles = snrt_mcycle();
+#ifdef VERBOSE
+        printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
+#endif
+
+        set_isgemm_streamer_csr((uint32_t)ptr_a, M4_R11_ss, M4_R11_tb, M4_R11_ts,  // A
+                                (uint32_t)ptr_b, M4_R12_ss, M4_R12_tb, M4_R12_ts,  // B
+                                (uint32_t)ptr_cd, M4_W3_ss, M4_W3_tb, M4_W3_ts);   // C/D
+
+        set_simbacore_csr(M5_ISGEMM_NO_REQUANT, dim0, 1, dim1, 1, dim2);
+        start_simbacore_and_streamers(M4_R10_en, 0, M4_R11_en, 0);
+        wait_simbacore_and_streamer();
+        uint32_t end_cycles = snrt_mcycle();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
+        printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+
+        // check_result_all((uint8_t*)ptr_cd, M4_D, M4_length_cd);
+        err += check_result_sample_u16(ptr_cd, M4_D_no_requant, M4_test_samples_D,  //
+                                       nb_test_samples, "out");
+
+        printf("Test ISGEMM: dim0=%d, dim1=%d, dim2=%d\n", dim0, dim1, dim2);
+        printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, nb_test_samples);
+    }
+
+    snrt_cluster_hw_barrier();
+    return err;
+}
+
+int main() {
+    int err = 0;
+    err += test_isgemm();
+    err += test_isgemm_no_requant();
+    return err;
+}

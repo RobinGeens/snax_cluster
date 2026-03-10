@@ -42,7 +42,7 @@ int test_phase1() {
     // Call compute core
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Phase1\n\n");
-        uint32_t start_cycles = get_cycle_count();
+        uint32_t start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif
@@ -55,7 +55,7 @@ int test_phase1() {
         set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInner, dtRank, xProjDim);
         start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
         wait_simbacore_and_streamer();
-        uint32_t end_cycles = get_cycle_count();
+        uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
@@ -120,7 +120,7 @@ int test_phase2() {
     // Call compute core
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Phase2\n\n");
-        uint32_t start_cycles = get_cycle_count();
+        uint32_t start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif
@@ -134,7 +134,7 @@ int test_phase2() {
         set_simbacore_csr(M2_PHASE2, seqLen, dModel, dInner, dtRank, dModel);
         start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
         wait_simbacore_and_streamer();
-        uint32_t end_cycles = get_cycle_count();
+        uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
@@ -206,7 +206,7 @@ int test_phase1_and_2() {
     uint32_t simbacore_cycles_phase1 = 0;
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Mamba main (Phase1 and Phase2)\n\n");
-        start_cycles = get_cycle_count();
+        start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif
@@ -222,7 +222,7 @@ int test_phase1_and_2() {
         simbacore_cycles_phase1 = read_simbacore_perf_counter();
 
 #ifdef VERBOSE
-        uint32_t end_cycles_phase1 = get_cycle_count();
+        uint32_t end_cycles_phase1 = snrt_mcycle();
         printf("[%d cc] SimbaCore Phase1 took %u cycles\n", end_cycles_phase1, simbacore_cycles_phase1);
 #endif
     }
@@ -246,7 +246,7 @@ int test_phase1_and_2() {
 
     // Call compute core
     if (snrt_global_core_idx() == 0) {
-        uint32_t start_cycles_phase2 = get_cycle_count();
+        uint32_t start_cycles_phase2 = snrt_mcycle();
 
         set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2,                      //
                             (uint32_t)ptr_z, (uint32_t)ptr_dt_in,                                         //
@@ -259,7 +259,7 @@ int test_phase1_and_2() {
         wait_simbacore_and_streamer();
 
         uint32_t simbacore_cycles_phase2 = read_simbacore_perf_counter();
-        uint32_t end_cycles              = get_cycle_count();
+        uint32_t end_cycles              = snrt_mcycle();
         printf("[%d cc] Simbacore Phase1 took %u cycles\n", end_cycles, simbacore_cycles_phase1);
         printf("[%d cc] Simbacore Phase2 took %u cycles\n", end_cycles, simbacore_cycles_phase2);
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_phase2);

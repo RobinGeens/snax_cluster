@@ -88,6 +88,7 @@ uint32_t read_streamer_perf_counter();
 uint32_t read_simbacore_perf_counter();
 
 uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_length);
+uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t data_length);
 uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
                              int32_t test_sample_count, const char* tensor_name);
 uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
@@ -95,6 +96,3 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
 
 // Initialize cycle counter (call once at program start)
 void init_cycle_counter(void);
-
-// Get current cycle count
-static inline uint32_t get_cycle_count(void) { return snrt_get_perf_counter(SNRT_PERF_CNT0); }

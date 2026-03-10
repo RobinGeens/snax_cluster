@@ -38,7 +38,7 @@ module snax_simbacore_shell_wrapper #(
     parameter int unsigned RegROCount                    = 4,
     parameter int unsigned RegDataWidth                  = 32,
     parameter int unsigned RegAddrWidth                  = 32,
-    parameter int unsigned ModeWidth                     = 14    // 1
+    parameter int unsigned ModeWidth                     = 20    // 1
 ) (
     //-------------------------------
     // Clocks and reset
@@ -121,20 +121,28 @@ module snax_simbacore_shell_wrapper #(
 
   assign csr_reg_ro_set_o[0][31:1] = 0;
 
-  // Hardcode burner mode to 1 on the MSB. The MSB bits are not used by SimbaCore as `ModeWidth` < `RegDataWidth`
-  localparam logic [31:0] BURNER_MODE = 32'h8000_0000;
+  // Hardcode burner mode to 10 or 01 on the MSB. The MSB bits are not used by SimbaCore as `ModeWidth` < `RegDataWidth`
+  localparam logic [1:0] BURN_STREAMER = 2'b10;
+  localparam logic [1:0] BURN_SIMBACORE = 2'b01;
   initial begin
-    assert (RegDataWidth == 32 && ModeWidth < RegDataWidth)
-    else $fatal(1, "expected RegDataWidth==32 and ModeWidth<RegDataWidth");
+    assert (RegDataWidth == 32 && ModeWidth <= (RegDataWidth - 2))
+    else $fatal(1, "expected RegDataWidth==32 and ModeWidth<=RegDataWidth-2");
   end
 
-  // Burner mode: accept inputs from streamers, but don't pass them on and keep SimbaCore frozen
-  logic burner_en;
-  always @(posedge clk_i) begin
-    if (~rst_ni) burner_en <= 0;
-    else if (csr_reg_set_valid_i && csr_reg_set_ready_o)
-      burner_en <= (csr_reg_set_i[0] == BURNER_MODE);
-    else burner_en <= burner_en;
+  // Burner mode enables (mutually exclusive): see encoding above
+  logic burn_en_sc;
+  logic burn_en_streamer; 
+  always_ff @(posedge clk_i) begin
+    if (~rst_ni) begin
+      burn_en_sc       <= 1'b0;
+      burn_en_streamer <= 1'b0;
+    end else if (csr_reg_set_valid_i) begin // TODO depend on  && csr_reg_set_ready_o) ?
+      burn_en_streamer <= (csr_reg_set_i[0][31:30] == BURN_STREAMER);
+      burn_en_sc       <= (csr_reg_set_i[0][31:30] == BURN_SIMBACORE);
+    end else begin
+      burn_en_sc       <= burn_en_sc;
+      burn_en_streamer <= burn_en_streamer;
+    end
   end
 
   // SimbaCore -> external 
@@ -142,6 +150,10 @@ module snax_simbacore_shell_wrapper #(
   logic acc2stream_1_valid_sc;
   logic acc2stream_2_valid_sc;
   logic acc2stream_3_valid_sc;
+  logic [   OSCoreOutDWidth-1:0] acc2stream_0_data_sc;
+  logic [SwitchCoreOutWidth-1:0] acc2stream_1_data_sc;
+  logic [   SUCoreOutYWidth-1:0] acc2stream_2_data_sc;
+  logic [   ISCoreOutDWidth-1:0] acc2stream_3_data_sc;
   logic stream2acc_0_ready_sc;
   logic stream2acc_1_ready_sc;
   logic stream2acc_2_ready_sc;
@@ -160,26 +172,73 @@ module snax_simbacore_shell_wrapper #(
   // External-facing overrides
   always_comb begin
     // Streamer -> wrapper (in ready)
-    stream2acc_0_ready_o  = burner_en ? 1'b1 : stream2acc_0_ready_sc;
-    stream2acc_1_ready_o  = burner_en ? 1'b1 : stream2acc_1_ready_sc;
-    stream2acc_2_ready_o  = burner_en ? 1'b1 : stream2acc_2_ready_sc;
-    stream2acc_3_ready_o  = burner_en ? 1'b1 : stream2acc_3_ready_sc;
-    stream2acc_4_ready_o  = burner_en ? 1'b1 : stream2acc_4_ready_sc;
-    stream2acc_5_ready_o  = burner_en ? 1'b1 : stream2acc_5_ready_sc;
-    stream2acc_6_ready_o  = burner_en ? 1'b1 : stream2acc_6_ready_sc;
-    stream2acc_7_ready_o  = burner_en ? 1'b1 : stream2acc_7_ready_sc;
-    stream2acc_8_ready_o  = burner_en ? 1'b1 : stream2acc_8_ready_sc;
-    stream2acc_9_ready_o  = burner_en ? 1'b1 : stream2acc_9_ready_sc;
-    stream2acc_10_ready_o = burner_en ? 1'b1 : stream2acc_10_ready_sc;
-    stream2acc_11_ready_o = burner_en ? 1'b1 : stream2acc_11_ready_sc;
-    stream2acc_12_ready_o = burner_en ? 1'b1 : stream2acc_12_ready_sc;
-    stream2acc_13_ready_o = burner_en ? 1'b1 : stream2acc_13_ready_sc;
+    if (burn_en_streamer) begin
+        stream2acc_0_ready_o  = 1'b1;
+        stream2acc_1_ready_o  = 1'b1;
+        stream2acc_2_ready_o  = 1'b1;
+        stream2acc_3_ready_o  = 1'b1;
+        stream2acc_4_ready_o  = 1'b1;
+        stream2acc_5_ready_o  = 1'b1;
+        stream2acc_6_ready_o  = 1'b1;
+        stream2acc_7_ready_o  = 1'b1;
+        stream2acc_8_ready_o  = 1'b1;
+        stream2acc_9_ready_o  = 1'b1;
+        stream2acc_10_ready_o = 1'b1;
+        stream2acc_11_ready_o = 1'b1;
+        stream2acc_12_ready_o = 1'b1;
+        stream2acc_13_ready_o = 1'b1;
+    end else if (burn_en_sc) begin
+        stream2acc_0_ready_o  = 1'b0;
+        stream2acc_1_ready_o  = 1'b0;
+        stream2acc_2_ready_o  = 1'b0;
+        stream2acc_3_ready_o  = 1'b0;
+        stream2acc_4_ready_o  = 1'b0;
+        stream2acc_5_ready_o  = 1'b0;
+        stream2acc_6_ready_o  = 1'b0;
+        stream2acc_7_ready_o  = 1'b0;
+        stream2acc_8_ready_o  = 1'b0;
+        stream2acc_9_ready_o  = 1'b0;
+        stream2acc_10_ready_o = 1'b0;
+        stream2acc_11_ready_o = 1'b0;
+        stream2acc_12_ready_o = 1'b0;
+        stream2acc_13_ready_o = 1'b0;
+    end else begin
+      stream2acc_0_ready_o  = stream2acc_0_ready_sc;
+      stream2acc_1_ready_o  = stream2acc_1_ready_sc;
+      stream2acc_2_ready_o  = stream2acc_2_ready_sc;
+      stream2acc_3_ready_o  = stream2acc_3_ready_sc;
+      stream2acc_4_ready_o  = stream2acc_4_ready_sc;
+      stream2acc_5_ready_o  = stream2acc_5_ready_sc;
+      stream2acc_6_ready_o  = stream2acc_6_ready_sc;
+      stream2acc_7_ready_o  = stream2acc_7_ready_sc;
+      stream2acc_8_ready_o  = stream2acc_8_ready_sc;
+      stream2acc_9_ready_o  = stream2acc_9_ready_sc;
+      stream2acc_10_ready_o = stream2acc_10_ready_sc;
+      stream2acc_11_ready_o = stream2acc_11_ready_sc;
+      stream2acc_12_ready_o = stream2acc_12_ready_sc;
+      stream2acc_13_ready_o = stream2acc_13_ready_sc;
+    end
 
     // Wrapper -> streamer (out valid)
-    acc2stream_0_valid_o  = burner_en ? 1'b1 : acc2stream_0_valid_sc;
-    acc2stream_1_valid_o  = burner_en ? 1'b1 : acc2stream_1_valid_sc;
-    acc2stream_2_valid_o  = burner_en ? 1'b1 : acc2stream_2_valid_sc;
-    acc2stream_3_valid_o  = burner_en ? 1'b1 : acc2stream_3_valid_sc;
+    if (burn_en_streamer || burn_en_sc) begin
+      acc2stream_0_valid_o = 1'b1;
+      acc2stream_1_valid_o = 1'b1;
+      acc2stream_2_valid_o = 1'b1;
+      acc2stream_3_valid_o = 1'b1;
+      acc2stream_0_data_o  = '0;
+      acc2stream_1_data_o  = '0;
+      acc2stream_2_data_o  = '0;
+      acc2stream_3_data_o  = '0;
+    end else begin
+      acc2stream_0_valid_o = acc2stream_0_valid_sc;
+      acc2stream_1_valid_o = acc2stream_1_valid_sc;
+      acc2stream_2_valid_o = acc2stream_2_valid_sc;
+      acc2stream_3_valid_o = acc2stream_3_valid_sc;
+      acc2stream_0_data_o  = acc2stream_0_data_sc;
+      acc2stream_1_data_o  = acc2stream_1_data_sc;
+      acc2stream_2_data_o  = acc2stream_2_data_sc;
+      acc2stream_3_data_o  = acc2stream_3_data_sc;
+    end
   end
 
   SimbaCore inst_SimbaCore (
@@ -188,80 +247,98 @@ module snax_simbacore_shell_wrapper #(
 
       // OS Core
       .io_osCore_in_a_ready(stream2acc_0_ready_sc),
-      .io_osCore_in_a_valid(burner_en ? 1'b0 : stream2acc_0_valid_i),
-      .io_osCore_in_a_bits (stream2acc_0_data_i),
+      .io_osCore_in_a_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_0_valid_i),
+      .io_osCore_in_a_bits (burn_en_sc ? '0 : stream2acc_0_data_i),
 
       .io_osCore_in_b_ready(stream2acc_1_ready_sc),
-      .io_osCore_in_b_valid(burner_en ? 1'b0 : stream2acc_1_valid_i),
-      .io_osCore_in_b_bits (stream2acc_1_data_i),
+      .io_osCore_in_b_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_1_valid_i),
+      .io_osCore_in_b_bits (burn_en_sc ? '0 : stream2acc_1_data_i),
 
-      .io_osCore_out_d_ready(burner_en ? 1'b0 : acc2stream_0_ready_i),
+      .io_osCore_out_d_ready(burn_en_sc       ? 1'b1 :
+                             burn_en_streamer ? 1'b0 : acc2stream_0_ready_i),
       .io_osCore_out_d_valid(acc2stream_0_valid_sc),
-      .io_osCore_out_d_bits (acc2stream_0_data_o),
+      .io_osCore_out_d_bits (acc2stream_0_data_sc),
 
       // Switch Core
       .io_switchCore_in_matmul_ready(stream2acc_2_ready_sc),
-      .io_switchCore_in_matmul_valid(burner_en ? 1'b0 : stream2acc_2_valid_i),
-      .io_switchCore_in_matmul_bits (stream2acc_2_data_i),
+      .io_switchCore_in_matmul_valid(burn_en_sc       ? 1'b1 :
+                                     burn_en_streamer ? 1'b0 : stream2acc_2_valid_i),
+      .io_switchCore_in_matmul_bits (burn_en_sc ? '0 : stream2acc_2_data_i),
 
       .io_switchCore_in_weight_ready(stream2acc_3_ready_sc),
-      .io_switchCore_in_weight_valid(burner_en ? 1'b0 : stream2acc_3_valid_i),
-      .io_switchCore_in_weight_bits (stream2acc_3_data_i),
+      .io_switchCore_in_weight_valid(burn_en_sc       ? 1'b1 :
+                                     burn_en_streamer ? 1'b0 : stream2acc_3_valid_i),
+      .io_switchCore_in_weight_bits (burn_en_sc ? '0 : stream2acc_3_data_i),
 
       .io_switchCore_in_bias_ready(stream2acc_4_ready_sc),
-      .io_switchCore_in_bias_valid(burner_en ? 1'b0 : stream2acc_4_valid_i),
-      .io_switchCore_in_bias_bits (stream2acc_4_data_i),
+      .io_switchCore_in_bias_valid(burn_en_sc       ? 1'b1 :
+                                   burn_en_streamer ? 1'b0 : stream2acc_4_valid_i),
+      .io_switchCore_in_bias_bits (burn_en_sc ? '0 : stream2acc_4_data_i),
 
       .io_switchCore_in_matmulWeight_ready(stream2acc_5_ready_sc),
-      .io_switchCore_in_matmulWeight_valid(burner_en ? 1'b0 : stream2acc_5_valid_i),
-      .io_switchCore_in_matmulWeight_bits (stream2acc_5_data_i),
+      .io_switchCore_in_matmulWeight_valid(burn_en_sc       ? 1'b1 :
+                                           burn_en_streamer ? 1'b0 : stream2acc_5_valid_i),
+      .io_switchCore_in_matmulWeight_bits (burn_en_sc ? '0 : stream2acc_5_data_i),
 
       .io_switchCore_out_x_valid(acc2stream_1_valid_sc),
-      .io_switchCore_out_x_ready(burner_en ? 1'b0 : acc2stream_1_ready_i),
-      .io_switchCore_out_x_bits (acc2stream_1_data_o),
+      .io_switchCore_out_x_ready(burn_en_sc       ? 1'b1 :
+                                 burn_en_streamer ? 1'b0 : acc2stream_1_ready_i),
+      .io_switchCore_out_x_bits (acc2stream_1_data_sc),
 
 
       // State update Core
       .io_suCore_in_A_ready(stream2acc_6_ready_sc),
-      .io_suCore_in_A_valid(burner_en ? 1'b0 : stream2acc_6_valid_i),
-      .io_suCore_in_A_bits (stream2acc_6_data_i),
+      .io_suCore_in_A_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_6_valid_i),
+      .io_suCore_in_A_bits (burn_en_sc ? '0 : stream2acc_6_data_i),
 
       .io_suCore_in_BC_ready(stream2acc_7_ready_sc),
-      .io_suCore_in_BC_valid(burner_en ? 1'b0 : stream2acc_7_valid_i),
-      .io_suCore_in_BC_bits (stream2acc_7_data_i),
+      .io_suCore_in_BC_valid(burn_en_sc       ? 1'b1 :
+                             burn_en_streamer ? 1'b0 : stream2acc_7_valid_i),
+      .io_suCore_in_BC_bits (burn_en_sc ? '0 : stream2acc_7_data_i),
 
       .io_suCore_in_D_ready(stream2acc_8_ready_sc),
-      .io_suCore_in_D_valid(burner_en ? 1'b0 : stream2acc_8_valid_i),
-      .io_suCore_in_D_bits (stream2acc_8_data_i),
+      .io_suCore_in_D_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_8_valid_i),
+      .io_suCore_in_D_bits (burn_en_sc ? '0 : stream2acc_8_data_i),
 
       .io_suCore_in_x_ready(stream2acc_9_ready_sc),
-      .io_suCore_in_x_valid(burner_en ? 1'b0 : stream2acc_9_valid_i),
-      .io_suCore_in_x_bits (stream2acc_9_data_i),
+      .io_suCore_in_x_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_9_valid_i),
+      .io_suCore_in_x_bits (burn_en_sc ? '0 : stream2acc_9_data_i),
 
       .io_suCore_in_z_ready(stream2acc_10_ready_sc),
-      .io_suCore_in_z_valid(burner_en ? 1'b0 : stream2acc_10_valid_i),
-      .io_suCore_in_z_bits (stream2acc_10_data_i),
+      .io_suCore_in_z_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_10_valid_i),
+      .io_suCore_in_z_bits (burn_en_sc ? '0 : stream2acc_10_data_i),
 
-      .io_suCore_out_y_ready(burner_en ? 1'b0 : acc2stream_2_ready_i),
+      .io_suCore_out_y_ready(burn_en_sc       ? 1'b1 :
+                             burn_en_streamer ? 1'b0 : acc2stream_2_ready_i),
       .io_suCore_out_y_valid(acc2stream_2_valid_sc),
-      .io_suCore_out_y_bits (acc2stream_2_data_o),
+      .io_suCore_out_y_bits (acc2stream_2_data_sc),
 
       // IS Core
       .io_isCore_in_a_ready(stream2acc_11_ready_sc),
-      .io_isCore_in_a_valid(burner_en ? 1'b0 : stream2acc_11_valid_i),
-      .io_isCore_in_a_bits (stream2acc_11_data_i),
+      .io_isCore_in_a_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_11_valid_i),
+      .io_isCore_in_a_bits (burn_en_sc ? '0 : stream2acc_11_data_i),
 
       .io_isCore_in_b_ready(stream2acc_12_ready_sc),
-      .io_isCore_in_b_valid(burner_en ? 1'b0 : stream2acc_12_valid_i),
-      .io_isCore_in_b_bits (stream2acc_12_data_i),
+      .io_isCore_in_b_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_12_valid_i),
+      .io_isCore_in_b_bits (burn_en_sc ? '0 : stream2acc_12_data_i),
 
       .io_isCore_in_c_ready(stream2acc_13_ready_sc),
-      .io_isCore_in_c_valid(burner_en ? 1'b0 : stream2acc_13_valid_i),
-      .io_isCore_in_c_bits (stream2acc_13_data_i),
+      .io_isCore_in_c_valid(burn_en_sc       ? 1'b1 :
+                            burn_en_streamer ? 1'b0 : stream2acc_13_valid_i),
+      .io_isCore_in_c_bits (burn_en_sc ? '0 : stream2acc_13_data_i),
 
-      .io_isCore_out_d_ready(burner_en ? 1'b0 : acc2stream_3_ready_i),
+      .io_isCore_out_d_ready(burn_en_sc       ? 1'b1 :
+                             burn_en_streamer ? 1'b0 : acc2stream_3_ready_i),
       .io_isCore_out_d_valid(acc2stream_3_valid_sc),
-      .io_isCore_out_d_bits (acc2stream_3_data_o),
+      .io_isCore_out_d_bits (acc2stream_3_data_sc),
 
       // CSR
       .io_config_ready(csr_reg_set_ready_o),

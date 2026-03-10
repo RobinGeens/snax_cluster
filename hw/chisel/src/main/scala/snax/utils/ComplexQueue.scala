@@ -23,6 +23,7 @@ class ComplexQueueConcat(
   outputWidth:    Int,
   depth:          Int,
   pipe:           Boolean = false,
+  flow:           Boolean = false,
   priority_empty: Boolean = true
 ) extends Module
     with RequireAsyncReset {
@@ -43,27 +44,15 @@ class ComplexQueueConcat(
   require(depth > 0)
 
   val io = IO(new Bundle {
-    val in         = Flipped(
-      Vec(
-        {
-          if (inputWidth == bigWidth) 1 else numChannel
-        },
-        Decoupled(UInt(inputWidth.W))
-      )
-    )
-    val out        = Vec(
-      {
-        if (outputWidth == bigWidth) 1 else numChannel
-      },
-      Decoupled(UInt(outputWidth.W))
-    )
+    val in         = Flipped(Vec(if (inputWidth == bigWidth) 1 else numChannel, Decoupled(UInt(inputWidth.W))))
+    val out        = Vec(if (outputWidth == bigWidth) 1 else numChannel, Decoupled(UInt(outputWidth.W)))
     val allEmpty   = Output(Bool())
     val anyFull    = Output(Bool())
     val priorities = Output(Vec(numChannel, Bool()))
   })
 
   val queues = for (i <- 0 until numChannel) yield {
-    val queue = Module(new Queue(UInt(smallWidth.W), depth, pipe) {
+    val queue = Module(new Queue(UInt(smallWidth.W), depth, pipe, flow) {
       override val desiredName = queueModuleName
     })
     queue
@@ -112,9 +101,7 @@ class ComplexQueueConcat(
     // Only when all signals are valid, then ready signals in each channels can be passed to FIFO
     queues.foreach(i => i.io.deq.ready := deq_all_valid & io.out.head.ready)
     // Connect all data
-    io.out.foreach(_.bits := queues.map(i => i.io.deq.bits).reduce { (a, b) =>
-      Cat(b, a)
-    })
+    io.out.foreach(_.bits := queues.map(i => i.io.deq.bits).reduce { (a, b) => Cat(b, a) })
   }
 
   // All empty signal is a debug signal and derived from sub channels: if all fifo is empty, then this signal is empty

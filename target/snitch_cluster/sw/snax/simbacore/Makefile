@@ -24,15 +24,16 @@ endif
 # Fixed paths in repository tree
 ROOT     = $(abspath $(MK_DIR)/../../../../..)
 SNRT_DIR = $(ROOT)/sw/snRuntime
-## Paths relative to the runtime including this Makefile
-BUILDDIR = $(abspath build)
-SRC_DIR  = $(abspath src)
+## Paths relative to this Makefile's directory (invariant regardless of cwd)
+BUILDDIR = $(MK_DIR)build
+SRC_DIR  = $(MK_DIR)src
+INC_DIR  = $(MK_DIR)include
 
 ####################
 ## Build variables #
 ####################
 
-INCDIRS += $(abspath include)
+INCDIRS += $(INC_DIR)
 INCDIRS += $(SNRT_DIR)/src
 INCDIRS += $(SNRT_DIR)/api
 INCDIRS += $(SNRT_DIR)/src/omp
@@ -74,5 +75,5 @@ clean:
 $(BUILDDIR):
 	mkdir -p $@
 
-$(BUILDDIR)/%.o: $(SRC_DIR)/%.c | $(BUILDDIR)
+$(OBJS): $(SRC_DIR)/snax-simbacore-lib.c $(INC_DIR)/snax-simbacore-lib.h | $(BUILDDIR)
 	$(RISCV_CC) $(RISCV_CFLAGS) -c $< -o $@

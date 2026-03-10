@@ -31,12 +31,21 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-simd/build/snax-simbacore-simd.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-fft/build/snax-simbacore-fft.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/snax-simbacore-main-full/build/snax-simbacore-main-full.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/snax-simbacore-streamer-burner/build/snax-simbacore-streamer-burner.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/snax-simbacore-core-burner/build/snax-simbacore-core-burner.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/snax-simbacore-rmsnorm/build/snax-simbacore-rmsnorm.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/snax-simbacore-suc/build/snax-simbacore-suc.elf | tee vsim.log`
 
 [bash|target] Run SimbaCore test program in GUI (with VNC)
 
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-main/build/snax-simbacore-main.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-main-full/build/snax-simbacore-main-full.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-osgemm/build/snax-simbacore-osgemm.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-isgemm/build/snax-simbacore-isgemm.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-fft/build/snax-simbacore-fft.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-simd/build/snax-simbacore-simd.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-rmsnorm/build/snax-simbacore-rmsnorm.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/snax-simbacore-suc/build/snax-simbacore-suc.elf`
 
 [snax|target] Make traces (from .dasm to .txt)
 
