@@ -57,7 +57,7 @@ def patch_fifo_depths(reader, writer):
 
 def run_build_and_sim(program: Literal["main", "main-full"], build_log_path: str, sim_log_path: str):
     program_elf = os.path.join(
-        VSIM_DIR, "sw", "apps", f"snax-simbacore-{program}", "build", f"snax-simbacore-{program}.elf"
+        VSIM_DIR, "sw", "apps", program, "build", f"{program}.elf"
     )
     subprocess.check_call(
         f"bash {shlex.quote(BUILD_SCRIPT)} > {shlex.quote(build_log_path)} 2>&1", cwd=ROOT, shell=True

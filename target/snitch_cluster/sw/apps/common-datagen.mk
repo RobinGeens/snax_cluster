@@ -9,8 +9,8 @@ CHISEL_SSM := $(shell bender path chisel-ssm)
 CLUSTER_DIR := $(abspath $(CURR_DIR)/../../../../)
 
 DATAGEN_PY ?= $(DATA_DIR)/datagen.py
-DATAGEN_DEPS ?= $(CURR_DIR)/../../snax-simbacore-main/data/datagen_base.py
-DATAGEN_DEPS += $(CURR_DIR)/../../snax-simbacore-main/data/datagen_cli.py
+DATAGEN_DEPS ?= $(CURR_DIR)/../../main/data/datagen_base.py
+DATAGEN_DEPS += $(CURR_DIR)/../../main/data/datagen_cli.py
 DATA_H     ?= $(DATA_DIR)/data.h
 
 # Read desired workload parameters from a local params file (input)

@@ -20,73 +20,21 @@ SUBDIRS += dnn/linear
 SUBDIRS += dnn/maxpool
 SUBDIRS += dnn/softmax
 endif
-SUBDIRS += montecarlo/pi_estimation
-SUBDIRS += snax-mac
-SUBDIRS += snax-mac-simple/untiled
-SUBDIRS += snax-mac-simple/tiled
-ifeq ($(CFG_OVERRIDE), cfg/snax_alu_cluster.hjson)
-SUBDIRS += snax-alu
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_multi_alu_cluster.hjson)
-SUBDIRS += snax-alu
-SUBDIRS += snax-multi-alu
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_KUL_cluster.hjson)
-SUBDIRS += snax-xdma-memset
-SUBDIRS += snax-xdma-reshape-comparison
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_compiler_test_cluster.hjson)
-SUBDIRS += snax-xdma-memset
-SUBDIRS += snax-xdma-maxpool
-SUBDIRS += snax-xdma-transpose
-SUBDIRS += snax-xdma-reshape-comparison
-SUBDIRS += snax-xdma-elementwise-add
-SUBDIRS += snax-xdma-rescale-down
-SUBDIRS += snax-xdma-rescale-up
-SUBDIRS += snax-xdma-avgpool
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_versacore_to_cluster.hjson)
-SUBDIRS += snax-versacore-to-matmul
-SUBDIRS += snax-versacore-to-matmul-profile
-SUBDIRS += snax-xdma-memset
-SUBDIRS += snax-xdma-maxpool
-SUBDIRS += snax-xdma-transpose
-SUBDIRS += snax-xdma-reshape-comparison
-endif
-ifeq ($(CFG_OVERRIDE), cfg/snax_versacore_dse_cluster.hjson)
-SUBDIRS += snax-versacore-dse-matmul-profile
-endif
-SUBDIRS += snax-multi-cluster-playground
-ifeq ($(CFG_OVERRIDE), cfg/snax_hypercorex_cluster.hjson)
-SUBDIRS += snax-hypercorex/test-csr
-SUBDIRS += snax-hypercorex/char-recog
-SUBDIRS += snax-hypercorex/high-dim-bind
-SUBDIRS += snax-hypercorex/am-search
-SUBDIRS += snax-hypercorex/isolet-recog
-SUBDIRS += snax-hypercorex/isolet-recog-long
-SUBDIRS += snax-hypercorex/ucihar-recog
-SUBDIRS += snax-hypercorex/ucihar-recog-long
-SUBDIRS += snax-hypercorex/digit-recog
-SUBDIRS += snax-hypercorex/digit-recog-long
-SUBDIRS += snax-hypercorex/dna-recog
-SUBDIRS += snax-hypercorex/dna-recog-long
-SUBDIRS += snax-hypercorex/lang-recog
-SUBDIRS += snax-hypercorex/lang-recog-long
-SUBDIRS += snax-hypercorex/vec-compress
-endif
 
 # SimbaCore tests and programs
 ifeq ($(CFG_OVERRIDE), cfg/snax_simbacore_cluster.hjson)
-SUBDIRS += snax-simbacore-main
-SUBDIRS += snax-simbacore-osgemm
-SUBDIRS += snax-simbacore-isgemm
-SUBDIRS += snax-simbacore-simd
-SUBDIRS += snax-simbacore-fft
-SUBDIRS += snax-simbacore-rmsnorm
-SUBDIRS += snax-simbacore-main-full
-SUBDIRS += snax-simbacore-streamer-burner
-SUBDIRS += snax-simbacore-core-burner
-SUBDIRS += snax-simbacore-suc
+SUBDIRS += main
+SUBDIRS += osgemm
+SUBDIRS += osgemm-tiled
+SUBDIRS += isgemm
+SUBDIRS += simd
+SUBDIRS += fft
+SUBDIRS += rmsnorm
+SUBDIRS += main-full
+SUBDIRS += main-tiled
+SUBDIRS += streamer-burner
+SUBDIRS += core-burner
+SUBDIRS += suc
 endif
 
 .PHONY: all clean $(SUBDIRS)

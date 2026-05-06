@@ -38,16 +38,16 @@ fi
 # Define tests (names only; ELF at sw/apps/[name]/build/[name].elf)
 declare -a TESTS=(
   "nop"
-  "snax-simbacore-main"
-  "snax-simbacore-osgemm"
-  "snax-simbacore-isgemm"
-  "snax-simbacore-simd"
-  "snax-simbacore-main-full"
-  "snax-simbacore-rmsnorm"
-  "snax-simbacore-fft"
-  "snax-simbacore-streamer-burner"
-  "snax-simbacore-core-burner"
-  "snax-simbacore-suc"
+  "main"
+  "osgemm"
+  "isgemm"
+  "simd"
+  "main-full"
+  "rmsnorm"
+  "fft"
+  "streamer-burner"
+  "core-burner"
+  "suc"
 )
 
 pushd "${TARGET_DIR}" >/dev/null
