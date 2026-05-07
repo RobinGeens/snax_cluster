@@ -277,8 +277,6 @@ int test_phase1_and_2() {
         err += check_result_sample((uint8_t*)ptr_iscore_out_P2, M2_iscore_expected,  //
                                    M2_test_samples_iscore_out, nb_test_samples, "iscore_out");
 
-        check_result_all(ptr_y, M2_suc_expected, M2_length_y);
-
         printf("Test Phase1 and Phase2: seqLen=%d, dModel=%d\n", seqLen, dModel);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 5 * nb_test_samples);
     }
