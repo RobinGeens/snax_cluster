@@ -9,6 +9,6 @@ CURR_DIR ?= $(DATA_DIR)
 
 # App-specific
 APP_NAME = osgemm-tiled
-GENERATOR_CLASS = simbacore.DataGeneratorOSGEMM
+GENERATOR_CLASS = datagen.DataGeneratorOSGEMM
 
 include $(MK_DIR)/../../common-datagen.mk

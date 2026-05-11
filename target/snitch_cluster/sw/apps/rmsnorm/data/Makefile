@@ -9,6 +9,6 @@ CURR_DIR ?= $(DATA_DIR)
 
 # App-specific
 APP_NAME = rmsnorm
-GENERATOR_CLASS = simbacore.DataGeneratorRmsNorm
+GENERATOR_CLASS = datagen.DataGeneratorRmsNorm
 
 include $(MK_DIR)/../../common-datagen.mk

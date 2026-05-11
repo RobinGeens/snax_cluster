@@ -9,6 +9,6 @@ CURR_DIR ?= $(DATA_DIR)
 
 # App-specific
 APP_NAME = simd
-GENERATOR_CLASS = simbacore.DataGeneratorSIMD
+GENERATOR_CLASS = datagen.DataGeneratorSIMD
 
 include $(MK_DIR)/../../common-datagen.mk

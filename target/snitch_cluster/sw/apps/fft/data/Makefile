@@ -9,6 +9,6 @@ CURR_DIR ?= $(DATA_DIR)
 
 # App-specific
 APP_NAME = fft
-GENERATOR_CLASS = simbacore.DataGeneratorFFT
+GENERATOR_CLASS = datagen.DataGeneratorFFT
 
 include $(MK_DIR)/../../common-datagen.mk
