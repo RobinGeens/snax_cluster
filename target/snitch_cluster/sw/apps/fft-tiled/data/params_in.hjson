@@ -1,0 +1,7 @@
+{
+    seqLen: 256,
+    dModel: 32,
+    L1: 16,
+    L2: 16,
+    nb_tiles: 2 // Phase A tiled along dModel; Phase B is un-tiled (N-axis IS-core tiling is buggy).
+}

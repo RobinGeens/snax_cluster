@@ -1,0 +1,6 @@
+{
+    "dim0": 64, // seqLen (M). Must be multiple of seqLenUnroll=16
+    "dim1": 96, // dInner (K, accelerator reduction axis). Must be a multiple of dInnerUnroll * nb_tiles
+    "dim2": 56, // dModel (N). Must be multiple of 24
+    "nb_tiles": 4 // Number of tiles along dInner (K). Each tile accumulates into the shared CD buffer.
+}
