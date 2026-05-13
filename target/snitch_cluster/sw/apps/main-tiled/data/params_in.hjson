@@ -1,6 +1,6 @@
 {
     "seqLen": 64,
-    "dModel": 384,
+    "dModel": 96,
     "dtRank": 24,
-    "nb_tiles": 8 // Number of tiles along dInner 
+    "nb_tiles": 2 // Number of tiles along dInner 
 }
