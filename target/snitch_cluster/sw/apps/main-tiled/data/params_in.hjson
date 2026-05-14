@@ -2,5 +2,13 @@
     "seqLen": 64,
     "dModel": 96,
     "dtRank": 24,
-    "nb_tiles": 2 // Number of tiles along dInner 
+    "nb_tiles": 4 // Number of tiles along dInner
 }
+
+// Works for:
+// {
+//     "seqLen": 96,
+//     "dModel": 384,
+//     "dtRank": 24,
+//     "nb_tiles": 16
+// }

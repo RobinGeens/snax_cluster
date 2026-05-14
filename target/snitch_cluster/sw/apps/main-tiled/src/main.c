@@ -51,55 +51,63 @@ int test_phase1_and_2() {
     uint8_t* ptr_BC    = ptr_dt_in + M2_dt_to_BC_offset;
     uint8_t* ptr_x     = ptr_conv_out;
 
+    // Several streamer ports (R0/R1/R12/R13/W3) have a sparse interconnect access granularity of
+    // 4 banks, which requires their base addresses to be 32-byte aligned. Some per-tile sizes
+    // (conv_bias, dt_bias, D) are not multiples of 32 when nb_tiles is high (e.g. nb=4 -> 48 B,
+    // nb=8 -> 24 B), which would otherwise cascade misalignment into the iscore_weight slot.
+    // Use 64-byte alignment to also match the AXI DMA burst width.
+#define _ALIGN64(p) ((uint8_t*)(((uintptr_t)(p) + 63u) & ~(uintptr_t)63u))
+
     // ---- Ping-pong region for P1
-    uint8_t* pingpong_base_ptr       = (uint8_t*)ptr_iscore_out_P2 + M2_length_iscore_out;
+    uint8_t* pingpong_base_ptr       = _ALIGN64((uint8_t*)ptr_iscore_out_P2 + M2_length_iscore_out);
     uint8_t* ptr_oscore_weight_P1[2] = {
         pingpong_base_ptr,
-        pingpong_base_ptr + M1_length_oscore_weight_tile,
+        _ALIGN64(pingpong_base_ptr + M1_length_oscore_weight_tile),
     };
     uint8_t* ptr_conv_weight[2] = {
-        ptr_oscore_weight_P1[1] + M1_length_oscore_weight_tile,
-        ptr_oscore_weight_P1[1] + M1_length_oscore_weight_tile + M1_length_conv_weight_tile,
+        _ALIGN64(ptr_oscore_weight_P1[1] + M1_length_oscore_weight_tile),
+        _ALIGN64(_ALIGN64(ptr_oscore_weight_P1[1] + M1_length_oscore_weight_tile) + M1_length_conv_weight_tile),
     };
     uint8_t* ptr_conv_bias[2] = {
-        ptr_conv_weight[1] + M1_length_conv_weight_tile,
-        ptr_conv_weight[1] + M1_length_conv_weight_tile + M1_length_conv_bias_tile,
+        _ALIGN64(ptr_conv_weight[1] + M1_length_conv_weight_tile),
+        _ALIGN64(_ALIGN64(ptr_conv_weight[1] + M1_length_conv_weight_tile) + M1_length_conv_bias_tile),
     };
     uint8_t* ptr_iscore_weight_P1[2] = {
-        ptr_conv_bias[1] + M1_length_conv_bias_tile,
-        ptr_conv_bias[1] + M1_length_conv_bias_tile + M1_length_iscore_weight_tile,
+        _ALIGN64(ptr_conv_bias[1] + M1_length_conv_bias_tile),
+        _ALIGN64(_ALIGN64(ptr_conv_bias[1] + M1_length_conv_bias_tile) + M1_length_iscore_weight_tile),
     };
 
     // ---- Ping-pong region for P2
     // Reuse the Phase 1 scratch region: Phase 1 fully completes before Phase 2 starts.
     uint8_t* ptr_oscore_weight_P2[2] = {
         pingpong_base_ptr,
-        pingpong_base_ptr + M2_length_oscore_weight_tile,
+        _ALIGN64(pingpong_base_ptr + M2_length_oscore_weight_tile),
     };
     uint8_t* ptr_dt_weight_1[2] = {
-        ptr_oscore_weight_P2[1] + M2_length_oscore_weight_tile,
-        ptr_oscore_weight_P2[1] + M2_length_oscore_weight_tile + M2_length_dt_weight_1_tile,
+        _ALIGN64(ptr_oscore_weight_P2[1] + M2_length_oscore_weight_tile),
+        _ALIGN64(_ALIGN64(ptr_oscore_weight_P2[1] + M2_length_oscore_weight_tile) + M2_length_dt_weight_1_tile),
     };
     uint8_t* ptr_dt_weight_2[2] = {
-        ptr_dt_weight_1[1] + M2_length_dt_weight_1_tile,
-        ptr_dt_weight_1[1] + M2_length_dt_weight_1_tile + M2_length_dt_weight_2_tile,
+        _ALIGN64(ptr_dt_weight_1[1] + M2_length_dt_weight_1_tile),
+        _ALIGN64(_ALIGN64(ptr_dt_weight_1[1] + M2_length_dt_weight_1_tile) + M2_length_dt_weight_2_tile),
     };
     uint8_t* ptr_dt_bias[2] = {
-        ptr_dt_weight_2[1] + M2_length_dt_weight_2_tile,
-        ptr_dt_weight_2[1] + M2_length_dt_weight_2_tile + M2_length_dt_bias_tile,
+        _ALIGN64(ptr_dt_weight_2[1] + M2_length_dt_weight_2_tile),
+        _ALIGN64(_ALIGN64(ptr_dt_weight_2[1] + M2_length_dt_weight_2_tile) + M2_length_dt_bias_tile),
     };
     uint8_t* ptr_A[2] = {
-        ptr_dt_bias[1] + M2_length_dt_bias_tile,
-        ptr_dt_bias[1] + M2_length_dt_bias_tile + M2_length_A_tile,
+        _ALIGN64(ptr_dt_bias[1] + M2_length_dt_bias_tile),
+        _ALIGN64(_ALIGN64(ptr_dt_bias[1] + M2_length_dt_bias_tile) + M2_length_A_tile),
     };
     uint8_t* ptr_D[2] = {
-        ptr_A[1] + M2_length_A_tile,
-        ptr_A[1] + M2_length_A_tile + M2_length_D_tile,
+        _ALIGN64(ptr_A[1] + M2_length_A_tile),
+        _ALIGN64(_ALIGN64(ptr_A[1] + M2_length_A_tile) + M2_length_D_tile),
     };
     uint8_t* ptr_iscore_weight_P2[2] = {
-        ptr_D[1] + M2_length_D_tile,
-        ptr_D[1] + M2_length_D_tile + M2_length_iscore_weight_tile,
+        _ALIGN64(ptr_D[1] + M2_length_D_tile),
+        _ALIGN64(_ALIGN64(ptr_D[1] + M2_length_D_tile) + M2_length_iscore_weight_tile),
     };
+#undef _ALIGN64
 
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
