@@ -38,6 +38,7 @@ fi
 # Define tests (names only; ELF at sw/apps/[name]/build/[name].elf)
 declare -a TESTS=(
   "nop"
+  "3way-fft"
   "main"
   "osgemm"
   "osgemm-tiled"

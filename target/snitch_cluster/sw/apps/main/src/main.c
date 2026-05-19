@@ -156,6 +156,8 @@ int test_phase2() {
 int test_phase1_and_2() {
     int err = 0;
 
+    printf("This Snitch is awake and ready to roll!\r\n");
+
     // Allocation. Let's start by naively allocating space for each individual tensor.
     void* tcdm_base_ptr = snrt_l1_next();
     // Phase 1

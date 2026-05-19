@@ -1,0 +1,15 @@
+{
+    // 3-way FFT — verified at L=4096, L1=L2=L3=16, dModel=4.
+    // ~12% byte-level mismatches (~22/175) are FP8 precision noise from 5 cascaded
+    // FP8 stages (most are 1-LSB off; outliers are tiny denormals near zero).
+    //
+    // Scaling caveats:
+    //   - TCDM ceiling 512KB caps L*dModel (partition_out is BF16-allocated)
+    //   - L1 > seqLenUnroll bumps partition1's K_1 above 1; the current streamer
+    //     config doesn't handle the extra level (see datagen.py R7_2 comment)
+    seqLen: 4096,
+    dModel: 4,
+    L1: 16,
+    L2: 16,
+    L3: 16,
+}
