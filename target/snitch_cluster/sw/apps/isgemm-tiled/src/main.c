@@ -3,28 +3,14 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled, double-buffered, two-stage pipelined version of ISGeMM.
-//
-// K-tile (accumulating): each tile invokes the iscore on a K_tile-sized slice of the
-// dInner (= IS-core reduction) axis and accumulates into the shared CD buffer in TCDM
-// via R13 (read) -> W3 (write) hitting the same address. The C input for tile 0 is the
-// bias preloaded into the CD buffer; thereafter R13 reads the running BF16 psum from
-// the previous tile's W3.
-//
-// Non-final tiles run in M5_ISGEMM_NO_REQUANT so the psum stays in BF16. The final tile
-// switches to M4_ISGEMM, applying the FP8 requant to produce the final output (which
-// occupies the low byte of each BF16 slot, with high bits zeroed - matches `M4_D`).
-//
-// Pipeline (2 stages; the compute stages are serial because they share the CD
-// accumulator, so we only overlap DMA-in with compute):
-//   stage 1 : DMA L3 -> L1   (transfer_in A-tile and B-tile, ping/pong)
-//   stage 2 : compute        (isCore: D := C_running + A_tile * B_tile)
+// K-tiled, accumulating, double-buffered ISGeMM. See docs/dataflow/02_iscore_kernels.md
+// §2.2 for dataflow, K-vs-N tiling rationale, pipeline pattern, and the
+// final-tile requant trick.
 
 #include "data.h"
 #include "snax-simbacore-lib.h"
 
-// Number of pipeline stages (transfer_in, compute). Do not change.
-#define NB_STAGES 2
+#define NB_STAGES 2  // transfer_in, compute
 
 int test_isgemm_tiled() {
     int err = 0;
@@ -44,20 +30,17 @@ int test_isgemm_tiled() {
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
 
-    // Preload C (bias) into the CD buffer. CD is shared across all tile invocations and
-    // accumulates the partial sums in place.
+    // Preload C (bias) into CD; CD is the FULL accumulator (R13/W3 same address every tile).
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d((uint8_t*)ptr_cd, M4_C, M4_length_cd);
         snrt_dma_wait_all();
     }
 
-    // One-time streamer setup. R13/W3 base ptrs and bounds are constant across tiles
-    // (FULL output, accumulates in place). R11/R12 use tile 0's ping-buffer pointers as
-    // a placeholder; their base ptrs are rewritten in each compute stage.
+    // One-time streamer setup. R11/R12 base ptrs are rewritten per tile.
     if (snrt_global_core_idx() == 0) {
-        set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts,  // A
-                                (uint32_t)ptr_b[0], M4_R12_ss, M4_R12_tb, M4_R12_ts,  // B
-                                (uint32_t)ptr_cd, M4_W3_ss, M4_W3_tb, M4_W3_ts);      // C/D
+        set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts,
+                                (uint32_t)ptr_b[0], M4_R12_ss, M4_R12_tb, M4_R12_ts,
+                                (uint32_t)ptr_cd, M4_W3_ss, M4_W3_tb, M4_W3_ts);
         set_simbacore_csr(M4_ISGEMM, dim0, 1, M4_dInner_tile, 1, dim2);
     }
 
@@ -71,16 +54,10 @@ int test_isgemm_tiled() {
         start_cycles = snrt_mcycle();
     }
 
-    // -------------------------------------------------------------------------
-    // Pipelined loop: nb_tiles + NB_STAGES - 1 iterations.
-    //
-    //   i in [0, nb_tiles)       -> transfer_in tile i        (DM core)
-    //   i in [1, nb_tiles + 1)   -> compute     tile i-1      (core 0)
-    // -------------------------------------------------------------------------
+    // Pipeline: transfer_in tile i in [0, nb_tiles), compute tile i-1 in [1, nb_tiles + 1).
     for (uint32_t i = 0; i < nb_tiles + NB_STAGES - 1; i++) {
         int buf = i % 2;
 
-        // Stage 1: transfer_in tile i (A-tile + B-tile) into ping-pong
         if (i < nb_tiles) {
             if (snrt_is_dm_core()) {
                 snrt_dma_start_1d(ptr_a[buf], M4_A + i * M4_length_a_tile, M4_length_a_tile);
@@ -88,7 +65,6 @@ int test_isgemm_tiled() {
             }
         }
 
-        // Stage 2: compute tile i-1
         if (i >= 1 && i < nb_tiles + 1) {
             uint32_t tile = i - 1;
             int cbuf      = tile % 2;
@@ -96,13 +72,8 @@ int test_isgemm_tiled() {
 #ifdef VERBOSE
                 printf("[%d cc] Compute tile %u (buf %d)\n", snrt_mcycle(), tile, cbuf);
 #endif
-                // Only A and B base pointers vary between tiles; everything else (bounds,
-                // strides, CD pointer, simbacore CSRs) is constant and was set once.
                 write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_a[cbuf]);
                 write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_b[cbuf]);
-                // Non-final tiles must keep the psum in BF16 (no requant) so the next
-                // tile's R13 can read it back. Only the final tile applies the FP8
-                // requant to produce the result.
                 write_csr(MODE, (tile == nb_tiles - 1) ? M4_ISGEMM : M5_ISGEMM_NO_REQUANT);
                 start_simbacore_and_streamers(M4_R10_en, 0, M4_R11_en, 0);
                 wait_simbacore_and_streamer();
@@ -110,7 +81,6 @@ int test_isgemm_tiled() {
             }
         }
 
-        // sync(): wait for all DMAs of this iteration, then cluster barrier.
         if (snrt_is_dm_core()) snrt_dma_wait_all();
         snrt_cluster_hw_barrier();
     }

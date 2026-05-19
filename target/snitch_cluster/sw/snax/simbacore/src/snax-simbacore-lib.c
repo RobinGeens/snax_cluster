@@ -624,7 +624,7 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
         while (read_csr(R10_DELAY_GAUGE) < R10_start_cnt);
         write_csr(DELAYED_START_READER_10, 1);
 #ifdef VERBOSE
-        printf("[%d cc] Streamer R10 can start\n", snrt_mcycle());
+        printf("[%d cc] Streamer R10 can start\r\n", snrt_mcycle());
 #endif
     }
 
@@ -632,7 +632,7 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
         while (read_csr(R11_DELAY_GAUGE) < R11_start_cnt);
         write_csr(DELAYED_START_READER_11, 1);
 #ifdef VERBOSE
-        printf("[%d cc] Streamer R11 can start\n", snrt_mcycle());
+        printf("[%d cc] Streamer R11 can start\r\n", snrt_mcycle());
 #endif
     }
 }
@@ -640,7 +640,7 @@ void start_simbacore_and_streamers(bool R10_en, uint32_t R10_start_cnt, bool R11
 // Stall until Streamer and GEMM accelerator finish
 void wait_simbacore_and_streamer() {
 #ifdef VERBOSE
-    printf("[%d cc] Waiting for SimbaCore to finish...\n", snrt_mcycle());
+    printf("[%d cc] Waiting for SimbaCore to finish...\r\n", snrt_mcycle());
 #endif
     write_csr(STREAMER_START_CSR, 0);
     write_csr(SIMBACORE_START, 0);
@@ -648,11 +648,11 @@ void wait_simbacore_and_streamer() {
     write_csr(DELAYED_START_READER_11, 0);
     while (read_csr(SIMBACORE_BUSY));  // 1185 = 0x4a1
 #ifdef VERBOSE
-    printf("[%d cc] SimbaCore has finished. Waiting for Streamers...\n", snrt_mcycle());
+    printf("[%d cc] SimbaCore has finished. Waiting for Streamers...\r\n", snrt_mcycle());
 #endif
     while (read_csr(STREAMER_BUSY_CSR));  // 1177 = 0x499
 #ifdef VERBOSE
-    printf("[%d cc] Streamers and SimbaCore have finished\n", snrt_mcycle());
+    printf("[%d cc] Streamers and SimbaCore have finished\r\n", snrt_mcycle());
 #endif
 }
 
@@ -672,16 +672,16 @@ uint32_t read_simbacore_perf_counter() {
 uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_length) {
     uint32_t err         = 0;
     int32_t num_elements = data_length / sizeof(uint8_t);
-    printf("Checking results: %d bytes (%d elements)\n", data_length, num_elements);
+    printf("Checking results: %d bytes (%d elements)\r\n", data_length, num_elements);
 
     for (int i = 0; i < num_elements; i++) {
         uint8_t output_value = output[i];
         uint8_t golden_value = output_golden[i];
         if (output_value != golden_value) {
             err++;
-            printf("FAIL out[%d] = %d,\tref = %d\n", i, output_value, golden_value);
+            printf("FAIL out[%d] = %d,\tref = %d\r\n", i, output_value, golden_value);
         } else {
-            printf("PASS out[%d] = %d,\tref = %d\n", i, output_value, golden_value);
+            printf("PASS out[%d] = %d,\tref = %d\r\n", i, output_value, golden_value);
         }
     }
     return err;
@@ -690,16 +690,16 @@ uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_
 uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t data_length) {
     uint32_t err         = 0;
     int32_t num_elements = data_length / sizeof(uint16_t);
-    printf("Checking results (u16): %d bytes (%d elements)\n", data_length, num_elements);
+    printf("Checking results (u16): %d bytes (%d elements)\r\n", data_length, num_elements);
 
     for (int i = 0; i < num_elements; i++) {
         uint16_t output_value = output[i];
         uint16_t golden_value = output_golden[i];
         if (output_value != golden_value) {
             err++;
-            printf("FAIL out[%d] = %u,\tref = %u\n", i, output_value, golden_value);
+            printf("FAIL out[%d] = %u,\tref = %u\r\n", i, output_value, golden_value);
         } else {
-            printf("PASS out[%d] = %u,\tref = %u\n", i, output_value, golden_value);
+            printf("PASS out[%d] = %u,\tref = %u\r\n", i, output_value, golden_value);
         }
     }
     return err;
@@ -709,7 +709,7 @@ uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t
 uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
                              int32_t test_sample_count, const char* tensor_name) {
     uint32_t err = 0;
-    printf("Checking results: sampling %d elements\n", test_sample_count);
+    printf("Checking results: sampling %d elements\r\n", test_sample_count);
 
     for (int i = 0; i < test_sample_count; i++) {
         int sample_index     = sample_indices[i];
@@ -719,10 +719,10 @@ uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* s
             (output_value == 0 && golden_value == 128) ||  // 0 == -0
             (output_value == 128 && golden_value == 0))    // -0 == 0
         {
-            printf("PASS %s[%d] = %d,\tref = %d\n", tensor_name, sample_index, output_value, golden_value);
+            printf("PASS %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
         } else {
             err++;
-            printf("FAIL %s[%d] = %d,\tref = %d\n", tensor_name, sample_index, output_value, golden_value);
+            printf("FAIL %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
         }
     }
     return err;
@@ -732,7 +732,7 @@ uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* s
 uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
                                  int32_t test_sample_count, const char* tensor_name) {
     uint32_t err = 0;
-    printf("Checking results (u16): sampling %d elements\n", test_sample_count);
+    printf("Checking results (u16): sampling %d elements\r\n", test_sample_count);
 
     for (int i = 0; i < test_sample_count; i++) {
         int sample_index      = sample_indices[i];
@@ -740,9 +740,9 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
         uint16_t golden_value = output_golden[sample_index];
         if (output_value != golden_value) {
             err++;
-            printf("FAIL %s[%d] = %u,\tref = %u\n", tensor_name, sample_index, output_value, golden_value);
+            printf("FAIL %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
         } else {
-            printf("PASS %s[%d] = %u,\tref = %u\n", tensor_name, sample_index, output_value, golden_value);
+            printf("PASS %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
         }
     }
     return err;

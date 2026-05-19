@@ -12,6 +12,8 @@ import importlib.util
 
 # Add data utility path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/sim/"))
+# Path in Occamy
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../../util/sim/"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../main/data"))
 
 # Dynamically load DataGenerator from the other datagen.py to avoid name clash

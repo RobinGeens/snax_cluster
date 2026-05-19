@@ -32,6 +32,7 @@ SUBDIRS += simd
 SUBDIRS += fft
 SUBDIRS += fft-tiled
 SUBDIRS += fft-3way
+SUBDIRS += fft-3way-tiled
 SUBDIRS += rmsnorm
 SUBDIRS += main-full
 SUBDIRS += main-tiled

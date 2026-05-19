@@ -3,30 +3,10 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// 3-way partitioned EinFFT (L = L1 * L2 * L3). See data/datagen.py for pipeline overview.
-//
-// Pipeline (fully streamer-driven, no software byte-loops between stages):
-//   1.  partition1  IS-core (ISGEMM_SQ_TRANSPOSE) of W_L1 · stack_L1
-//   2.  hadamard1   SIMD CMUL_FP8 with twiddles1 broadcast across dModel
-//   2B. reorder1    SIMD NOOP_FP8 — deinterleaves re/im into __flattenColMajor
-//   3.  partition2  IS-core (ISGEMM_SQ_TRANSPOSE) reads hadamard1_packed via R12
-//   4.  hadamard2   SIMD CMUL_FP8 with twiddles2 broadcast across L1 and dModel
-//   4B. reorder2    SIMD NOOP_FP8 — deinterleaves re/im
-//   5.  partition3  IS-core (ISGEMM_SQ) reads hadamard2_packed via R12
-//
-// Why no inter-stage byte reorders are needed:
-//   The Scala data generator emits `dft_in` / `twiddles1` / `partition1_expected`
-//   / `hadamard1_expected` in the chip's "NEW" byte layout where the inner-
-//   (L2*L3) index is `col = d*L2*L3 + m3*L2 + m2` instead of the standard
-//   `m2*L3 + m3`. Under that layout, the SIMD-NOOP deinterleave produces a
-//   `hadamard1_packed` whose 16-byte chunks are 16 stride-1 m2 values for one
-//   (k1, m3, d) cell — exactly partition2's K-tile format. Partition2's R12
-//   walks chunks linearly with the col arrangement `d*L1*L3 + k1*L3 + m3`
-//   (see `buildStackedInput_L2_3way` in EinfftLib.scala).
-//
-//   The same trick is used after partition2: `buildStackedInput_L3_3way`'s
-//   `col = d*L1*L2 + k1*L2 + k2` layout matches the natural chunk order of
-//   the deinterleaved post-stage-2 buffer, so partition3 reads it directly.
+// 3-way partitioned EinFFT (L = L1 * L2 * L3). See docs/dataflow/05_fft.md §5.3
+// for the 5-stage pipeline, streamer wiring, and the no-software-reorder trick
+// (datagen emits inputs in a byte layout so each SIMD-NOOP output is directly
+// consumable by the next partition's R12).
 
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"
@@ -43,8 +23,6 @@ int test() {
     uint8_t* ptr_partition1_out    = (uint8_t*)(tcdm_base_ptr + M6_addr_partition1_out);
     uint8_t* ptr_twiddles1         = (uint8_t*)(tcdm_base_ptr + M6_addr_twiddles1);
     uint8_t* ptr_hadamard1_out     = (uint8_t*)(tcdm_base_ptr + M6_addr_hadamard1_out);
-    // `hadamard1_packed` is partition2's input directly — chip-side NEW byte layout
-    // (m2 stride-1 in 16-byte chunks) is produced by the SIMD-NOOP deinterleave.
     uint8_t* ptr_hadamard1_packed  = (uint8_t*)(tcdm_base_ptr + M6_addr_hadamard1_packed);
     uint8_t* ptr_partition2_out    = (uint8_t*)(tcdm_base_ptr + M6_addr_partition2_out);
     uint8_t* ptr_twiddles2         = (uint8_t*)(tcdm_base_ptr + M6_addr_twiddles2);
@@ -103,8 +81,7 @@ int test() {
         // ===== Step 3: partition 2 ====================================
         // ISGEMM_SQ_TRANSPOSE: the IS-core output goes through the bank transposer
         // (FP8, banked), so the downstream SIMD CMul step 4 can read it via the
-        // banked port. Reads `hadamard1_packed` directly — the NEW byte layout
-        // (m2 stride-1 in 16-byte chunks) is the partition2 B input format.
+        // banked port.
         set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,
                                 (uint32_t)ptr_hadamard1_packed, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,
                                 (uint32_t)ptr_partition2_out, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);

@@ -27,6 +27,8 @@ import math
 import hjson
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/sim/"))
+# Path in Occamy
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../../util/sim/"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../main/data"))
 sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 

@@ -12,6 +12,8 @@ import math
 
 # Add data utility path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/sim/"))
+# Path in Occamy
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../../util/sim/"))
 sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 
 from datagen_base import BANKWIDTH, DataGeneratorBase, BANK_BYTES, FP8, BF16  # type: ignore[import]

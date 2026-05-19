@@ -38,7 +38,7 @@ fi
 # Define tests (names only; ELF at sw/apps/[name]/build/[name].elf)
 declare -a TESTS=(
   "nop"
-  "3way-fft"
+  "fft-3way"
   "main"
   "osgemm"
   "osgemm-tiled"
@@ -50,6 +50,7 @@ declare -a TESTS=(
   "rmsnorm"
   "fft"
   "fft-tiled"
+  "fft-3way-tiled"
   "streamer-burner"
   "core-burner"
   "suc"

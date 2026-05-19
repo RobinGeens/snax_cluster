@@ -1,0 +1,12 @@
+{
+    // Working configs (others hit pre-existing 3-way streamer limits):
+    //   seqLen  dModel  L1  L2  L3  nb_tiles
+    //     4096      4   16  16  16     2
+    //     4096      8   16  16  16     2     ← default
+    seqLen: 4096,
+    dModel: 8,
+    L1: 16,
+    L2: 16,
+    L3: 16,
+    nb_tiles: 2
+}

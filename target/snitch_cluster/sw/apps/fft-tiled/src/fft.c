@@ -3,57 +3,9 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled version of the FFT program. Reduces TCDM peak usage by keeping the
-// Phase A working set per-tile and the Phase B working set per-K-tile.
-//
-// (Naming caveat: "L1" here means the TCDM scratchpad, not the FFT inner
-// butterfly axis L1. The FFT axes are L1 and L2 = inner/outer butterfly.)
-//
-// Tile structure (different axis per phase, by IS-core capability):
-//   Phase A (partition1 + hadamard + reorder): dModel-axis tiled. `in` lives
-//     in L3 as [L2*dModel][L1] col-major with d outer in the N axis, so a
-//     dModel-slice is a contiguous L3 chunk. Each tile DMAs its slice in,
-//     runs partition1 + hadamard + reorder against per-tile TCDM slots, then
-//     DMAs the per-tile reorder output into the [d][l]-col-major
-//     hadamard_reordered_l3 region.
-//   Phase B (partition2): K-AXIS tiled, mirroring isgemm-tiled. The IS-core
-//     requantizes its "last K iteration" to produce the final output; tiling
-//     N corrupts that requant timing (each tile sees an artificial "last
-//     iteration"), so we tile K instead and accumulate in place. Each tile
-//     consumes one K-macro of weight2 and one K-macro of hadamard_reordered
-//     (re or im), with R13 (read previous psum) → W3 (write new psum)
-//     hitting the SAME FULL partition2_out address in TCDM. Non-final tiles
-//     use M30_ISGEMM_SQ_NO_REQUANT (keep psum in BF16); the final tile uses
-//     M6_ISGEMM_SQ to apply the requant on the fully accumulated psum.
-//
-// TCDM layout (Phase B working set overlays Phase A working set):
-//   Always live: weight1, weight2 (FULL, sliced by BASE_PTR update per tile),
-//                twiddles
-//   Phase A working set (single-buffered, reused across tiles):
-//     in_tile, partition1_out_tile, hadamard_out_tile, had_reord_a_tile
-//   Phase B working set (overlays the Phase A region after barrier):
-//     had_reord_b_ktile (single K-macro: reals OR imags),
-//     partition2_out (FULL, psum accumulator across K-tiles)
-//
-// L3 layout (allocated via snrt_l3alloc):
-//   hadamard_reordered_l3 (16 KiB, [reals | imags] each [d][l] col-major)
-//
-// Phase A reorder writes the tile's [reals | imags] contiguously to its TCDM
-// tile slot. The per-tile DMA-out is two 1D DMAs (one per re/im) into the
-// matching position of the L3 [d][l] col-major layout — dModel tiling makes
-// each tile's contribution a contiguous d-row range, so no scatter is
-// required.
-//
-// IS GeMM psum init: partition1_out_tile is an accumulator and MUST be zero
-// before each tile's GEMM (otherwise we accumulate into uninitialized memory
-// or prior tile data, which triggers vsim RegWriteKnown asserts). We DMA
-// snrt_zero_memory_ptr() into it (and into the SIMD intermediate slots, as a
-// defensive measure) at the start of each tile's DMA-in stage.
-//
-// Memory-layout references used to design this structure:
-//   docs/memory_layouts/09_fft.md   — partitioned DFT layout, especially §9.6
-//                                     on the [d][l] col-major reorder output.
-//   docs/memory_layouts/10_simd.md  — SIMD CMul lane layout.
+// Tiled 2-way partitioned EinFFT. Phase A is dModel-tiled; Phase B is
+// K-tiled. See docs/dataflow/05_fft.md §5.2 for dataflow, tile-axis
+// rationale, TCDM overlay map, and L3 layout.
 
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"

@@ -3,25 +3,9 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled, double-buffered, pipelined version of the Mamba main program. Tiling is along the dInner dimension and is
-// applied to both Phase 1 and Phase 2. The fused test runs the two phases sequentially:
-//
-//     for phase in {phase1, phase2}:
-//         for tile in [0, nb_tiles):
-//             pipeline(transfer_in tile, compute tile-1)
-//
-// Per-phase pipeline:
-//   stage 1 : DMA L3 -> L1   (transfer_in  weight/input tile)
-//   stage 2 : compute        (simbacore: produce a slice of conv_out / z / y / accumulate IS GeMM psums)
-//
-// Notes on what is and is not tiled:
-//   - Phase 1: oscore_in is loaded once (FULL). iscore_out (psum) is FULL: bias is preloaded, the IS GeMM psums
-//     accumulate in-place across tiles via R13/W3 hitting the same address. conv_out is FULL: each tile writes
-//     its own slice via W1.
-//   - Phase 2: oscore_in, dt_in (== iscore_out from Phase 1), x (== conv_out from Phase 1) are FULL. iscore_out
-//     accumulates in-place. z and y are FULL with per-tile slots.
-//   - The streamer bounds are configured ONCE (per phase) using the per-tile bound values from data.h. Inside the
-//     pipelined loop only the address CSRs change.
+// dInner-tiled, double-buffered Mamba main (Phase 1 then Phase 2).
+// See docs/dataflow/04_mamba_main.md §4.2 for dataflow, full vs ping-pong
+// buffer split, alignment requirements, and per-phase CSR rewrites.
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"
@@ -29,36 +13,25 @@
 int test_phase1_and_2() {
     int err = 0;
 
-    // ---------- TCDM allocation: shared P1+P2 layout ---------------------------
-    // FULL (shared / P1 / P2):
-    //   oscore_in (shared) | iscore_out_P1 (== dt_in for P2) | conv_out (== x for P2)
-    //   z (P2 W0 out) | y (P2 W2 out) | iscore_out_P2
-    // PING-PONG (P1):
-    //   oscore_weight_P1, conv_weight, conv_bias, iscore_weight_P1
-    // PING-PONG (P2):
-    //   oscore_weight_P2, dt_weight_1, dt_weight_2, dt_bias, A, D, iscore_weight_P2
+    // FULL buffers (P1+P2 share oscore_in; iscore_out_P1 doubles as P2 dt_in; conv_out as P2 x).
     void* tcdm_base_ptr = snrt_l1_next();
 
-    // ---- Full / shared buffers
     uint8_t* ptr_oscore_in      = (uint8_t*)tcdm_base_ptr;
-    uint8_t* ptr_iscore_out_P1  = ptr_oscore_in + M1_length_oscore_in;       // P1 psum (BF16), reused as dt_in
-    uint8_t* ptr_conv_out       = ptr_iscore_out_P1 + M1_length_iscore_out;  // P1 W1 out, reused as P2 x
-    uint8_t* ptr_z              = ptr_conv_out + M1_length_conv_out;         // P2 W0 out
-    uint8_t* ptr_y              = ptr_z + M2_length_z;                       // P2 W2 out
-    uint16_t* ptr_iscore_out_P2 = (uint16_t*)(ptr_y + M2_length_y);          // P2 psum (BF16)
+    uint8_t* ptr_iscore_out_P1  = ptr_oscore_in + M1_length_oscore_in;
+    uint8_t* ptr_conv_out       = ptr_iscore_out_P1 + M1_length_iscore_out;
+    uint8_t* ptr_z              = ptr_conv_out + M1_length_conv_out;
+    uint8_t* ptr_y              = ptr_z + M2_length_z;
+    uint16_t* ptr_iscore_out_P2 = (uint16_t*)(ptr_y + M2_length_y);
 
     uint8_t* ptr_dt_in = ptr_iscore_out_P1;
     uint8_t* ptr_BC    = ptr_dt_in + M2_dt_to_BC_offset;
     uint8_t* ptr_x     = ptr_conv_out;
 
-    // Several streamer ports (R0/R1/R12/R13/W3) have a sparse interconnect access granularity of
-    // 4 banks, which requires their base addresses to be 32-byte aligned. Some per-tile sizes
-    // (conv_bias, dt_bias, D) are not multiples of 32 when nb_tiles is high (e.g. nb=4 -> 48 B,
-    // nb=8 -> 24 B), which would otherwise cascade misalignment into the iscore_weight slot.
-    // Use 64-byte alignment to also match the AXI DMA burst width.
+    // R0/R1/R12/R13/W3 need 32 B-aligned base ptrs (sparse interconnect granularity = 4 banks).
+    // Use 64 B to also match the AXI DMA burst width.
 #define _ALIGN64(p) ((uint8_t*)(((uintptr_t)(p) + 63u) & ~(uintptr_t)63u))
 
-    // ---- Ping-pong region for P1
+    // P2 ping-pong reuses P1's region (P1 fully completes before P2 starts).
     uint8_t* pingpong_base_ptr       = _ALIGN64((uint8_t*)ptr_iscore_out_P2 + M2_length_iscore_out);
     uint8_t* ptr_oscore_weight_P1[2] = {
         pingpong_base_ptr,
@@ -77,8 +50,6 @@ int test_phase1_and_2() {
         _ALIGN64(_ALIGN64(ptr_conv_bias[1] + M1_length_conv_bias_tile) + M1_length_iscore_weight_tile),
     };
 
-    // ---- Ping-pong region for P2
-    // Reuse the Phase 1 scratch region: Phase 1 fully completes before Phase 2 starts.
     uint8_t* ptr_oscore_weight_P2[2] = {
         pingpong_base_ptr,
         _ALIGN64(pingpong_base_ptr + M2_length_oscore_weight_tile),
@@ -112,7 +83,7 @@ int test_phase1_and_2() {
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
 
-    // ---------- Preload Phase 1 non-tiled inputs -------------------------------
+    // Preload Phase 1 non-tiled inputs.
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_oscore_in, M1_oscore_in, M1_length_oscore_in);
         snrt_dma_start_1d(ptr_iscore_out_P1, M1_iscore_bias, M1_length_iscore_out);
@@ -124,9 +95,7 @@ int test_phase1_and_2() {
     uint32_t simbacore_cycles_phase1 = 0;
     uint32_t simbacore_cycles_phase2 = 0;
 
-    // =========================================================================
-    // Phase 1
-    // =========================================================================
+    // Phase 1.
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Mamba main tiled (Phase1 then Phase2, nb_tiles=%d)\n\n", nb_tiles);
         start_cycles = snrt_mcycle();
@@ -159,8 +128,6 @@ int test_phase1_and_2() {
             write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[cbuf]);
             write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[cbuf]);
             write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)(ptr_conv_out + tile * M1_length_conv_out_tile));
-            // Non-final tiles must skip IS GeMM requant+transpose so R13 of the next tile re-reads the
-            // BF16 partial sums. The final tile uses the full PHASE1 mode to produce convFormat FP8 output.
             write_csr(MODE, (tile == nb_tiles - 1) ? M1_PHASE1 : M28_PHASE1_NO_REQUANT);
             start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
             wait_simbacore_and_streamer();
@@ -171,19 +138,14 @@ int test_phase1_and_2() {
         snrt_cluster_hw_barrier();
     }
 
-    // =========================================================================
-    // Preload Phase 2 non-tiled bias (psum init). Other Phase 2 untiled tensors
-    // (oscore_in, dt_in == iscore_out_P1, x == conv_out) are already in TCDM.
-    // =========================================================================
+    // Preload P2 bias (psum init). oscore_in, dt_in (== iscore_out_P1), x (== conv_out) are already live.
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_iscore_out_P2, M2_iscore_bias, M2_length_iscore_out);
         snrt_dma_wait_all();
     }
     snrt_cluster_hw_barrier();
 
-    // =========================================================================
-    // Phase 2
-    // =========================================================================
+    // Phase 2.
     if (snrt_global_core_idx() == 0) {
         set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2[0],                 //
                             (uint32_t)ptr_z, (uint32_t)ptr_dt_in,                                       //
@@ -232,7 +194,6 @@ int test_phase1_and_2() {
             write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)z_tile_ptr);
             write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)y_tile_ptr);
 
-            // Non-final tiles skip IS GeMM requant; final tile produces requantized FP8 output.
             write_csr(MODE, (tile == nb_tiles - 1) ? M2_PHASE2 : M29_PHASE2_NO_REQUANT);
             start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
             wait_simbacore_and_streamer();
@@ -243,7 +204,6 @@ int test_phase1_and_2() {
         snrt_cluster_hw_barrier();
     }
 
-    // ---------- Verify ---------------------------------------------------------
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore Phase1 (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phase1);
