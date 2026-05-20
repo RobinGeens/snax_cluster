@@ -192,7 +192,7 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim sw/apps/streamer-burner/build/streamer-burner.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/core-burner/build/core-burner.elf | tee vsim.log`
 - `bin/snitch_cluster.vsim sw/apps/rmsnorm/build/rmsnorm.elf | tee vsim.log`
-- `bin/snitch_cluster.vsim sw/apps/suc/build/suc.elf | tee vsim.log`
+- `bin/snitch_cluster.vsim sw/apps/suc-only/build/suc-only.elf | tee vsim.log`
 
 [bash|target] Run SimbaCore test program in GUI (with VNC)
 
@@ -203,7 +203,7 @@ This is entirely managed by Robin.
 - `bin/snitch_cluster.vsim.gui sw/apps/fft/build/fft.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/simd/build/simd.elf`
 - `bin/snitch_cluster.vsim.gui sw/apps/rmsnorm/build/rmsnorm.elf`
-- `bin/snitch_cluster.vsim.gui sw/apps/suc/build/suc.elf`
+- `bin/snitch_cluster.vsim.gui sw/apps/suc-only/build/suc-only.elf`
 
 [snax|target] Make traces (from .dasm to .txt)
 

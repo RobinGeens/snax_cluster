@@ -38,7 +38,7 @@ SUBDIRS += main-full
 SUBDIRS += main-tiled
 SUBDIRS += streamer-burner
 SUBDIRS += core-burner
-SUBDIRS += suc
+SUBDIRS += suc-only
 endif
 
 .PHONY: all clean $(SUBDIRS)

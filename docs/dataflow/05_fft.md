@@ -98,6 +98,7 @@ constraint differs:
 - **Phase A** (partition 1 + hadamard 1 + reorder 1): **dModel-tiled**.
   Partition 1 has `K_1 = 1`, so N-axis tiling is safe — there is no
   requant-on-last-K hazard. The per-tile reorder output is spilled to L3.
+  Tile count = `nb_tiles_A` (must divide `dModel`).
 - **Phase B** (partition 2 + hadamard 2 + reorder 2): **un-tiled**.
   K-tiling partition 2 would interleave a transposed-output final tile with
   no-requant non-final tiles whose write orders are incompatible, corrupting
@@ -106,7 +107,13 @@ constraint differs:
   for Phase C.
 - **Phase C** (partition 3): **K-tiled**. Canonical accumulating-tiled
   pattern. The final partition is in plain (non-transposed) mode, so all
-  tiles write in the same order — coherent psum.
+  tiles write in the same order — coherent psum. Tile count = `nb_tiles_C`
+  (must divide `K_3 = 2*L3_padded/dInnerUnroll`; small by construction).
+
+The two tile counts are independent: Phase A's dModel-axis tile count is
+unconstrained by Phase C's K-axis count, so `nb_tiles_A` can be raised to
+shrink Phase A's TCDM footprint even when `K_3` is too small to subdivide
+further (`K_3 = 2` for the default `L3 = 16` config).
 
 | Tensor                                          | Phase | Lifecycle                                                  |
 | ----------------------------------------------- | ----- | ---------------------------------------------------------- |

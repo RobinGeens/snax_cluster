@@ -54,5 +54,5 @@ test_run_dir
 target/streams/
 target/scala*
 scripts_generated/
-regression_test_out/
+regression_test_out*/
 

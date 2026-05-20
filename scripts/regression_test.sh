@@ -53,7 +53,7 @@ declare -a TESTS=(
   "fft-3way-tiled"
   "streamer-burner"
   "core-burner"
-  "suc"
+  "suc-only"
 )
 
 pushd "${TARGET_DIR}" >/dev/null

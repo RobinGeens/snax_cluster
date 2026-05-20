@@ -50,7 +50,8 @@ class DataGenerator(DataGeneratorBase):
         L2_padded = self.kwargs["L2_padded"]
         L3_padded = self.kwargs["L3_padded"]
         dModel = self.kwargs["dModel"]
-        nb = self.kwargs["nb_tiles"]
+        nb_A = self.kwargs["nb_tiles_A"]
+        nb_C = self.kwargs["nb_tiles_C"]
 
         len_weight1 = 2 * L1 * L1_padded * FP8 // 8
         len_weight2 = 2 * L2 * 2 * L2_padded * FP8 // 8
@@ -69,16 +70,16 @@ class DataGenerator(DataGeneratorBase):
         always_live = (align64(len_weight1) + align64(len_weight2) + align64(len_weight3)
                        + align64(len_twiddles1) + align64(len_twiddles2))
         phase_a = (
-            align64(len_in // nb)
-            + align64(len_partition1_out // nb)
-            + align64(len_hadamard1_out // nb)
-            + align64(len_hadamard1_packed // nb)
+            align64(len_in // nb_A)
+            + align64(len_partition1_out // nb_A)
+            + align64(len_hadamard1_out // nb_A)
+            + align64(len_hadamard1_packed // nb_A)
         )
         # Phase B peak is during reorder2: hadamard2_out (overlays hadamard1_packed) +
         # partition2_out + hadamard2_packed.
         phase_b = (align64(len_hadamard2_out) + align64(len_partition2_out)
                    + align64(len_hadamard2_packed))
-        phase_c = align64(len_hadamard2_packed // nb) + align64(len_partition3_out)
+        phase_c = align64(len_hadamard2_packed // nb_C) + align64(len_partition3_out)
         peak = always_live + max(phase_a, phase_b, phase_c)
 
         untiled = (
@@ -112,7 +113,8 @@ class DataGenerator(DataGeneratorBase):
         L1_padded = self.kwargs["L1_padded"]
         L2_padded = self.kwargs["L2_padded"]
         L3_padded = self.kwargs["L3_padded"]
-        nb_tiles = self.kwargs["nb_tiles"]
+        nb_tiles_A = self.kwargs["nb_tiles_A"]
+        nb_tiles_C = self.kwargs["nb_tiles_C"]
 
         # GEMM dims per partition
         M_1 = (2 * L1) // seqLenUnroll
@@ -130,11 +132,11 @@ class DataGenerator(DataGeneratorBase):
         assert (2 * suc_serial_width_BC) // 8 == 4 * BANK_BYTES
 
         # Only Phase A (dModel) and Phase C (K_3) are tiled; partition2 is un-tiled.
-        assert dModel % nb_tiles == 0, f"dModel ({dModel}) must be divisible by nb_tiles ({nb_tiles})"
-        assert K_3 % nb_tiles == 0, f"K_3 ({K_3}) must be divisible by nb_tiles ({nb_tiles})"
-        dModel_tile = dModel // nb_tiles
+        assert dModel % nb_tiles_A == 0, f"dModel ({dModel}) must be divisible by nb_tiles_A ({nb_tiles_A})"
+        assert K_3 % nb_tiles_C == 0, f"K_3 ({K_3}) must be divisible by nb_tiles_C ({nb_tiles_C})"
+        dModel_tile = dModel // nb_tiles_A
         N_1_tile = dModel_tile * L2 * L3
-        K_3_t = K_3 // nb_tiles
+        K_3_t = K_3 // nb_tiles_C
         dInner_3_tile = K_3_t * dInnerUnroll
 
         # Downsizer accounting
@@ -236,7 +238,7 @@ class DataGenerator(DataGeneratorBase):
             ),
             # Step 5: partition3 (Phase C, K-axis tiled).
             "R11_5": (
-                [(2 * L3 * 2 * L3_padded * FP8 // iscore_serial_width) // nb_tiles],
+                [(2 * L3 * 2 * L3_padded * FP8 // iscore_serial_width) // nb_tiles_C],
                 [iscore_serial_width // 8],
             ),
             "R12_5": (
@@ -262,26 +264,33 @@ class DataGenerator(DataGeneratorBase):
         len_hadamard2_packed = 2 * L * dModel * FP8 // 8
         len_partition3_out = 2 * L * dModel * BF16 // 8
 
+        # Phase A divisibility (dModel-axis).
         for name, value in (
             ("in", len_in),
             ("partition1_out", len_partition1_out),
             ("hadamard1_out", len_hadamard1_out),
             ("hadamard1_packed", len_hadamard1_packed),
+        ):
+            assert value % nb_tiles_A == 0, (
+                f"length_{name} ({value}) not divisible by nb_tiles_A ({nb_tiles_A})")
+        # Phase C divisibility (K-axis).
+        for name, value in (
             ("hadamard2_packed", len_hadamard2_packed),
             ("weight3", len_weight3),
         ):
-            assert value % nb_tiles == 0, f"length_{name} ({value}) not divisible by nb_tiles ({nb_tiles})"
+            assert value % nb_tiles_C == 0, (
+                f"length_{name} ({value}) not divisible by nb_tiles_C ({nb_tiles_C})")
 
         # Phase A per-tile sizes (dModel-axis).
-        len_in_tile = len_in // nb_tiles
-        len_partition1_out_tile = len_partition1_out // nb_tiles
-        len_hadamard1_out_tile = len_hadamard1_out // nb_tiles
-        len_hadamard1_packed_tile = len_hadamard1_packed // nb_tiles
+        len_in_tile = len_in // nb_tiles_A
+        len_partition1_out_tile = len_partition1_out // nb_tiles_A
+        len_hadamard1_out_tile = len_hadamard1_out // nb_tiles_A
+        len_hadamard1_packed_tile = len_hadamard1_packed // nb_tiles_A
         len_hadamard1_packed_tile_re = len_hadamard1_packed_tile // 2
         len_phaseA_dma_per_tile_per_part = dModel_tile * L * FP8 // 8
         # Phase C K-tile B slot sizes.
-        len_weight3_ktile = len_weight3 // nb_tiles
-        len_hadamard2_packed_ktile = len_hadamard2_packed // nb_tiles
+        len_weight3_ktile = len_weight3 // nb_tiles_C
+        len_hadamard2_packed_ktile = len_hadamard2_packed // nb_tiles_C
 
         specs = [
             ("weight1", len_weight1),

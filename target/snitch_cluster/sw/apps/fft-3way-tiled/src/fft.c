@@ -80,13 +80,13 @@ int test() {
     uint32_t simbacore_cycles_phaseB = 0;
     uint32_t simbacore_cycles_phaseC = 0;
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: tiled 3-way FFT (nb_tiles=%d, L=%d, dModel=%d, L1=%d, L2=%d, L3=%d)\n\n", nb_tiles,
-               seqLen, dModel, L1, L2, L3);
+        printf("\nStarting program: tiled 3-way FFT (nb_tiles_A=%d, nb_tiles_C=%d, L=%d, dModel=%d, "
+               "L1=%d, L2=%d, L3=%d)\n\n", nb_tiles_A, nb_tiles_C, seqLen, dModel, L1, L2, L3);
         start_cycles = snrt_mcycle();
     }
 
     // Phase A: partition1 + hadamard1 + reorder1, dModel-tiled.
-    for (uint32_t tile = 0; tile < nb_tiles; tile++) {
+    for (uint32_t tile = 0; tile < nb_tiles_A; tile++) {
         // Zero-init psum/SIMD intermediate slots so prior-tile bytes don't leak through.
         if (snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_in_tile, M6_dft_in + tile * M6_length_in_tile, M6_length_in_tile);
@@ -202,7 +202,7 @@ int test() {
     }
     snrt_cluster_hw_barrier();
 
-    for (uint32_t tile = 0; tile < nb_tiles; tile++) {
+    for (uint32_t tile = 0; tile < nb_tiles_C; tile++) {
         if (snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_hadamard2_packed_b_ktile,
                               ptr_hadamard2_packed_l3 + tile * M6_length_hadamard2_packed_ktile,
@@ -217,7 +217,7 @@ int test() {
             // loop — they don't change per tile. Only weight3's K-slice base
             // and the MODE (NO_REQUANT vs ISGEMM_SQ on final) change here.
             write_csr(BASE_PTR_READER_11_LOW, (uint32_t)(ptr_weight3 + tile * M6_length_weight3_ktile));
-            write_csr(MODE, (tile == nb_tiles - 1) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT);
+            write_csr(MODE, (tile == nb_tiles_C - 1) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT);
             start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
             wait_simbacore_and_streamer();
             simbacore_cycles_phaseC += read_simbacore_perf_counter();
@@ -242,8 +242,8 @@ int test() {
 
         printf(
             "Test FFT 3-way tiled (Phase A dModel-tiled, Phase C K-tiled, partition2 un-tiled): "
-            "(%d x %d), L1=%d L2=%d L3=%d, nb_tiles=%d\n",
-            seqLen, dModel, L1, L2, L3, nb_tiles);
+            "(%d x %d), L1=%d L2=%d L3=%d, nb_tiles_A=%d, nb_tiles_C=%d\n",
+            seqLen, dModel, L1, L2, L3, nb_tiles_A, nb_tiles_C);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, nb_test_samples);
     }
 

@@ -1,4 +1,4 @@
-# 4. Mamba main: `main`, `main-tiled`, `main-full`, `suc`
+# 4. Mamba main: `main`, `main-tiled`, `main-full`, `suc-only`
 
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),
@@ -76,7 +76,7 @@ ping-pong region for its own ping-pong, since Phase 1 is done with it.
 | **FULL with per-tile slot** | `conv_out` (W1 writes a different slice each tile) | `z`, `y` (W0/W2 write a different slice each tile)                                                            |
 | **tiled, ping-pong**    | `oscore_weight`, `conv_weight`, `conv_bias`, `iscore_weight` | `oscore_weight`, `dt_weight_1`, `dt_weight_2`, `dt_bias`, SU-core `A` and `D`, `iscore_weight`           |
 
-## `suc`
+## `suc-only`
 
 Stand-alone SU-core run, used to probe the SU-core in isolation. The OS-core
 output `z` is preloaded from the golden reference instead of being produced

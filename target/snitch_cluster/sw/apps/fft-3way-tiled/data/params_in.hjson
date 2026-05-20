@@ -1,12 +1,20 @@
 {
-    // Working configs (others hit pre-existing 3-way streamer limits):
-    //   seqLen  dModel  L1  L2  L3  nb_tiles
-    //     4096      4   16  16  16     2
-    //     4096      8   16  16  16     2     ← default
+    // Phase A tiles dModel (must divide dModel).
+    // Phase C tiles K_3 = 2*L3_padded/dInnerUnroll (must divide K_3).
+    // With L3=16, L3_padded=24, dInnerUnroll=24 → K_3=2, so nb_tiles_C ≤ 2.
+    // Working configs:
+    // All checked configs land within the FP8 quantization noise floor
+    // (7-8/25 sampled bytes differ by ±1-2, same noise as un-tiled fft-3way):
+    //   seqLen  dModel  L1  L2  L3  nb_tiles_A  nb_tiles_C
+    //     4096      8   16  16  16       1           2
+    //     4096      8   16  16  16       2           2      
+    //     4096      8   16  16  16       4           2      ← new default
+    //     4096      8   16  16  16       8           2
     seqLen: 4096,
     dModel: 8,
     L1: 16,
     L2: 16,
     L3: 16,
-    nb_tiles: 2
+    nb_tiles_A: 4,
+    nb_tiles_C: 2
 }

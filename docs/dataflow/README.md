@@ -30,7 +30,7 @@ for the exact streamer/CSR programming see the program sources.
 | `main`             | Mamba block: Phase 1 → Phase 2          | no     | —                    |
 | `main-tiled`       | Mamba block                             | yes    | dInner (both phases) |
 | `main-full`        | Same as `main`, different parameters    | no     | —                    |
-| `suc`              | SU-core stand-alone (debug)             | no     | —                    |
+| `suc-only`              | SU-core stand-alone (debug)             | no     | —                    |
 | `fft`              | 2-way partitioned EinFFT                | no     | —                    |
 | `fft-tiled`        | 2-way partitioned EinFFT                | yes    | Phase A: dModel; Phase B: K |
 | `fft-3way`         | 3-way partitioned EinFFT                | no     | —                    |
