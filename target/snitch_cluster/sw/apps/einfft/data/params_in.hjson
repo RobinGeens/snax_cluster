@@ -1,0 +1,11 @@
+{
+    // Un-tiled 2-layer complex MLP after the EinFFT block.
+    // Per-branch matmul is (seqLen, dModel/4) @ (dModel/4, dModel/4).
+    //
+    // Constraints:
+    //   - seqLen   must be multiple of seqLenUnroll  (16)
+    //   - dModel   must be multiple of 4 * dInnerUnroll  (4 * 24 = 96)
+    //              (so dPerB = dModel/4 is a clean multiple of Nu = dInnerUnroll = 24)
+    "seqLen": 16,
+    "dModel": 192
+}

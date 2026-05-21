@@ -1,1 +1,3 @@
 build/
+runtime/common/snitch_cluster_peripheral.h
+runtime/common/snitch_cluster_addrmap.h

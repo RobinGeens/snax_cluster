@@ -47,6 +47,7 @@ declare -a TESTS=(
   "simd"
   "main-full"
   "main-tiled"
+  "einfft"
   "rmsnorm"
   "fft"
   "fft-tiled"
