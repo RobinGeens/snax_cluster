@@ -1,14 +1,23 @@
 {
-    "seqLen": 64,
+    // Memory layout and required-setting rationale: docs/dataflow/04_mamba_main.md §main-tiled.
+    "seqLen": 512,
     "dModel": 96,
     "dtRank": 24,
-    "nb_tiles": 4 // Number of tiles along dInner
+    "nb_tiles": 8 // MUST equal dInner / dInnerUnroll → K_i = 1 per kernel (P1 split-W3 fix).
 }
 
-// Works for:
-// {
-//     "seqLen": 96,
-//     "dModel": 384,
-//     "dtRank": 24,
-//     "nb_tiles": 16
-// }
+// Tested configs
+//   L     | dModel | nb_tiles | total | y FAIL | iscore_P2 | L1
+//   ------|--------|----------|-------|--------|-----------|-----
+//    64   |   96   |    8     |  10   |   3    |     7     |  78 KiB
+//   192   |   96   |    8     |   4   |   2    |     2     | 172 KiB
+//   384   |   96   |    8     |   4   |   1    |     3     | 366 KiB
+//   512   |   96   |    8     |   8   |   3    |     5     | 437 KiB
+//   576   |   96   |    8     |   9   |   3    |     5     | 490 KiB
+//
+// Partial-PASS (1-2 big outliers per 25):
+//    64   |  192   |   16     |  18   |   8    |    10     |  77 KiB
+//   128   |  192   |   16     |  17   |   7    |    10     | 169 KiB
+//
+// FAIL — partial y/iscore_out at large dInner:
+//   192   |  384   |   32     |  38   |  12    |    23     | 339 KiB

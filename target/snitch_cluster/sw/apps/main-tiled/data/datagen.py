@@ -21,10 +21,16 @@
 #     - isCore output    : NOT tiled (kept in TCDM, accumulates across tiles)
 
 import pathlib
+import random
 import sys
 import os
 import math
 import hjson
+
+# Fix the Python RNG so test_samples_* arrays are stable across regenerations.
+# (chisel-ssm's scala.util.Random still varies the .bin contents between sbt runs,
+# but those don't depend on this Python script's seed.)
+random.seed(0)
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/sim/"))
 # Path in Occamy
@@ -57,8 +63,18 @@ class DataGenerator(DataGeneratorBase):
         self.build_Phase2_data()
         self.emit_l1_usage_comment()
 
+    # snax_simbacore_cluster.hjson: tcdm.size = 512 kB.
+    TCDM_BYTES = 512 * 1024
+
     def emit_l1_usage_comment(self):
-        """Emit expected peak L1 footprint for the tiled fused Phase1+Phase2 layout."""
+        """Emit expected peak L1 footprint and hard-assert it fits in TCDM.
+
+        Layout assumed by main.c after the x-tiling refactor:
+          - oscore_in, iscore_out_P1, z, y, iscore_out_P2 stay FULL.
+          - conv_out (= P2 x) is tiled: P1 writes a tile-sized slot then
+            DMAs to L3; P2 DMAs a tile-sized slot back from L3. Two
+            ping-pong slots in the shared scratch region (sized length_conv_out_tile each).
+        """
         def align64(value: int) -> int:
             return (value + 63) & ~63
 
@@ -73,26 +89,45 @@ class DataGenerator(DataGeneratorBase):
             return cursor
 
         # Shared region in test_phase1_and_2 (always live across both phases).
+        # conv_out is no longer FULL: it lives in the ping-pong region as a tile-sized
+        # slot pair (P1 writes, DMAs to L3; P2 DMAs back into the same slots).
+        # iscore_out_P1 now has TWO buffers: psum (R13/W3 non-final) + final (W3 final
+        # = bank-transposed output that P2's R2/R7 reads). This split is needed because the
+        # final-tile TRANSPOSE W3 would otherwise overwrite psum_partial(n,m) before
+        # IS-core processes element (n,m). See main.c for the explanation.
+        # z and y are also no longer FULL: they live in the P2 ping-pong region as
+        # tile-sized slot pairs (W0/R10 and W2/R11 access the SAME slot within a kernel,
+        # then DM spills the slot to L3 once the kernel is done).
+        # iscore_out_P1_psum and iscore_out_P2 OVERLAP: psum is dead after P1's final
+        # tile (R13/W3 redirect to iscore_out_P1_final on that tile); iscore_out_P2 is
+        # only used in P2 (bias preload overwrites psum's stale data). Reserve max(.,.)
+        # bytes for the shared block.
+        iscore_p1_p2_shared = max(
+            self.phase1_scalars["length_iscore_out"],   # P1 psum_buf
+            self.phase2_scalars["length_iscore_out"],   # P2 iscore_out
+        )
         shared_bytes = (
             self.phase1_scalars["length_oscore_in"]
-            + self.phase1_scalars["length_iscore_out"]  # iscore_out_P1 / dt_in
-            + self.phase1_scalars["length_conv_out"]  # conv_out / x
-            + self.phase2_scalars["length_z"]
-            + self.phase2_scalars["length_y"]
-            + self.phase2_scalars["length_iscore_out"]  # iscore_out_P2
+            + iscore_p1_p2_shared                              # P1 psum / P2 iscore_out (overlap)
+            + self.phase1_scalars["length_iscore_out"]         # P1 final (separate; transposed buffer)
         )
 
-        # Ping-pong scratch used only by Phase 1.
+        # Ping-pong scratch used only by Phase 1. conv_out_tile is in the ping-pong area
+        # so it can be double-buffered against the L3 DMA-out.
         p1_pingpong_bytes = pingpong_bytes(
             [
                 self.phase1_scalars["length_oscore_weight_tile"],
                 self.phase1_scalars["length_conv_weight_tile"],
                 self.phase1_scalars["length_conv_bias_tile"],
                 self.phase1_scalars["length_iscore_weight_tile"],
+                self.phase1_scalars["length_conv_out_tile"],  # P1 W1 ping-pong, DMA-out to L3
             ]
         )
 
         # Ping-pong scratch used only by Phase 2 (reuses Phase 1 scratch base).
+        # x_tile is the P2-side reuse of conv_out_tile slots (DMA-in from L3 per K-tile).
+        # z_tile and y_tile are also ping-ponged (W0/R10 + W2/R11 within a kernel, DMA-out
+        # to L3 between kernels).
         p2_pingpong_bytes = pingpong_bytes(
             [
                 self.phase2_scalars["length_oscore_weight_tile"],
@@ -102,14 +137,33 @@ class DataGenerator(DataGeneratorBase):
                 self.phase2_scalars["length_A_tile"],
                 self.phase2_scalars["length_D_tile"],
                 self.phase2_scalars["length_iscore_weight_tile"],
+                self.phase1_scalars["length_conv_out_tile"],  # x_tile ping-pong, DMA-in from L3
+                self.phase2_scalars["length_z_tile"],         # z_tile ping-pong, DMA-out to L3
+                self.phase2_scalars["length_y_tile"],         # y_tile ping-pong, DMA-out to L3
             ]
         )
 
         # main.c aligns ping-pong base to 64 bytes after the shared region.
         total_l1_bytes = align64(shared_bytes) + max(p1_pingpong_bytes, p2_pingpong_bytes)
         total_l1_kib = total_l1_bytes / 1024
+        tcdm_kib = self.TCDM_BYTES / 1024
         print(
             f"// Expected total L1 usage (tiled test_phase1_and_2 layout): {total_l1_bytes} B ({total_l1_kib:.2f} KiB)"
+        )
+        print(
+            f"//   shared FULL (oscore_in + iscore_out_P1 + z + y + iscore_out_P2) = {shared_bytes} B"
+        )
+        print(
+            f"//   pingpong scratch (max of P1/P2 incl. conv_out_tile / x_tile)    = {max(p1_pingpong_bytes, p2_pingpong_bytes)} B"
+        )
+        # Hard-assert fit so silent OOB writes can never reach the simulator.
+        # When you see this fire, lower seqLen or raise nb_tiles, or extend the tiling
+        # strategy (iscore_out, z, y currently stay FULL — see params_in.hjson notes).
+        assert total_l1_bytes <= self.TCDM_BYTES, (
+            f"main-tiled L1 footprint {total_l1_bytes} B ({total_l1_kib:.2f} KiB) "
+            f"exceeds TCDM budget {self.TCDM_BYTES} B ({tcdm_kib:.0f} KiB). "
+            f"shared FULL = {shared_bytes} B, pingpong = {max(p1_pingpong_bytes, p2_pingpong_bytes)} B. "
+            f"Lower seqLen, raise nb_tiles, or extend tiling (z/y/iscore_out_P2 stay FULL today)."
         )
 
     def save_params(self):

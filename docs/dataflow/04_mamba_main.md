@@ -70,11 +70,44 @@ mode, final tile applies the requant — same trick as `isgemm-tiled`).
 Phase 1 completes fully, then Phase 2 starts. Phase 2 reuses Phase 1's
 ping-pong region for its own ping-pong, since Phase 1 is done with it.
 
-| Lifecycle               | Phase 1 tensors                                       | Phase 2 tensors                                                                                              |
-| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **shared / FULL**       | `oscore_in`, `iscore_out` (psum accumulator)          | `oscore_in`, `dt_in` (= P1 `iscore_out`), `x` (= P1 `conv_out`), `iscore_out` (psum accumulator)             |
-| **FULL with per-tile slot** | `conv_out` (W1 writes a different slice each tile) | `z`, `y` (W0/W2 write a different slice each tile)                                                            |
-| **tiled, ping-pong**    | `oscore_weight`, `conv_weight`, `conv_bias`, `iscore_weight` | `oscore_weight`, `dt_weight_1`, `dt_weight_2`, `dt_bias`, SU-core `A` and `D`, `iscore_weight`           |
+| Lifecycle                       | Phase 1 tensors                                              | Phase 2 tensors                                                                                |
+| ------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **shared / FULL**               | `oscore_in`, `iscore_out_P1_psum`, `iscore_out_P1_final`     | `oscore_in`, `dt_in` (= P1 `iscore_out_P1_final`), `iscore_out_P2`                             |
+| **tile-sized in TCDM, FULL in L3** | `conv_out`                                                | `x` (= P1 `conv_out`), `z`, `y`                                                                |
+| **tiled, ping-pong**            | `oscore_weight`, `conv_weight`, `conv_bias`, `iscore_weight` | `oscore_weight`, `dt_weight_1`, `dt_weight_2`, `dt_bias`, SU-core `A` and `D`, `iscore_weight` |
+
+### Memory-saving tricks
+
+- **`x` (= `conv_out`) staged through L3.** TCDM holds a 2-slot
+  ping-pong; the FULL tensor lives in L3. P1 spills each `conv_out` tile to
+  L3 two iterations after it is written (3-stage pipeline: weight-in / kernel
+  / spill); P2 DMA-ins `x_tile[i]` from L3 alongside loading weight tile `i`.
+- **`z` and `y` staged through L3.** Tile-sized ping-pong in TCDM (W0/W2
+  write, R10/R11 read within the same P2 kernel call), then DMA'd out to L3
+  after the kernel. Verification reads from L3.
+- **`iscore_out_P1_psum` overlays `iscore_out_P2`.** The P1 psum buffer is
+  dead after P1's final K-tile (R13/W3 switch to `iscore_out_P1_final` on the
+  last tile); `iscore_out_P2` is only used in P2. They never coexist, so they
+  share one address. Saves `min(length_iscore_P1, length_iscore_P2)` bytes.
+- **`iscore_out_P1_final` is a separate FULL buffer.** Required by the
+  K-tile + TRANSPOSE-final fix (see `main_tiled_p1_split_buffer_fix` memory).
+  `iscore_out_P1_psum` holds the standard-layout BF16 psum accumulating
+  across K (R13 reads, W3 writes on non-final tiles, no-requant mode).
+  `iscore_out_P1_final` receives the final tile's W3 in TRANSPOSE mode and
+  holds the requantized output in the bank-transposed layout that P2's R2/R7
+  `dt`+`BC` readers expect. Without the split, the final tile's transposed
+  W3 writes element (m,n) to byte F(n,m) and would otherwise clobber
+  `psum_partial(n,m)` before IS-core reads it.
+
+**Required parameter constraint.** `nb_tiles` MUST equal
+`dInner / dInnerUnroll` so K\_i=1 per kernel. With K\_i>1, the final kernel
+needs intra-kernel W3→R13 feedback that the split-W3 buffer breaks.
+
+### Possible further tricks (not yet implemented)
+
+- L-tile `iscore_out_P2` by splitting P2 into a new "PHASE2\_NO\_ISCORE" mode
+  (chisel-ssm change) + IS-core-only kernel calls. Frees the `L*dModel*2`
+  buffer.
 
 ## `suc-only`
 
