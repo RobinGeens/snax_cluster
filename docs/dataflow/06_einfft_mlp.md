@@ -1,15 +1,15 @@
-# 6. EinFFT complex MLP: `einfft` and `einfft-tiled`
+# 6. EinFFT MLP: `einfft` and `einfft-tiled`
 
 > Byte layouts of A, B, D for the OS-core:
 > [memory_layouts/02](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)
 > and [03 — ConvFormat](../../../chisel-ssm/docs/memory_layouts/03_conv_format.md).
-> Algorithmic reference (Scala): `chisel-ssm/src/test/scala/simbalib/ComplexMlpLib.scala`,
+> Algorithmic reference (Scala): `chisel-ssm/src/test/scala/simbalib/EinfftMlpLib.scala`,
 > with the OS-core dataflow specialisation in
-> `chisel-ssm/src/test/scala/datagen/DataGeneratorComplexMlp.scala::complexLinearOS`.
+> `chisel-ssm/src/test/scala/datagen/DataGeneratorEinfftMlp.scala::einfftLinearOS`.
 
-`einfft` (un-tiled, PASS) and `einfft-tiled` (N-axis tiled, currently
-broken) implement the **2-layer complex MLP** that follows the EinFFT
-projection. The math is
+`einfft` (un-tiled, PASS) and `einfft-tiled` (N-axis tiled; `nb_tiles`
+constrained by `N_t >= 2`, see §6.2) implement the **2-layer EinFFT
+MLP** — the MLP block that follows the EinFFT projection. The math is
 
 ```
 Layer 1 (with ReLU)
@@ -60,7 +60,7 @@ the BF16-of-FP8-of conv-walk position `k`.
 This is enabled by three coordinated decisions:
 
 1. **The chisel reference output_*_* is emitted in ConvFormat per branch**
-   (`flattenPerBranchConvFormat` in `DataGeneratorComplexMlp.scala`).
+   (`flattenPerBranchConvFormat` in `DataGeneratorEinfftMlp.scala`).
    The SNAX program's TCDM result therefore matches the reference
    byte-for-byte without any reorder pass.
 2. **The bias is pre-expanded by `datagen.py`** into the same conv-walk
@@ -92,14 +92,31 @@ walked serially; the full per-branch weight matrix `(D/4, D/4)` is
 DMA'd into TCDM before the four OSGEMMs run. With `L=16, D=192`
 (`dPerB=48`) the per-branch weight is 2304 B, easily resident.
 
-**`einfft-tiled`** tiles the N (= D/4 output-channel) axis: each weight
-tile is double-buffered against the next tile's DMA, and two of the
-four matmuls reuse each weight tile (W_re → rr, ir; W_im → ii, ri).
-This lowers the live weight footprint to `(D/4)² / nb_tiles` per side
-and overlaps the weight DMA with compute. It is **currently broken**
-(~85 / 100 verification errors at last test); the working un-tiled
-version is the recommended starting point if you need to extend or
-re-tile this kernel.
+**`einfft-tiled`** tiles the N (= D/4 output-channel) axis at the
+**OS-core level only**. Per (layer, branch):
+
+- The four 4-OSGEMM-per-tile loops fire with `N_t = N_full / nb_tiles`
+  and the weight DMA is double-buffered against the next tile's compute.
+- The per-tile OSGEMM output lands in the contiguous slot of a FULL
+  per-branch ConvFormat scratch (= `ptr_rr + tile * L * dPerB_tile`),
+  so the assembled scratch matches the byte order the un-tiled
+  reference expects.
+- After all tiles are written, the SIMD widen / SUB / ADD-with-bias /
+  narrow chain runs **once per side per branch** with full per-branch
+  bounds — empirically the SIMD pipeline produces correct output at
+  those bounds and degrades at short-bound per-tile launches.
+
+This program PASSES at `nb_tiles = 1` (equivalent to the un-tiled
+`einfft` plus a one-iteration tile loop and one-tile weight ping-pong).
+
+### `nb_tiles` constraint: `N_t >= 2`
+
+Each per-tile OSGEMM must walk `N_t = N_full / nb_tiles >= 2`. The
+datagen rejects shapes that would violate this. With `dPerB = 48`
+(`dModel=192`), `N_full = 2`, so only `nb_tiles = 1` is possible;
+`dModel >= 384` (`N_full = 4`) allows up to `nb_tiles = 2`. See
+[chisel-ssm/docs/memory_layouts/02_gemm_layouts.md §2.4](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)
+for the underlying OSGEMM `N >= 2` requirement.
 
 ## 6.3 Un-tiled dataflow (`einfft`)
 
@@ -144,7 +161,7 @@ the end of each (layer, branch) writes 768 contiguous FP8 bytes into
 the matching branch slot, which is exactly the ConvFormat-per-branch
 layout the reference expects.
 
-## 6.4 Tiled dataflow (`einfft-tiled`, broken)
+## 6.4 Tiled dataflow (`einfft-tiled`, partial)
 
 For one `(L, D/4) @ (D/4, D/4)` matmul in OS-core terms:
 
@@ -169,11 +186,15 @@ per-tile compute, with each weight tile reused across two matmuls
 (`W_re` across rr + ir, `W_im` across ii + ri). This is the same axis
 [`osgemm-tiled`](01_oscore_kernels.md) picks.
 
-The tiled variant currently has a layout bug between the per-tile
-flatA scatter and the chisel reference. The un-tiled `einfft` (§6.3)
-side-stepped this entirely by keeping ConvFormat through to
-verification, so a clean re-tile would lift the same ConvFormat-
-throughout strategy onto a per-tile slot.
+The tiled program in this repo applies the ConvFormat-throughout
+strategy at the OS-core level (per-tile OSGEMM writing into a FULL
+per-branch ConvFormat scratch) but defers the SIMD chain to a single
+per-branch launch at full bounds. This matches the structure that
+already passes in `einfft` but adds the per-tile weight DMA pipeline.
+It works correctly when `N_t = N_full / nb_tiles >= 2`. At the
+default-shape `dModel=192`, `dPerB=48`, `N_full=2`, that caps
+`nb_tiles` at 1; see §6.2 for the underlying HW limitation and the
+datagen assertion that enforces it.
 
 ## 6.5 What stays FULL, what's per-branch
 
@@ -195,7 +216,7 @@ Total live TCDM (un-tiled, `L=16, D=192`):
 Both layer 1 and layer 2 read their `x_re / x_im` input as flatA per
 branch from L3. Layer 1 reads `x_real / x_imag`; layer 2 reads
 `x_2_real / x_2_imag` (= the FP8 quantization of layer 1's output,
-emitted in flatA by `complexLinearOS`).
+emitted in flatA by `einfftLinearOS`).
 
 This sidesteps the inter-layer ConvFormat → flatA conversion that would
 otherwise have to live on the C side, at the cost of one extra L3 → TCDM
@@ -226,7 +247,7 @@ but the HW bits decode the same way the recognised modes do (the
 
 ## 6.8 Verification
 
-`DataGeneratorComplexMlp` (`core=os`) runs `complexLinearOS` (per-matmul
+`DataGeneratorEinfftMlp` runs `einfftLinearOS` (per-matmul
 FP8 requantization between the OS-core math and the BF16 fuse) and
 emits the reference outputs in **ConvFormat per branch** so the SNAX
 program can verify TCDM in place. It also emits `x_2_real/imag` in

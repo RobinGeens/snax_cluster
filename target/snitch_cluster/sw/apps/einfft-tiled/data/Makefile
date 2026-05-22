@@ -8,7 +8,7 @@ DATA_DIR ?= $(realpath $(MK_DIR))
 CURR_DIR ?= $(DATA_DIR)
 
 # App-specific
-APP_NAME = einfft
+APP_NAME = einfft-tiled
 GENERATOR_CLASS = datagen.DataGeneratorEinfftMlp
 
 include $(MK_DIR)/../../common-datagen.mk

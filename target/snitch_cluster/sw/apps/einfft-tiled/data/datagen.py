@@ -5,24 +5,22 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# Un-tiled OS-core 2-layer EinFFT MLP.
+# Tiled, double-buffered OS-core 2-layer EinFFT MLP.
 #
-# Per (layer, branch) we run 4 OSGEMMs and one SIMD fuse pipeline per side
-# (real, imag). Branches are walked serially.
+# Same ConvFormat-throughout strategy as the un-tiled `einfft` (see
+# docs/dataflow/06_einfft_mlp.md). The N (= D/4 output-channel) axis
+# is tiled at the OS-core level only: weights are DMA'd one tile at a time
+# (ping-pong against compute) and the per-tile OSGEMM output drops into the
+# right slot of the FULL per-branch ConvFormat scratch. The SIMD fuse then
+# runs ONCE per side per branch over the assembled scratch — keeping the
+# SIMD launch bounds at FULL per-branch size (the un-tiled config), which
+# is what the hardware empirically handles correctly.
 #
-# This datagen handles ALL of the ConvFormat / OS-core / SIMD geometry so the
-# C side does no byte-permutation work:
-#   - The chisel reference now emits `output_*_real|imag` in ConvFormat per
-#     branch (= the same byte order the OS-core writes), so the SNAX program
-#     can verify TCDM directly.
-#   - `x_2_real|imag` is emitted in flatA per branch (= the OS-core A layout)
-#     so layer 2's A input is DMA'd straight in without any reformat.
-#   - `bias_*_*_bcast` is pre-expanded here: for each (branch, ConvFormat
-#     element position t) we store `bias[col(t)]`, so the SIMD ADD step
-#     reads it linearly with R13 alongside the linear-walked bf16_a buffer.
-#
-# OSGEMM streamer config + per-SIMD-step R7/R13/W3 configs are also emitted
-# here. The C side just calls `set_*_streamer_csr` with the right constants.
+# This datagen therefore emits:
+#   - OSGEMM streamer config with N_t = N_full / nb_tiles (per-tile matmul).
+#   - SIMD streamer configs with n_elems = L * dPerB (per-branch / un-tiled).
+#   - Bias broadcast pre-expanded to full per-branch conv-walk order
+#     (same layout as `einfft`).
 
 import pathlib
 import sys
@@ -38,23 +36,19 @@ from datagen_base import DataGeneratorBase, FP8, BF16, BANK_BYTES  # type: ignor
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
-# Synthesized SIMD mode value. The Chisel SimbaCoreMode bit layout is
-# (high to low): boolean enables · m_switchCoreMode · sw_simdInType · m_simd,
-# where m_simd = (SimdMode<<3) | (doRelu<<2) | (doRequant<<1) | doSoftShrink.
-# `en_isCoreRequant` defaults to 1 → bit 15 is set on every plain SIMD mode.
-# Sanity-check: M8_SIMD_ADD_BF16 = 32776 = 0x8008 = (en_isCoreRequant) | (Add<<3).
+# Synthesized SIMD mode: SIMD_ADD_BF16 + doRelu. See einfft/datagen.py for the
+# SimbaCoreMode bit-layout sanity check (verified against M8_SIMD_ADD_BF16).
 _EN_ISCORE_REQUANT_BIT = 1 << 15
-_SIMD_MODE_ADD = 1
+_SIMD_MODE_ADD         = 1
 
 
 def _simd_add_bf16_relu_mode() -> int:
-    """ADD_BF16 with doRelu=1 — used so layer-1's bias-ADD also applies ReLU."""
-    m_simd = (_SIMD_MODE_ADD << 3) | (1 << 2)   # mode=Add, doRelu=1
-    return _EN_ISCORE_REQUANT_BIT | m_simd      # 0x800c = 32780
+    m_simd = (_SIMD_MODE_ADD << 3) | (1 << 2)
+    return _EN_ISCORE_REQUANT_BIT | m_simd
 
 
 class DataGenerator(DataGeneratorBase):
-    APP_NAME = "einfft"
+    APP_NAME = "einfft-tiled"
     NB_BRANCHES = 4
 
     # TCDM budget — keep in sync with snax_simbacore_cluster.hjson (tcdm.size = 512 kB).
@@ -76,11 +70,8 @@ class DataGenerator(DataGeneratorBase):
     # ------------------------------------------------------------------
     @staticmethod
     def _conv_walk_indices(L: int, dPerB: int, Mu: int, Nu: int, conv_unroll: int):
-        """Yield (row, col) for each conv-walk linear position in a (L, dPerB) tensor.
-
-        Loop order (outermost→innermost): d3 (tile-col), l2 (tile-row),
-        d2 (sub-tile col), l1, c. For L=Mu only one l2 iteration.
-        """
+        """Yield (row, col) for each conv-walk linear position in a (L, dPerB)
+        tensor (loop order: d3 outer, l2, d2, l1, c inner)."""
         assert L % Mu == 0 and dPerB % Nu == 0 and Nu % conv_unroll == 0
         for d3 in range(dPerB // Nu):
             for l2 in range(L // Mu):
@@ -91,9 +82,9 @@ class DataGenerator(DataGeneratorBase):
 
     def _expand_bias_conv_order(self, bias_flat: list[int], nBranches: int, L: int, dPerB: int,
                                 Mu: int, Nu: int, conv_unroll: int) -> list[int]:
-        """Pre-stage bias for R13 broadcast: for each (branch, conv-walk position t),
-        emit bias[branch][col(t)]. main.c's SIMD ADD reads this linearly alongside
-        bf16_a (which is in conv-walk byte order after the linear widen)."""
+        """Per (branch, conv-walk position t over the full (L, dPerB) tensor),
+        emit `bias[branch][col(t)]`. The SIMD ADD step's R13 walks this linearly
+        alongside the full per-branch bf16_a buffer."""
         assert len(bias_flat) == nBranches * dPerB
         out: list[int] = []
         for branch in range(nBranches):
@@ -111,6 +102,7 @@ class DataGenerator(DataGeneratorBase):
         conv_unroll = self.kwargs["convUnroll"]
         seqLen = self.kwargs["seqLen"]
         dModel = self.kwargs["dModel"]
+        nb_tiles = self.kwargs["nb_tiles"]
         oscore_serial_width = self.kwargs["oscore_serial_width"]
         nBranches = self.NB_BRANCHES
 
@@ -122,51 +114,60 @@ class DataGenerator(DataGeneratorBase):
         b_array_width = Nu * FP8
         d_array_width = Mu * Nu * FP8
         assert d_array_width % oscore_serial_width == 0, "d_array_width must be divisible by oscore_serial_width"
-        b_downsize_factor = b_in_width / b_array_width  # >= 1
+        b_downsize_factor = b_in_width / b_array_width
 
         # OS-core MatmulDims (per branch, per matmul): A=(L, dPerB), B=(dPerB, dPerB), D=(L, dPerB)
-        M = seqLen // Mu                                  # 1 for L=Mu
+        M = seqLen // Mu                                  # 1 for L = Mu
         K = dPerB
-        N = dPerB // Nu
+        N_full = dPerB // Nu                              # 2 for default
         downsized_K = int(K / b_downsize_factor)
-        assert downsized_K == K / b_downsize_factor, f"downsized_K {K / b_downsize_factor} must be an integer"
+        assert downsized_K == K / b_downsize_factor
         assert downsized_K * b_in_width == K * b_array_width
 
-        n_elems  = seqLen * dPerB                         # per-side full element count
+        # Tile along N (output-channel axis).
+        assert N_full % nb_tiles == 0, (
+            f"N ({N_full}) must be divisible by nb_tiles ({nb_tiles}); equivalently, "
+            f"dPerB ({dPerB}) must be a multiple of dInnerUnroll * nb_tiles ({Nu} * {nb_tiles})"
+        )
+        N_t = N_full // nb_tiles
+        # OSGEMM requires N >= 2 (see chisel-ssm/docs/memory_layouts/02_gemm_layouts.md §2.4).
+        assert N_t >= 2, (
+            f"N_t = N_full / nb_tiles = {N_full} / {nb_tiles} = {N_t} < 2. "
+            f"OSGEMM requires N >= 2; for dPerB={dPerB} the cap is nb_tiles <= {N_full // 2}."
+        )
+        dPerB_t = dPerB // nb_tiles
+        n_elems_full = seqLen * dPerB                     # SIMD operates on FULL per-branch buffers
+        assert n_elems_full % 32 == 0
 
-        # ---- OSGEMM streamer config (one matmul; only R0/R1/W0 base ptrs change) ----
+        # ---- OSGEMM streamer config (one per-tile matmul) --------------------
         osgemm_streamers = {
             "R0": (
-                [K, M, N],
+                [K, M, N_t],
                 [a_in_width // 8, K * a_in_width // 8, 0],
             ),
             "R1": (
-                [downsized_K, M, N],
+                [downsized_K, M, N_t],
                 [b_in_width // 8, 0, downsized_K * b_in_width // 8],
             ),
             "W0": (
-                [(d_array_width // oscore_serial_width) * M * N],
+                [(d_array_width // oscore_serial_width) * M * N_t],
                 [oscore_serial_width // 8],
             ),
         }
 
-        # ---- SIMD streamer configs ---------------------------------------------
-        # bf16 staging buffers are walked LINEARLY in conv-walk byte order (same
-        # byte order the OS-core W0 wrote rr/ii/ri/ir, just doubled width after
-        # widen). Lane k of R7 / R13 / W3 pairs at the same logical conv-walk
-        # element position — see docs/memory_layouts/10_simd.md §10.2 / §10.8.
-        n_fp8_cycles  = n_elems // 32                     # FP8: 32 lanes/cycle
-        n_bf16_cycles = n_elems // 16                     # BF16: 16 lanes/cycle
+        # ---- SIMD streamer configs (FULL per-branch, NOT per-tile) ----------
+        # Empirically the SIMD widen / narrow paths under-run on short bounds
+        # (e.g. 12 fp8 cycles → wrong output), so we keep the bounds at the
+        # full per-branch size and feed the SIMD a pre-assembled FULL scratch.
+        n_fp8_cycles  = n_elems_full // 32
+        n_bf16_cycles = n_elems_full // 16
 
         simd_streamers = {
-            # Widen FP8 → BF16.
             "R7_widen": ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "W3_widen": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            # BF16 binop (ADD / SUB).
             "R7_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "R13_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "W3_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            # Narrow BF16 → FP8.
             "W3_fp8":   ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
         }
 
@@ -176,12 +177,14 @@ class DataGenerator(DataGeneratorBase):
         len_x_branch    = seqLen * dPerB * FP8 // 8
         len_out_branch  = seqLen * dPerB * FP8 // 8
         len_w_branch    = dPerB * dPerB * FP8 // 8
+        assert len_w_branch % nb_tiles == 0
+        len_w_branch_tile = len_w_branch // nb_tiles
         len_bias_branch = dPerB * BF16 // 8
-        len_d           = seqLen * dPerB * FP8 // 8
-        len_bf16        = n_elems * BF16 // 8
-        len_bias_bcast_branch = n_elems * BF16 // 8       # per branch, conv-walk-order
+        len_d_tile      = seqLen * dPerB_t * FP8 // 8     # one per-tile OS-core scratch slot
+        len_d_branch    = len_out_branch                  # FULL per-branch scratch (= sum of tiles)
+        len_bf16        = n_elems_full * BF16 // 8        # FULL per-branch BF16 staging
+        len_bias_bcast_branch = n_elems_full * BF16 // 8  # FULL per-branch bias broadcast
 
-        # Concatenated-over-branches lengths.
         len_x          = nBranches * len_x_branch
         len_w          = nBranches * len_w_branch
         len_bias       = nBranches * len_bias_branch
@@ -193,28 +196,25 @@ class DataGenerator(DataGeneratorBase):
             return (v + 63) & ~63
 
         shared_bytes = (
-            len_x + len_x +                                # x_real, x_imag (layer 1)
-            len_x + len_x +                                # x_2_real, x_2_imag (layer 2)
-            len_out + len_out +                            # l1_real, l1_imag (verify against ConvFormat ref)
+            len_x + len_x +                                # x_real, x_imag
+            len_x + len_x +                                # x_2_real, x_2_imag
+            len_out + len_out +                            # l1_real, l1_imag
             len_out + len_out +                            # l2_real, l2_imag
-            len_bias_bcast * 4                             # b1_re/im, b2_re/im (pre-expanded)
+            len_bias_bcast * 4                             # 4 bias_bcast buffers
         )
         per_branch_bytes = (
-            _align64(len_w_branch) * 2 +                   # W_re + W_im
-            _align64(len_d) * 4 +                          # rr, ii, ri, ir
+            _align64(len_w_branch_tile) * 2 * 2 +          # W_re_pp[2] + W_im_pp[2]
+            _align64(len_d_branch) * 4 +                   # rr, ii, ri, ir (FULL)
             _align64(len_bf16) * 2                         # bf16_a, bf16_b
         )
         total_l1_bytes = _align64(shared_bytes) + per_branch_bytes
         assert total_l1_bytes <= self.TCDM_BYTES, (
-            f"einfft L1 footprint {total_l1_bytes} B exceeds TCDM budget {self.TCDM_BYTES} B."
+            f"einfft-tiled L1 footprint {total_l1_bytes} B exceeds TCDM budget {self.TCDM_BYTES} B."
         )
-        print(f"// einfft L1 usage: {total_l1_bytes} B "
+        print(f"// einfft-tiled L1 usage: {total_l1_bytes} B "
               f"(shared {_align64(shared_bytes)} B, per-branch {per_branch_bytes} B)")
 
-        # ---- Pre-expand the bias buffers --------------------------------------
-        # The chisel datagen writes bias as nBranches × dPerB BF16 ints (one int
-        # per line) into M3_bias_<X>_<re|im>.bin. We expand to conv-walk order
-        # and emit as a new uint16_t array DMA'd straight into TCDM.
+        # ---- Pre-expand bias per branch in FULL conv-walk order --------------
         bias_names = ("bias_1_real", "bias_1_imag", "bias_2_real", "bias_2_imag")
         bias_expanded: dict[str, list[int]] = {}
         for name in bias_names:
@@ -228,7 +228,7 @@ class DataGenerator(DataGeneratorBase):
                 flat, nBranches, seqLen, dPerB, Mu, Nu, conv_unroll
             )
 
-        # ---- Specs: register tensor lengths + L3 base addresses for main.c. ----
+        # ---- Specs ------------------------------------------------------------
         specs = [
             ("x_real",        len_x),
             ("x_imag",        len_x),
@@ -252,19 +252,19 @@ class DataGenerator(DataGeneratorBase):
         scalars = {
             **lengths,
             **deltas,
-            "nBranches":              nBranches,
-            "dPerB":                  dPerB,
-            "length_x_branch":        len_x_branch,
-            "length_out_branch":      len_out_branch,
-            "length_w_branch":        len_w_branch,
-            "length_bias_branch":     len_bias_branch,
-            "length_d":               len_d,
-            "length_bf16":            len_bf16,
+            "nBranches":                 nBranches,
+            "dPerB":                     dPerB,
+            "dPerB_tile":                dPerB_t,
+            "length_x_branch":           len_x_branch,
+            "length_out_branch":         len_out_branch,
+            "length_w_branch":           len_w_branch,
+            "length_w_branch_tile":      len_w_branch_tile,
+            "length_d_tile":             len_d_tile,
+            "length_bf16":               len_bf16,
             "length_bias_bcast_branch": len_bias_bcast_branch,
-            "SIMD_ADD_BF16_RELU":     _simd_add_bf16_relu_mode(),
+            "SIMD_ADD_BF16_RELU":        _simd_add_bf16_relu_mode(),
         }
 
-        # ---- Test data + sampled checks ---------------------------------------
         test_data = {
             name: "uint8_t"
             for name in (
@@ -292,7 +292,6 @@ class DataGenerator(DataGeneratorBase):
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
-        # Emit the pre-expanded bias buffers (no underlying .bin file; computed above).
         for name in bias_names:
             self.format_vector("uint16_t", f"M{mode_id}_{name}_bcast", bias_expanded[name])
 

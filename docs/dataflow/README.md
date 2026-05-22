@@ -7,7 +7,7 @@
 > [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
 > [4. Mamba main (Phase 1 + Phase 2)](04_mamba_main.md) ·
 > [5. FFT family](05_fft.md) ·
-> [6. EinFFT complex MLP](06_einfft_complex_mlp.md)
+> [6. EinFFT MLP](06_einfft_mlp.md)
 
 This folder describes, for every program under
 [target/snitch_cluster/sw/apps/](../../target/snitch_cluster/sw/apps/), the
@@ -36,8 +36,8 @@ for the exact streamer/CSR programming see the program sources.
 | `fft-tiled`        | 2-way partitioned EinFFT                | yes    | Phase A: dModel; Phase B: K |
 | `fft-3way`         | 3-way partitioned EinFFT                | no     | —                    |
 | `fft-3way-tiled`   | 3-way partitioned EinFFT                | yes    | Phase A: dModel; Phase B: —; Phase C: K |
-| `einfft`           | 2-layer complex MLP (post-EinFFT)       | no     | —                                       |
-| `einfft-tiled`     | 2-layer complex MLP (post-EinFFT)       | yes    | N (D/4); currently broken               |
+| `einfft`           | 2-layer EinFFT MLP                      | no     | —                                       |
+| `einfft-tiled`     | 2-layer EinFFT MLP                      | yes    | N (D/4); requires N_t >= 2 (datagen enforces) |
 
 ## Cardinal rules
 

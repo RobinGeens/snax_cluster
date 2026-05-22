@@ -1,5 +1,5 @@
 {
-    // Un-tiled 2-layer complex MLP after the EinFFT block.
+    // Un-tiled 2-layer EinFFT MLP.
     // Per-branch matmul is (seqLen, dModel/4) @ (dModel/4, dModel/4).
     //
     // Constraints:
