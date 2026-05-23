@@ -192,27 +192,25 @@ class DataGenerator(DataGeneratorBase):
         len_out        = nBranches * len_out_branch
 
         # ---- TCDM footprint sanity check --------------------------------------
+        # (L3-staged) layout: only the CURRENT branch's slots live in TCDM.
+        # x/bias_bcast/output DMA per (layer, branch); 4 output arrays
+        # (l1_re/im, l2_re/im) live in L3 (snrt_l3alloc).
         def _align64(v: int) -> int:
             return (v + 63) & ~63
 
-        shared_bytes = (
-            len_x + len_x +                                # x_real, x_imag
-            len_x + len_x +                                # x_2_real, x_2_imag
-            len_out + len_out +                            # l1_real, l1_imag
-            len_out + len_out +                            # l2_real, l2_imag
-            len_bias_bcast * 4                             # 4 bias_bcast buffers
+        per_branch_resident = (
+            _align64(len_x_branch) * 2 +                    # x_re_b + x_im_b
+            _align64(len_bias_bcast_branch) * 2 +           # b_re_bc_b + b_im_bc_b
+            _align64(len_out_branch) * 2 +                  # out_re_b + out_im_b
+            _align64(len_w_branch_tile) * 2 * 2 +           # W_re_pp[2] + W_im_pp[2]
+            _align64(len_out_branch) * 4 +                  # rr, ii, ri, ir (FULL per branch)
+            _align64(len_bf16) * 2                          # bf16_a, bf16_b
         )
-        per_branch_bytes = (
-            _align64(len_w_branch_tile) * 2 * 2 +          # W_re_pp[2] + W_im_pp[2]
-            _align64(len_d_branch) * 4 +                   # rr, ii, ri, ir (FULL)
-            _align64(len_bf16) * 2                         # bf16_a, bf16_b
-        )
-        total_l1_bytes = _align64(shared_bytes) + per_branch_bytes
+        total_l1_bytes = per_branch_resident
         assert total_l1_bytes <= self.TCDM_BYTES, (
             f"einfft-tiled L1 footprint {total_l1_bytes} B exceeds TCDM budget {self.TCDM_BYTES} B."
         )
-        print(f"// einfft-tiled L1 usage: {total_l1_bytes} B "
-              f"(shared {_align64(shared_bytes)} B, per-branch {per_branch_bytes} B)")
+        print(f"// einfft-tiled L1 usage (per-branch resident): {total_l1_bytes} B")
 
         # ---- Pre-expand bias per branch in FULL conv-walk order --------------
         bias_names = ("bias_1_real", "bias_1_imag", "bias_2_real", "bias_2_imag")
