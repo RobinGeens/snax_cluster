@@ -6,9 +6,9 @@
 set -euo pipefail
 
 
-CONTAINER_CMD="podman run --rm -i -v \"$(pwd)\":\"$(pwd)\" -w \"$(pwd)\" ghcr.io/kuleuven-micas/snax:main bash -s"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
+CONTAINER_CMD="podman run --rm -i -v \"${ROOT_DIR}\":\"${ROOT_DIR}\" -w \"${ROOT_DIR}\" ghcr.io/kuleuven-micas/snax:main bash -s"
 
 
 eval "${CONTAINER_CMD}" <<'IN_CONTAINER'

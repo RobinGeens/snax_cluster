@@ -99,9 +99,30 @@ ping-pong region for its own ping-pong, since Phase 1 is done with it.
   W3 writes element (m,n) to byte F(n,m) and would otherwise clobber
   `psum_partial(n,m)` before IS-core reads it.
 
-**Required parameter constraint.** `nb_tiles` MUST equal
-`dInner / dInnerUnroll` so K\_i=1 per kernel. With K\_i>1, the final kernel
-needs intra-kernel W3→R13 feedback that the split-W3 buffer breaks.
+**Kernel-call layout.** `datagen.py` emits four streamer
+bound configurations:
+
+| Config | K-steps per kernel | Mode | W3 destination | Used for |
+|---|---|---|---|---|
+| **P1 bulk** (`M1_R*_tb`) | `K_i` | `M28_PHASE1_NO_REQUANT` | `iscore_out_P1_psum` | non-final P1 tiles (×`nb_tiles-1`) |
+| **P1 finalLead** (`M1_R*_tb_finalLead`) | `K_i-1` | `M28_PHASE1_NO_REQUANT` | `iscore_out_P1_psum` | final-tile lead (only if `K_i>1`) |
+| **P1 finalStep** (`M1_R*_tb_finalStep`) | `1` | `M1_PHASE1` (transpose+requant) | `iscore_out_P1_final` | absolute-final K-step |
+| **P2 tile** (`M2_R*_tb`) | `K_i` | `M29_PHASE2_NO_REQUANT` / `M2_PHASE2` | `iscore_out_P2` | every P2 tile (mode flips for the final tile) |
+
+Total kernel calls per phase: P1 = `nb_tiles + (K_i>1 ? 1 : 0)`, P2 = `nb_tiles`.
+P1's finalStep ALWAYS runs (it carries the requant+transpose); finalLead only
+runs when `K_i>1`. P2 needs no split because PHASE2 doesn't transpose, so HW's
+`isCoreOutIsFinal` gate cleanly applies requant to just the last K-step.
+
+R13 (psum reader) always points at `iscore_out_P1_psum`; W3 redirects to
+`iscore_out_P1_final` only on finalStep. The finalStep streamer base pointers
+along the K axis (R1/R3/R4/R12/W1) advance by `(K_i-1) × M1_<streamer>_K_step_delta`
+so the kernel reads the LAST K-step's slice of weights/conv_out.
+
+`nb_tiles` is a free choice (must divide `dInner / dInnerUnroll`), trading off
+DMA-tile size against kernel-launch overhead. Smaller `nb_tiles` → larger DMA
+tiles → fewer kernel launches. Per-K-step bumps come from `M*_<streamer>_K_step_delta`
+scalars emitted by `datagen.py`.
 
 ### Possible further tricks (not yet implemented)
 

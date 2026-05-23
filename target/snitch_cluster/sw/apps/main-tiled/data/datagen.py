@@ -75,6 +75,7 @@ class DataGenerator(DataGeneratorBase):
             DMAs to L3; P2 DMAs a tile-sized slot back from L3. Two
             ping-pong slots in the shared scratch region (sized length_conv_out_tile each).
         """
+
         def align64(value: int) -> int:
             return (value + 63) & ~63
 
@@ -103,13 +104,13 @@ class DataGenerator(DataGeneratorBase):
         # only used in P2 (bias preload overwrites psum's stale data). Reserve max(.,.)
         # bytes for the shared block.
         iscore_p1_p2_shared = max(
-            self.phase1_scalars["length_iscore_out"],   # P1 psum_buf
-            self.phase2_scalars["length_iscore_out"],   # P2 iscore_out
+            self.phase1_scalars["length_iscore_out"],  # P1 psum_buf
+            self.phase2_scalars["length_iscore_out"],  # P2 iscore_out
         )
         shared_bytes = (
             self.phase1_scalars["length_oscore_in"]
-            + iscore_p1_p2_shared                              # P1 psum / P2 iscore_out (overlap)
-            + self.phase1_scalars["length_iscore_out"]         # P1 final (separate; transposed buffer)
+            + iscore_p1_p2_shared  # P1 psum / P2 iscore_out (overlap)
+            + self.phase1_scalars["length_iscore_out"]  # P1 final (separate; transposed buffer)
         )
 
         # Ping-pong scratch used only by Phase 1. conv_out_tile is in the ping-pong area
@@ -138,8 +139,8 @@ class DataGenerator(DataGeneratorBase):
                 self.phase2_scalars["length_D_tile"],
                 self.phase2_scalars["length_iscore_weight_tile"],
                 self.phase1_scalars["length_conv_out_tile"],  # x_tile ping-pong, DMA-in from L3
-                self.phase2_scalars["length_z_tile"],         # z_tile ping-pong, DMA-out to L3
-                self.phase2_scalars["length_y_tile"],         # y_tile ping-pong, DMA-out to L3
+                self.phase2_scalars["length_z_tile"],  # z_tile ping-pong, DMA-out to L3
+                self.phase2_scalars["length_y_tile"],  # y_tile ping-pong, DMA-out to L3
             ]
         )
 
@@ -150,9 +151,7 @@ class DataGenerator(DataGeneratorBase):
         print(
             f"// Expected total L1 usage (tiled test_phase1_and_2 layout): {total_l1_bytes} B ({total_l1_kib:.2f} KiB)"
         )
-        print(
-            f"//   shared FULL (oscore_in + iscore_out_P1 + z + y + iscore_out_P2) = {shared_bytes} B"
-        )
+        print(f"//   shared FULL (oscore_in + iscore_out_P1 + z + y + iscore_out_P2) = {shared_bytes} B")
         print(
             f"//   pingpong scratch (max of P1/P2 incl. conv_out_tile / x_tile)    = {max(p1_pingpong_bytes, p2_pingpong_bytes)} B"
         )
@@ -251,22 +250,19 @@ class DataGenerator(DataGeneratorBase):
     # =========================================================================
     # Phase 1
     # =========================================================================
-    def build_Phase1_data(self):
-        mode_id = 1
-        assert f"M{mode_id}_PHASE1" in self.kwargs, "verify mode_id"
-        assert self.switchcore_width == BANKWIDTH
-
-        # All bounds touching the dInner axis are scaled to the per-tile workload.
-        # Strides are unchanged (within a tile the access pattern is identical).
-        dInner_t = self.dInner_tile
-        N_t = dInner_t // self.dInnerUnroll  # per-tile osCore N tiles (equiv. K-tiles for IS GeMM)
-
-        streamers = {
-            "R0": (  # osCore in (FULL input, base ptr unchanged across tiles)
+    def _build_p1_streamers(self, N_kern):
+        """Build P1 streamer bound/stride dict for an arbitrary K-step count N_kern.
+        N_kern = K_i for the "bulk" config (used for non-final tiles AND the K_i-1
+        lead chunk via N_kern=K_i-1), 1 for the "finalStep" config (used for the
+        absolute-final K-step kernel that does requant+transpose).
+        """
+        dInner_kern = N_kern * self.dInnerUnroll
+        return {
+            "R0": (
                 [
-                    self.dModel,  # K
-                    self.seqLen // self.seqLenUnroll,  # M
-                    N_t,  # N (per-tile)
+                    self.dModel,
+                    self.seqLen // self.seqLenUnroll,
+                    N_kern,
                 ],
                 [
                     self.seqLenUnroll * FP8 // 8,
@@ -274,11 +270,11 @@ class DataGenerator(DataGeneratorBase):
                     0,
                 ],
             ),
-            "R1": (  # osCore weight (per-tile slice along N=dInner)
+            "R1": (
                 [
-                    self.downsized_dModel,  # K
-                    self.seqLen // self.seqLenUnroll,  # M
-                    N_t,  # N (per-tile)
+                    self.downsized_dModel,
+                    self.seqLen // self.seqLenUnroll,
+                    N_kern,
                 ],
                 [
                     self.gemm_weight_width // 8,
@@ -286,19 +282,19 @@ class DataGenerator(DataGeneratorBase):
                     self.downsized_dModel * self.gemm_weight_width // 8,
                 ],
             ),
-            "R3": (  # conv (switchCore) weight: layout is row-major [dInner, dConv]
-                [self.dConv * dInner_t * FP8 // BANKWIDTH],
+            "R3": (
+                [self.dConv * dInner_kern * FP8 // BANKWIDTH],
                 [BANK_BYTES],
             ),
-            "R4": (  # conv (switchCore) bias: layout is row-major [dInner]
-                [dInner_t * FP8 // BANKWIDTH],
+            "R4": (
+                [dInner_kern * FP8 // BANKWIDTH],
                 [BANK_BYTES],
             ),
-            "R12": (  # iscore weight (x_proj, K-tiled along dInner, accumulated by R13/W3)
+            "R12": (
                 [
-                    self.downsized_xProjDim,  # N
-                    self.seqLen // self.seqLenUnroll,  # M
-                    N_t,  # K (per-tile)
+                    self.downsized_xProjDim,
+                    self.seqLen // self.seqLenUnroll,
+                    N_kern,
                 ],
                 [
                     self.gemm_weight_width // 8,
@@ -306,30 +302,68 @@ class DataGenerator(DataGeneratorBase):
                     self.downsized_xProjDim * self.gemm_weight_width // 8,
                 ],
             ),
-            "R13": (  # isCore psum (FULL output, accumulates across tiles in place)
+            "R13": (
                 [
                     (self.seqLen // self.seqLenUnroll) * self.xProjDim,
-                    N_t,  # K (per-tile)
+                    N_kern,
                 ],
                 [
                     self.seqLenUnroll * BF16 // 8,
                     0,
                 ],
             ),
-            "W1": (  # conv output (per-tile slice along dInner)
-                [self.seqLen * dInner_t * FP8 // BANKWIDTH],
+            "W1": (
+                [self.seqLen * dInner_kern * FP8 // BANKWIDTH],
                 [BANK_BYTES],
             ),
-            "W3": (  # isCore output: same as psum reader R13 (FULL, in-place accumulation)
+            "W3": (
                 [
                     (self.seqLen // self.seqLenUnroll) * self.xProjDim,
-                    N_t,
+                    N_kern,
                 ],
                 [
                     self.seqLenUnroll * BF16 // 8,
                     0,
                 ],
             ),
+        }
+
+    def _emit_alt_bounds(self, mode_id, streamer_dict, suffix):
+        """Emit just the temporal bound (tb) arrays for an alternate K-step config
+        as `M{mode}_{streamer}_tb_{suffix}[]`. Strides/spatial-strides/enables are
+        identical to the default config so we reuse those (e.g. M1_R0_ts[]).
+        """
+        from datagen_base import NUM_LOOPS  # type: ignore[import]
+
+        for sname, cfg in streamer_dict.items():
+            bounds = list(cfg[0]) + [1] * (NUM_LOOPS - len(cfg[0]))
+            self.lines_params.append(f"int32_t M{mode_id}_{sname}_tb_{suffix}[] = {{{', '.join(map(str, bounds))}}};")
+
+    def build_Phase1_data(self):
+        mode_id = 1
+        assert f"M{mode_id}_PHASE1" in self.kwargs, "verify mode_id"
+        assert self.switchcore_width == BANKWIDTH
+
+        # Three P1 kernel configurations (per main.c §main-tiled in docs/dataflow/04_mamba_main.md):
+        #   bulk      (K_i K-steps in M28_PHASE1_NO_REQUANT)  → used for non-final tiles
+        #   finalLead (K_i-1 K-steps in M28_PHASE1_NO_REQUANT)→ only on final tile when K_i>1
+        #   finalStep (1 K-step in M1_PHASE1, transpose+requant)→ absolute-final K-step
+        # Strides and spatial strides are identical across the three configs (the access
+        # pattern within each K-step is unchanged); only the K-axis temporal bound differs.
+        # We emit the strides once via build_mode (under the bulk config, no suffix) and
+        # then append `_finalLead` / `_finalStep` overrides for the temporal bounds only.
+        K_i = self.dInner_tile // self.dInnerUnroll  # K-steps per DMA tile
+
+        streamers_bulk = self._build_p1_streamers(K_i)
+
+        # K-axis stride per streamer (= byte advance per single K-step). Used by main.c
+        # to position the finalStep kernel at the last K-step of the final DMA tile.
+        K_step_deltas = {
+            "R1_K_step_delta": self.downsized_dModel * self.gemm_weight_width // 8,
+            "R3_K_step_delta": self.dConv * self.dInnerUnroll * FP8 // 8,
+            "R4_K_step_delta": self.dInnerUnroll * FP8 // 8,
+            "R12_K_step_delta": self.downsized_xProjDim * self.gemm_weight_width // 8,
+            "W1_K_step_delta": self.seqLen * self.dInnerUnroll * FP8 // 8,
         }
 
         # ---------- Buffer sizes -------------------------------------------------
@@ -360,14 +394,14 @@ class DataGenerator(DataGeneratorBase):
         lengths, deltas = self._collect_lengths_and_deltas(specs)
 
         tile_scalars = {
-            "dInner_tile": dInner_t,
+            "dInner_tile": self.dInner_tile,
             "length_oscore_weight_tile": len_oscore_weight // nb,
             "length_conv_weight_tile": len_conv_weight // nb,
             "length_conv_bias_tile": len_conv_bias // nb,
             "length_conv_out_tile": len_conv_out // nb,
             "length_iscore_weight_tile": len_iscore_weight // nb,
         }
-        scalars = {**lengths, **deltas, **tile_scalars}
+        scalars = {**lengths, **deltas, **tile_scalars, **K_step_deltas}
         self.phase1_scalars = scalars.copy()
 
         tests = {"conv_out": self.seqLen * self.dInner, "iscore_out": self.seqLen * self.xProjDim}
@@ -387,7 +421,13 @@ class DataGenerator(DataGeneratorBase):
 
         test_data["iscore_bias"] = "uint16_t"
 
-        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
+        self.build_mode(mode_id, streamers_bulk, scalars=scalars, test_data=test_data, tests=tests)
+
+        # Append alternate bound arrays for the finalLead (K_i-1) and finalStep (1) kernels.
+        # K_i=1 → finalLead is degenerate (0 K-steps) and main.c skips that call; emit anyway
+        # so the symbol exists.
+        self._emit_alt_bounds(mode_id, self._build_p1_streamers(max(K_i - 1, 0)), "finalLead")
+        self._emit_alt_bounds(mode_id, self._build_p1_streamers(1), "finalStep")
 
     # =========================================================================
     # Phase 2
@@ -398,8 +438,14 @@ class DataGenerator(DataGeneratorBase):
         assert self.dtRank * FP8 % self.switchcore_width == 0, "dtRank must be divisible by switchCore elem/cc in"
         assert self.switchcore_width == BANKWIDTH, "switchcore_width must match bank width"
 
-        dInner_t = self.dInner_tile
-        N_t = dInner_t // self.dInnerUnroll
+        # P2 runs ONE kernel per DMA tile (K_i K-steps per kernel). Non-final tiles run
+        # M29_PHASE2_NO_REQUANT; the final tile runs M2_PHASE2 — HW's `isCoreOutIsFinal`
+        # gates the requant to the last K-step. No transpose in P2 (en_isCoreTranspose=0)
+        # so W3 and R13 both hit byte F(m,n) of `iscore_out_P2` and accumulate in place
+        # across all K-steps within the kernel. Same bound config for both modes; only
+        # the MODE CSR changes per kernel call. K_step_deltas are NOT needed for P2.
+        N_kern = self.dInner_tile // self.dInnerUnroll  # = K_i
+        dInner_kern = self.dInner_tile
 
         suc_parallel_widthA = self.dState * FP8
         switchcore_parallel_width_W1 = self.convUnroll * self.dConv * FP8
@@ -407,13 +453,13 @@ class DataGenerator(DataGeneratorBase):
         oscore_parallel_width_d = self.seqLenUnroll * self.dInnerUnroll * FP8
         iscore_parallel_width_d = self.seqLenUnroll * self.dInnerUnroll * FP8
 
-        # Reads out a layout that is stored in convFormat, in SUC format ordering. Per-tile we only iterate the
-        # outer dimension (windows per tensor) over dInner_tile, leaving the other three intact.
+        # Reads out a layout that is stored in convFormat, in SUC format ordering.
+        # Per-kernel we cover exactly one K-step's window count.
         bounds_conv_to_suc = [
             (self.convUnroll * self.seqLenUnroll) // (BANKWIDTH // FP8),
             self.seqLen // self.seqLenUnroll,
             self.dInnerUnroll // self.convUnroll,
-            dInner_t // self.dInnerUnroll,  # windows per tensor (per-tile)
+            dInner_kern // self.dInnerUnroll,  # windows per tensor (= 1)
         ]
         strides_conv_to_suc = [
             BANK_BYTES,
@@ -424,19 +470,19 @@ class DataGenerator(DataGeneratorBase):
 
         streamers = {
             "R0": (  # osCore in (FULL input, base ptr unchanged)
-                [self.dModel, self.seqLen // self.seqLenUnroll, N_t],
+                [self.dModel, self.seqLen // self.seqLenUnroll, N_kern],
                 [self.seqLenUnroll * FP8 // 8, self.dModel * self.seqLenUnroll * FP8 // 8, 0],
             ),
-            "R1": (  # osCore weight (z proj, tiled along N=dInner)
-                [self.downsized_dModel, self.seqLen // self.seqLenUnroll, N_t],
+            "R1": (  # osCore weight (z proj, 1-K-step slice)
+                [self.downsized_dModel, self.seqLen // self.seqLenUnroll, N_kern],
                 [self.gemm_weight_width // 8, 0, self.downsized_dModel * self.gemm_weight_width // 8],
             ),
             "R2": (  # switchCore in (FULL dt slice from iscore_out_P1, base ptr unchanged)
                 [
-                    self.dtRank * FP8 // self.switchcore_width,  # K
+                    self.dtRank * FP8 // self.switchcore_width,  # K_inner
                     self.seqLenUnroll,
                     self.seqLen // self.seqLenUnroll,
-                    dInner_t // self.convUnroll,  # N (irrelevant dim, per-tile)
+                    dInner_kern // self.convUnroll,  # irrelevant dim (per-K-step)
                 ],
                 [
                     (self.switchcore_width // 8) * self.seqLenUnroll,
@@ -449,25 +495,25 @@ class DataGenerator(DataGeneratorBase):
             "R3": (  # switchCore weight (partition 1)
                 [
                     (self.dtRank // self.dtRankUnroll)
-                    * (dInner_t // self.convUnroll)
+                    * (dInner_kern // self.convUnroll)
                     * (switchcore_parallel_width_W1 // self.switchcore_width)
                 ],
                 [self.switchcore_width // 8],
             ),
             "R4": (  # switchCore bias
-                [(dInner_t * FP8) // self.switchcore_width],
+                [(dInner_kern * FP8) // self.switchcore_width],
                 [self.switchcore_width // 8],
             ),
             "R5": (  # switchCore weight (partition 2)
                 [
                     (self.dtRank // self.dtRankUnroll)
-                    * (dInner_t // self.convUnroll)
+                    * (dInner_kern // self.convUnroll)
                     * (switchcore_parallel_width_W2 // self.switchcore_width)
                 ],
                 [self.switchcore_width // 8],
             ),
             "R6": (  # SUC A
-                [dInner_t * (suc_parallel_widthA // self.suc_serial_width_A)],
+                [dInner_kern * (suc_parallel_widthA // self.suc_serial_width_A)],
                 [self.suc_serial_width_A // 8],
             ),
             "R7": (  # SUC BC (FULL, base ptr unchanged; only the irrelevant dInner-axis bound shrinks)
@@ -475,7 +521,7 @@ class DataGenerator(DataGeneratorBase):
                     (2 * self.dState * FP8) // (2 * self.suc_serial_width_BC),
                     self.seqLenUnroll,
                     self.seqLen // self.seqLenUnroll,
-                    dInner_t // self.delaySU,  # irrelevant dimension, per-tile
+                    dInner_kern // self.delaySU,  # irrelevant dim (per-K-step)
                 ],
                 [
                     (2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll,
@@ -486,41 +532,41 @@ class DataGenerator(DataGeneratorBase):
                 self.seqLenUnroll * BANK_BYTES,
             ),
             "R8": (  # SUC D
-                [dInner_t * FP8 // BANKWIDTH],
+                [dInner_kern * FP8 // BANKWIDTH],
                 [BANK_BYTES],
             ),
             "R9": (bounds_conv_to_suc, strides_conv_to_suc),  # SUC x
             "R10": (bounds_conv_to_suc, strides_conv_to_suc),  # SUC z
             "R11": (  # iscore in. Stored in convFormat
                 [
-                    (dInner_t // self.dInnerUnroll)
+                    (dInner_kern // self.dInnerUnroll)
                     * (self.seqLen // self.seqLenUnroll)
                     * (iscore_parallel_width_d // self.iscore_serial_width)
                 ],
                 [self.iscore_serial_width // 8],
             ),
-            "R12": (  # iscore weight (out_proj, K-tiled along dInner, accumulated by R13/W3)
-                [self.downsized_dModel, self.seqLen // self.seqLenUnroll, N_t],
+            "R12": (  # iscore weight (out_proj, 1-K-step slice)
+                [self.downsized_dModel, self.seqLen // self.seqLenUnroll, N_kern],
                 [self.gemm_weight_width // 8, 0, self.downsized_dModel * self.gemm_weight_width // 8],
             ),
-            "R13": (  # isCore psum (FULL, in-place accumulation across tiles)
-                [(self.seqLen // self.seqLenUnroll) * self.dModel, N_t],
+            "R13": (  # isCore psum (FULL, in-place accumulation across kernels)
+                [(self.seqLen // self.seqLenUnroll) * self.dModel, N_kern],
                 [self.seqLenUnroll * BF16 // 8, 0],
             ),
-            "W0": (  # osCore out (z, per-tile)
+            "W0": (  # osCore out (z, 1-K-step slice)
                 [
                     (oscore_parallel_width_d // self.oscore_serial_width)
                     * (self.seqLen // self.seqLenUnroll)
-                    * (dInner_t // self.dInnerUnroll)
+                    * (dInner_kern // self.dInnerUnroll)
                 ],
                 [self.oscore_serial_width // 8],
             ),
-            "W2": (  # SUC y output (per-tile, written to convFormat)
+            "W2": (  # SUC y output (1-K-step slice, written in convFormat)
                 bounds_conv_to_suc,
                 strides_conv_to_suc,
             ),
             "W3": (  # isCore output: SAME addresses as R13 (FULL, in-place accumulation)
-                [(self.seqLen // self.seqLenUnroll) * self.dModel, N_t],
+                [(self.seqLen // self.seqLenUnroll) * self.dModel, N_kern],
                 [self.seqLenUnroll * BF16 // 8, 0],
             ),
         }
@@ -572,12 +618,13 @@ class DataGenerator(DataGeneratorBase):
         ]
 
         lengths, deltas = self._collect_lengths_and_deltas(specs)
-        # The R10 / R11 start counters are per-kernel-invocation, so they must be
-        # computed against the per-tile dInner workload.
-        suc_start_cnt, iscore_start_cnt = self.get_safe_to_start_delay(dInner_t)
+        # The R10 / R11 start counters are per-kernel-invocation; each P2 kernel call
+        # processes K_i K-steps (dInner_tile bytes of K), so compute the safe delay
+        # against that per-DMA-tile workload.
+        suc_start_cnt, iscore_start_cnt = self.get_safe_to_start_delay(self.dInner_tile)
 
         tile_scalars = {
-            "dInner_tile": dInner_t,
+            "dInner_tile": self.dInner_tile,
             "length_oscore_weight_tile": len_oscore_weight // nb,
             "length_z_tile": len_z // nb,
             "length_dt_weight_1_tile": len_dt_weight_1 // nb,

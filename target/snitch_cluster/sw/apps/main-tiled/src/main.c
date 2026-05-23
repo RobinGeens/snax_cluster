@@ -4,24 +4,31 @@
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
 // dInner-tiled, double-buffered Mamba main (Phase 1 then Phase 2) with x staged through L3.
-// See docs/dataflow/04_mamba_main.md §4.2 for dataflow and per-phase CSR rewrites.
+// See docs/dataflow/04_mamba_main.md §main-tiled for dataflow and per-phase CSR rewrites.
 //
 // What stays FULL in TCDM: oscore_in, iscore_out_P1 (=dt_in for P2), z, y, iscore_out_P2.
-// What is tiled (small TCDM slot, FULL backing in L3): conv_out (=x for P2).
-//
-// Phase 1 pipeline (P1 has +1 iter for delayed DMA-out):
-//   iter i :  (DM)   load weight tile  i
-//             (kern) run tile i-1, write to conv_out_tile[(i-1)%2]
-//             (DM)   spill conv_out_tile[(i-2)%2] to L3 (tile i-2)
-// Phase 2 pipeline:
-//   iter i :  (DM)   load weight tile i  AND  DMA-in x_tile[i%2] from L3 (tile i)
-//             (kern) run tile i-1, R9 reads x_tile[(i-1)%2]
-//
-// iscore_out_P1, iscore_out_P2, z, y still stay FULL — see datagen.py TCDM assertion
-// and params_in.hjson for the (seqLen, nb_tiles) combinations this layout supports.
+// What is tiled (small TCDM slot, FULL backing in L3): conv_out (=x for P2), z, y.
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"
+
+#define _SET_P1_STREAMERS_VARIANT(suffix, p_osc_in, p_osc_wgt, p_conv_wgt, p_conv_bias, p_isc_wgt, p_isc_psum,         \
+                                  p_isc_out_w3, p_conv_out)                                                            \
+    set_streamer_csr((uint32_t)(p_osc_in), M1_R0_ss, M1_R0_tb##suffix, M1_R0_ts, M1_R0_en, (uint32_t)(p_osc_wgt),      \
+                     M1_R1_ss, M1_R1_tb##suffix, M1_R1_ts, M1_R1_en, (uint32_t)0, 0, 0, 0, M1_R2_en,                   \
+                     (uint32_t)(p_conv_wgt), M1_R3_ss, M1_R3_tb##suffix, M1_R3_ts, M1_R3_en, (uint32_t)(p_conv_bias),  \
+                     M1_R4_ss, M1_R4_tb##suffix, M1_R4_ts, M1_R4_en, (uint32_t)0, 0, 0, 0, M1_R5_en, (uint32_t)0, 0,   \
+                     0, 0, M1_R6_en, (uint32_t)0, 0, 0, 0, M1_R7_en, (uint32_t)0, 0, 0, 0, M1_R8_en, (uint32_t)0, 0,   \
+                     0, 0, M1_R9_en, (uint32_t)0, 0, 0, 0, M1_R10_en, (uint32_t)0, 0, 0, 0, M1_R11_en,                 \
+                     (uint32_t)(p_isc_wgt), M1_R12_ss, M1_R12_tb##suffix, M1_R12_ts, M1_R12_en,                        \
+                     (uint32_t)(p_isc_psum), M1_R13_ss, M1_R13_tb##suffix, M1_R13_ts, M1_R13_en, (uint32_t)0, 0, 0, 0, \
+                     M1_W0_en, (uint32_t)(p_conv_out), M1_W1_ss, M1_W1_tb##suffix, M1_W1_ts, M1_W1_en, (uint32_t)0, 0, \
+                     0, 0, M1_W2_en, (uint32_t)(p_isc_out_w3), M1_W3_ss, M1_W3_tb##suffix, M1_W3_ts, M1_W3_en)
+
+#define set_streamer_phase1_finalLead(po, pow, pcw, pcb, piw, pip, piw3, pco) \
+    _SET_P1_STREAMERS_VARIANT(_finalLead, po, pow, pcw, pcb, piw, pip, piw3, pco)
+#define set_streamer_phase1_finalStep(po, pow, pcw, pcb, piw, pip, piw3, pco) \
+    _SET_P1_STREAMERS_VARIANT(_finalStep, po, pow, pcw, pcb, piw, pip, piw3, pco)
 
 int test_phase1_and_2() {
     int err = 0;
@@ -46,13 +53,13 @@ int test_phase1_and_2() {
 
     // Memory layout rationale (split-W3, P1_psum/P2 overlay, L3-staged x/z/y):
     // docs/dataflow/04_mamba_main.md §main-tiled "Memory-saving tricks".
-    uint8_t* ptr_oscore_in            = (uint8_t*)tcdm_base_ptr;
-    uint8_t* ptr_iscore_out_P1_psum   = ptr_oscore_in + M1_length_oscore_in;
-    uint16_t* ptr_iscore_out_P2       = (uint16_t*)ptr_iscore_out_P1_psum;
+    uint8_t* ptr_oscore_in          = (uint8_t*)tcdm_base_ptr;
+    uint8_t* ptr_iscore_out_P1_psum = ptr_oscore_in + M1_length_oscore_in;
+    uint16_t* ptr_iscore_out_P2     = (uint16_t*)ptr_iscore_out_P1_psum;
     // iscore_out_P1_final follows max(psum, P2) so neither stomps it in its phase.
-    uint32_t iscore_shared_bytes      =
+    uint32_t iscore_shared_bytes =
         (M1_length_iscore_out > M2_length_iscore_out) ? M1_length_iscore_out : M2_length_iscore_out;
-    uint8_t* ptr_iscore_out_P1_final  = ptr_iscore_out_P1_psum + iscore_shared_bytes;
+    uint8_t* ptr_iscore_out_P1_final = ptr_iscore_out_P1_psum + iscore_shared_bytes;
 
     // P2 consumes the FINAL (transposed) iscore_out_P1 as its dt+BC source.
     uint8_t* ptr_dt_in = ptr_iscore_out_P1_final;
@@ -146,22 +153,26 @@ int test_phase1_and_2() {
     uint32_t simbacore_cycles_phase1 = 0;
     uint32_t simbacore_cycles_phase2 = 0;
 
-    // Phase 1.
+    const uint32_t K_i = M1_dInner_tile / dInnerUnroll;  // K-steps per DMA tile (P1, P2 share)
+
+    /////////////////////////////////
+    //////// Phase 1 ////////////////
+    /////////////////////////////////
+
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: Mamba main tiled (Phase1 then Phase2, nb_tiles=%d, x-tiled via L3)\n\n", nb_tiles);
+        printf("\nStarting program: Mamba main tiled (nb_tiles=%d, K_i=%u, x-tiled via L3)\n\n", nb_tiles, K_i);
         start_cycles = snrt_mcycle();
-        // Streamer phase1 setter takes a single iscore_out base for both R13 and W3. R13 reads
-        // psum_buf always; W3's base is rewritten per-tile in the loop below to redirect the
-        // final tile's TRANSPOSE output into ptr_iscore_out_P1_final.
-        set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0],     //
-                            (uint32_t)ptr_conv_weight[0], (uint32_t)ptr_conv_bias[0],       //
-                            (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1_psum,
-                            (uint32_t)ptr_conv_out_tile[0]);
-        set_simbacore_csr(M1_PHASE1, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
+        // Bulk config setup: K_i K-steps, NO_REQUANT mode, W3 → psum_buf. Bounds stay set
+        // for all nb_tiles-1 non-final tiles; only base ptrs change per tile. The final tile
+        // re-sets bounds to finalLead / finalStep configs (see loop below).
+        set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
+                            (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0],
+                            (uint32_t)ptr_iscore_out_P1_psum, (uint32_t)ptr_conv_out_tile[0]);
+        set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
     }
     snrt_cluster_hw_barrier();
 
-    // 3-stage pipeline: iter i loads weights[i], runs tile i-1, spills tile i-2 conv_out to L3.
+    // 3-stage pipeline: iter i loads weights[i], runs kernel(s) for tile i-1, spills tile i-2 conv_out to L3.
     for (uint32_t i = 0; i < nb_tiles + 2; i++) {
         int buf = i % 2;
 
@@ -177,24 +188,55 @@ int test_phase1_and_2() {
         }
 
         if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
-            uint32_t tile = i - 1;
-            int cbuf      = tile % 2;
-            write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P1[cbuf]);
-            write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_conv_weight[cbuf]);
-            write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[cbuf]);
-            write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[cbuf]);
-            // W1 writes to the ping-pong slot, not into a FULL conv_out. The DMA-out
-            // two iterations later moves this slot to L3 at the right tile offset.
-            write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)ptr_conv_out_tile[cbuf]);
-            // W3 redirect on the FINAL K-tile: TRANSPOSE output must go to a SEPARATE buffer
-            // so it doesn't overwrite psum_partial(n,m) before IS-core processes element (n,m).
-            // R13 always reads psum_buf, so non-final K-tiles must still write to psum_buf.
-            write_csr(BASE_PTR_WRITER_3_LOW, (uint32_t)((tile == nb_tiles - 1) ? ptr_iscore_out_P1_final
-                                                                                : ptr_iscore_out_P1_psum));
-            write_csr(MODE, (tile == nb_tiles - 1) ? M1_PHASE1 : M28_PHASE1_NO_REQUANT);
-            start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
-            wait_simbacore_and_streamer();
-            simbacore_cycles_phase1 += read_simbacore_perf_counter();
+            uint32_t tile      = i - 1;
+            int cbuf           = tile % 2;
+            bool is_final_tile = (tile == nb_tiles - 1);
+
+            if (!is_final_tile) {
+                // Bulk kernel: K_i K-steps NO_REQUANT to psum_buf. Bounds already set.
+                write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P1[cbuf]);
+                write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_conv_weight[cbuf]);
+                write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[cbuf]);
+                write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[cbuf]);
+                write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)ptr_conv_out_tile[cbuf]);
+                // W3 → psum_buf and MODE = NO_REQUANT already set by the initial bulk setup.
+                start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
+                wait_simbacore_and_streamer();
+                simbacore_cycles_phase1 += read_simbacore_perf_counter();
+            } else {
+                // Final tile: optionally finalLead kernel (K_i-1 K-steps NO_REQUANT to psum_buf)
+                // when K_i > 1, then the finalStep kernel (1 K-step PHASE1 to final_buf).
+                if (K_i > 1) {
+                    // finalLead: K_i-1 K-steps NO_REQUANT to psum_buf (R13 reads here too).
+                    set_streamer_phase1_finalLead(
+                        (uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[cbuf], (uint32_t)ptr_conv_weight[cbuf],
+                        (uint32_t)ptr_conv_bias[cbuf], (uint32_t)ptr_iscore_weight_P1[cbuf],
+                        /*R13 psum*/ (uint32_t)ptr_iscore_out_P1_psum,
+                        /*W3 psum*/ (uint32_t)ptr_iscore_out_P1_psum, (uint32_t)ptr_conv_out_tile[cbuf]);
+                    set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, (K_i - 1) * dInnerUnroll, dtRank,
+                                      xProjDim);
+                    start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
+                    wait_simbacore_and_streamer();
+                    simbacore_cycles_phase1 += read_simbacore_perf_counter();
+                }
+
+                // finalStep: 1 K-step PHASE1. R13 still reads accumulated psum from psum_buf;
+                // W3 writes the requant+transposed result to final_buf. Base ptrs of K-axis
+                // streamers (weights, conv_out tile) advance by (K_i-1) K-steps.
+                uint32_t k_off = K_i - 1;
+                set_streamer_phase1_finalStep((uint32_t)ptr_oscore_in,
+                                              (uint32_t)ptr_oscore_weight_P1[cbuf] + k_off * M1_R1_K_step_delta,
+                                              (uint32_t)ptr_conv_weight[cbuf] + k_off * M1_R3_K_step_delta,
+                                              (uint32_t)ptr_conv_bias[cbuf] + k_off * M1_R4_K_step_delta,
+                                              (uint32_t)ptr_iscore_weight_P1[cbuf] + k_off * M1_R12_K_step_delta,
+                                              /*R13 psum*/ (uint32_t)ptr_iscore_out_P1_psum,
+                                              /*W3 final*/ (uint32_t)ptr_iscore_out_P1_final,
+                                              (uint32_t)ptr_conv_out_tile[cbuf] + k_off * M1_W1_K_step_delta);
+                set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInnerUnroll, dtRank, xProjDim);
+                start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
+                wait_simbacore_and_streamer();
+                simbacore_cycles_phase1 += read_simbacore_perf_counter();
+            }
             printf("[%u cc] P1 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
         }
 
@@ -220,16 +262,20 @@ int test_phase1_and_2() {
     }
     snrt_cluster_hw_barrier();
 
-    // Phase 2.
+    /////////////////////////////////
+    //////// Phase 2 ////////////////
+    /////////////////////////////////
+
     if (snrt_global_core_idx() == 0) {
-        set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2[0],                     //
-                            (uint32_t)ptr_z_tile[0], (uint32_t)ptr_dt_in,                                   //
-                            (uint32_t)ptr_dt_weight_1[0], (uint32_t)ptr_dt_weight_2[0],                     //
-                            (uint32_t)ptr_dt_bias[0],                                                       //
-                            (uint32_t)ptr_x_tile[0], (uint32_t)ptr_A[0], (uint32_t)ptr_BC, (uint32_t)ptr_D[0],
-                            (uint32_t)ptr_y_tile[0], (uint32_t)ptr_iscore_weight_P2[0],
+        // P2: one kernel per DMA tile, K_i K-steps each. Non-final tiles use NO_REQUANT;
+        // the final tile uses PHASE2 (HW gates requant to the last K-step). Bounds stay set
+        // for all nb_tiles tiles; only base ptrs and MODE change per kernel call.
+        set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2[0], (uint32_t)ptr_z_tile[0],
+                            (uint32_t)ptr_dt_in, (uint32_t)ptr_dt_weight_1[0], (uint32_t)ptr_dt_weight_2[0],
+                            (uint32_t)ptr_dt_bias[0], (uint32_t)ptr_x_tile[0], (uint32_t)ptr_A[0], (uint32_t)ptr_BC,
+                            (uint32_t)ptr_D[0], (uint32_t)ptr_y_tile[0], (uint32_t)ptr_iscore_weight_P2[0],
                             (uint32_t)ptr_iscore_out_P2);
-        set_simbacore_csr(M2_PHASE2, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+        set_simbacore_csr(M29_PHASE2_NO_REQUANT, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
     }
     snrt_cluster_hw_barrier();
 
@@ -256,8 +302,9 @@ int test_phase1_and_2() {
         }
 
         if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
-            uint32_t tile = i - 1;
-            int cbuf      = tile % 2;
+            uint32_t tile      = i - 1;
+            int cbuf           = tile % 2;
+            bool is_final_tile = (tile == nb_tiles - 1);
 
             write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P2[cbuf]);
             write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_dt_weight_1[cbuf]);
@@ -266,15 +313,15 @@ int test_phase1_and_2() {
             write_csr(BASE_PTR_READER_6_LOW, (uint32_t)ptr_A[cbuf]);
             write_csr(BASE_PTR_READER_8_LOW, (uint32_t)ptr_D[cbuf]);
             write_csr(BASE_PTR_READER_9_LOW, (uint32_t)ptr_x_tile[cbuf]);
-            // z_tile and y_tile become ping-pong slots. W0 writes z_tile, R10 (SUC z input)
-            // reads from the SAME slot — both within this kernel. Same for y/W2/R11.
             write_csr(BASE_PTR_READER_10_LOW, (uint32_t)ptr_z_tile[cbuf]);
             write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_y_tile[cbuf]);
             write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P2[cbuf]);
             write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_z_tile[cbuf]);
             write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y_tile[cbuf]);
 
-            write_csr(MODE, (tile == nb_tiles - 1) ? M2_PHASE2 : M29_PHASE2_NO_REQUANT);
+            // Mode is the only thing that changes between tiles. HW gates the requant
+            // (PHASE2) to the absolute-final K-step of the kernel via isCoreOutIsFinal.
+            write_csr(MODE, is_final_tile ? M2_PHASE2 : M29_PHASE2_NO_REQUANT);
             start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
             wait_simbacore_and_streamer();
             simbacore_cycles_phase2 += read_simbacore_perf_counter();
@@ -294,6 +341,7 @@ int test_phase1_and_2() {
         snrt_cluster_hw_barrier();
     }
 
+    // --- Verification ---
     if (snrt_global_core_idx() == 0) printf("[%u cc] P2 done, starting verification\n", snrt_mcycle());
 
     if (snrt_global_core_idx() == 0) {
@@ -308,8 +356,8 @@ int test_phase1_and_2() {
         // is caused by bad x (= conv_out) or bad dt+BC (= iscore_out_P1) rather than a SUC bug.
         err += check_result_sample(ptr_conv_out_l3, M1_conv_out, M1_test_samples_conv_out,  //
                                    nb_test_samples, "P1 conv_out (= P2 x, from L3)");
-        err += check_result_sample(ptr_iscore_out_P1_final, M1_iscore_out, M1_test_samples_iscore_out,
-                                   nb_test_samples, "P1 iscore_out (= P2 dt+BC)");
+        err += check_result_sample(ptr_iscore_out_P1_final, M1_iscore_out, M1_test_samples_iscore_out, nb_test_samples,
+                                   "P1 iscore_out (= P2 dt+BC)");
 
         // Full memcmp on P1 conv_out: walks every byte and prints the first 16 mismatches.
         {
@@ -323,8 +371,7 @@ int test_phase1_and_2() {
                     mismatches++;
                 }
             }
-            printf("DBG conv_out first-16 scan: %u mismatches reported (FP8, total %u bytes)\n",
-                   mismatches, conv_len);
+            printf("DBG conv_out first-16 scan: %u mismatches reported (FP8, total %u bytes)\n", mismatches, conv_len);
         }
         // Same for iscore_out_P1_final (the post-transpose buffer that P2 actually consumes).
         {
@@ -332,9 +379,8 @@ int test_phase1_and_2() {
             uint32_t isc_len    = seqLen * xProjDim * 2;  // BF16
             for (uint32_t i = 0; i < isc_len && mismatches < 16; i++) {
                 if (ptr_iscore_out_P1_final[i] != M1_iscore_out[i]) {
-                    printf("DBG iscore_out_P1_final[%u] = %d, ref = %d, diff %d\n", i,
-                           ptr_iscore_out_P1_final[i], M1_iscore_out[i],
-                           (int)ptr_iscore_out_P1_final[i] - (int)M1_iscore_out[i]);
+                    printf("DBG iscore_out_P1_final[%u] = %d, ref = %d, diff %d\n", i, ptr_iscore_out_P1_final[i],
+                           M1_iscore_out[i], (int)ptr_iscore_out_P1_final[i] - (int)M1_iscore_out[i]);
                     mismatches++;
                 }
             }
