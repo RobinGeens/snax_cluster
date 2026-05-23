@@ -40,6 +40,7 @@ for the exact streamer/CSR programming see the program sources.
 | `einfft`           | 2-layer EinFFT MLP                      | no     | —                                       |
 | `einfft-tiled`     | 2-layer EinFFT MLP                      | yes    | N (D/4); requires N_t >= 2 (datagen enforces) |
 | `vmamba`           | VMamba SS2D (Phase 1 → Phase 2)         | no     | —                    |
+| `vmamba-tiled`     | VMamba SS2D                             | yes    | dInner (both phases) |
 
 ## Cardinal rules
 

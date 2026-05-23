@@ -28,8 +28,19 @@ mkdir -p "${RUN_DIR}"
 SUMMARY_FILE="${RUN_DIR}/summary.log"
 BUILD_LOG="${RUN_DIR}/build.log"
 
+# Create and print file so we can easily open it
+: > "${SUMMARY_FILE}"
+: > "${BUILD_LOG}"
+{
+  echo ""
+  echo "Summary file: ${SUMMARY_FILE}"
+  echo "Build log:    ${BUILD_LOG}"
+} > /dev/tty
+
+
 # --- Create a temporary clone for a clean build ---
-TMPDIR_ROOT="$(mktemp -d)"
+# Place it under OUTPUT_ROOT (not /tmp) so podman can bind-mount it inside the container.
+TMPDIR_ROOT="$(mktemp -d -p "${OUTPUT_ROOT}" tmp.XXXXXX)"
 WORK_DIR="${TMPDIR_ROOT}/snax_cluster"
 
 cleanup() {
@@ -39,7 +50,11 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Cloning repository into ${WORK_DIR} (committed state only) ..." >&2
-git clone --local "${ORIG_ROOT}" "${WORK_DIR}" 2>&1 >&2
+git clone --local --no-hardlinks "${ORIG_ROOT}" "${WORK_DIR}" 2>&1 >&2
+
+# Populate submodules (they are not pulled in by `git clone --local`).
+echo "Initializing submodules ..." >&2
+git -C "${WORK_DIR}" submodule update --init --recursive >&2
 
 echo "Temporary clone ready at ${WORK_DIR}" >&2
 

@@ -9,4 +9,4 @@ BG_LOG="${OUTPUT_ROOT}/background_process.log"
 
 # Run the regression tests in the background and capture any errors/output
 nohup bash "${ROOT_DIR}/scripts/regression_test.sh" >"${BG_LOG}" 2>&1 &
-echo "Regression tests started in background (PID $!). Logs will appear under regression_test_out/" >&2
+echo "Regression tests started in background (PID $!)." >&2
