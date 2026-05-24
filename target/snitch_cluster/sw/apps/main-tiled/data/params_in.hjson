@@ -22,5 +22,12 @@
 //    64   |  192   |   16     |  1  |  18   |   8    |    10     |  77 KiB
 //   128   |  192   |   16     |  1  |  17   |   7    |    10     | 169 KiB
 //
-// FAIL — partial y/iscore_out at large dInner:
+// FAIL — partial y/iscore_out at large dInner (pre-refactor data):
 //   192   |  384   |   32     |  1  |  38   |  12    |    23     | 339 KiB
+//
+// Post-refactor v2 (bulk/finalLead/finalStep) at L=192 D=384:
+//   - nb_tiles=16 (K_i=2): P1 PASSes 16/16 with no crash; full P2 + verify NOT measured
+//     (3h timeout, made it through P2 tile 1/16). HW cycles look healthy.
+//   - nb_tiles=32 (K_i=1): "Misaligned Load/Store Core 1" at PC 0x80001c54 right after
+//     "P1 done, starting P2 bias preload". Regression vs approach A which produced 38
+//     errors but completed. Suspected v2-specific. Needs debugging.

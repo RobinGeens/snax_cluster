@@ -66,28 +66,8 @@ else
   build_rc=$?
 fi
 
-# Define tests (names only; ELF at sw/apps/[name]/build/[name].elf)
-declare -a TESTS=(
-  "nop"
-  "fft-3way"
-  "main"
-  "osgemm"
-  "osgemm-tiled"
-  "isgemm"
-  "isgemm-tiled"
-  "simd"
-  "main-full"
-  "main-tiled"
-  "einfft"
-  "einfft-tiled"
-  "rmsnorm"
-  "fft"
-  "fft-tiled"
-  "fft-3way-tiled"
-  "streamer-burner"
-  "core-burner"
-  "suc-only"
-)
+# Read the list of test programs from the Makefile
+read -ra TESTS <<< "$(make -C "${WORK_DIR}/${TARGET_DIR}/sw/apps" -s list-apps)"
 
 pushd "${WORK_DIR}/${TARGET_DIR}" >/dev/null
 

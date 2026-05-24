@@ -390,6 +390,8 @@ vsim_preparation: $(GENERATED_DIR)/bootdata.cc work/lib/libfesvr.a ${VSIM_BUILDD
 bin/snitch_cluster.vsim: ${VSIM_BUILDDIR}/compile.vsim.tcl $(VSIM_SOURCES) ${TB_SRCS} ${TB_CC_SOURCES} ${TB_ASM_SOURCES} work/lib/libfesvr.a
 	$(VLIB) $(VSIM_BUILDDIR)
 	$(call QUESTASIM,tb_bin)
+	
+vsim: bin/snitch_cluster.vsim
 
 #######
 # VCS #

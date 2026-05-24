@@ -77,7 +77,7 @@ class DataGeneratorBase(ABC):
             self.format("uint32_t", key, value)
 
     def format_vector(self, type: str, var_name: str, value: list[int]):
-        self.lines_data.append(format_vector_definition(type, var_name, value))
+        self.lines_data.append(format_vector_definition(type, var_name, value, alignment=8))
 
     def read_and_format_vector(self, mode_id: int, type: str, tensor_name: str):
         """Read data from GEN_DATA_DIR and format it as a vector. Filename is M<mode_id>_<tensor_name>.bin."""

@@ -97,15 +97,10 @@ class SparseInterconnect(
 
     val (port_idx, index) = sparse_config.getPortAndIndex(in)
     val port              = sparse_config.ports(port_idx)
-    // Print for debug
-    println(
-      s"Routing outputs for input $in: port $port_idx, index $index, sparse_port_access_granularity ${port.access_granularity}"
-    )
 
     // Mux the response based on the previous bank selection
     for (sparse_out <- 0 until NumOut / port.access_granularity) {
       val out = sparse_out * port.access_granularity + (index % port.access_granularity)
-      println(s"Routing outputs for input $in: port $port_idx, index $index, sparse_out $sparse_out, out $out")
       when(prevBankRequest(in) === out.U && prevReqFire(in)) {
         io.tcdmRsps(in) <> arbiters(out).io.tcdmRsp
       }
