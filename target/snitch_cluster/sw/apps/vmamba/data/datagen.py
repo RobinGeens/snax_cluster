@@ -5,10 +5,8 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# VMamba data generator — mirrors the main program's datagen.
-#
-# Phase 1: osCore (in_proj) → conv1d → IsCore (x_proj) → produces conv_out, dt+B+C
-# Phase 2: osCore (z_proj) → SwitchCore (dt_proj) → SUC → IsCore (out_proj) → produces y
+# VMamba SS2D datagen. Inherits the main program's Phase 1 + Phase 2 streamer
+# configs verbatim; overrides test data loading to use per-direction VMamba data.
 
 import pathlib
 import sys
@@ -23,85 +21,33 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 from datagen_base import BANKWIDTH, DataGeneratorBase, BANK_BYTES, FP8, BF16  # type: ignore[import]
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
+import importlib.util
+_spec = importlib.util.spec_from_file_location(
+    "main_datagen",
+    os.path.join(os.path.dirname(__file__), "../../main/data/datagen.py"),
+)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+MainDataGenerator = _mod.DataGenerator
 
-class DataGenerator(DataGeneratorBase):
+DATA_MODE_ID = 2
+
+
+class DataGenerator(MainDataGenerator):
     APP_NAME = "vmamba"
-
-    def __init__(self, **kwargs):
-        super().__init__(self.APP_NAME, **kwargs)
-        self.phase1_scalars: dict[str, int] = {}
-        self.phase2_scalars: dict[str, int] = {}
 
     def run(self):
         self.save_params()
-        self.build_Phase1_data()
-        self.build_Phase2_data()
+        # Emit Phase 1 streamers + scalars (no test data — those are per-direction)
+        self._build_Phase1_streamers_only()
+        # Emit Phase 2 streamers + scalars (no test data)
+        self._build_Phase2_streamers_only()
+        # Emit per-direction VMamba test data
+        self._build_vmamba_test_data()
         self.emit_l1_usage_comment()
 
-    @staticmethod
-    def _max_end_from_scalars(scalars: dict[str, int]) -> int:
-        return max(
-            scalars[addr_key] + value
-            for length_key, value in scalars.items()
-            if length_key.startswith("length_")
-            for addr_key in [length_key.replace("length_", "addr_")]
-            if addr_key in scalars
-        )
-
-    def emit_l1_usage_comment(self):
-        phase2_base = self.phase1_scalars["addr_iscore_out"] + self.phase1_scalars["length_iscore_out"]
-        phase2_peak = self._max_end_from_scalars(self.phase2_scalars)
-        total_l1_bytes = phase2_base + phase2_peak
-        total_l1_kib = total_l1_bytes / 1024
-        self.lines_params.append(
-            f"// Expected total L1 usage (test_phase1_and_2 layout): {total_l1_bytes} B ({total_l1_kib:.2f} KiB)"
-        )
-
-    def save_params(self):
-        self.H = self.kwargs["H"]
-        self.W = self.kwargs["W"]
-        self.K = self.kwargs["K"]
-        self.seqLen = self.kwargs["seqLen"]
-        assert self.seqLen == self.H * self.W
-        self.dModel = self.kwargs["dModel"]
-        self.dInner = self.kwargs["dInner"]
-        self.dtRank = self.kwargs["dtRank"]
-        self.dConv = self.kwargs["dConv"]
-        self.dState = self.kwargs["dState"]
-        self.xProjDim = self.kwargs["xProjDim"]
-        self.seqLenUnroll = self.kwargs["seqLenUnroll"]
-        self.dInnerUnroll = self.kwargs["dInnerUnroll"]
-        self.dtRankUnroll = self.kwargs["dtRankUnroll"]
-        self.convUnroll = self.kwargs["convUnroll"]
-        self.delaySU = self.kwargs["delaySU"]
-        self.oscore_serial_width = self.kwargs["oscore_serial_width"]
-        self.switchcore_width = self.kwargs["switchcore_width"]
-        self.iscore_serial_width = self.kwargs["iscore_serial_width"]
-        self.suc_serial_width_A = self.kwargs["suc_serial_width_A"]
-        self.suc_serial_width_BC = self.kwargs["suc_serial_width_BC"]
-        self.gemm_weight_width = self.kwargs["gemm_weight_width"]
-        self.weight_downsize_factor = self.gemm_weight_width / (self.dInnerUnroll * FP8)
-        self.downsized_dModel = int(self.dModel / self.weight_downsize_factor)
-        self.downsized_xProjDim = int(self.xProjDim / self.weight_downsize_factor)
-
-    def get_safe_to_start_delay(self):
-        MARGIN = 0.2
-        gemm_cycles_per_tile = self.dModel
-        gemm_total_nb_tiles = (self.seqLen // self.seqLenUnroll) * (self.dInner // self.dInnerUnroll)
-        gemm_cycles = gemm_total_nb_tiles * gemm_cycles_per_tile
-        suc_total_nb_elements = self.seqLen * self.dInner
-        suc_cycles = suc_total_nb_elements
-        gemm_window_cnt = self.seqLen // self.seqLenUnroll
-        suc_window_cnt = self.seqLen * self.dInnerUnroll
-        suc_delta = (gemm_cycles - suc_cycles) / gemm_cycles_per_tile
-        iscore_delta = (suc_cycles - gemm_cycles)
-        suc_safe_to_start = math.ceil(max(gemm_window_cnt, suc_delta) * (1 + MARGIN))
-        iscore_safe_to_start = math.ceil(max(suc_window_cnt, iscore_delta) * (1 + MARGIN))
-        return int(min(suc_safe_to_start, gemm_total_nb_tiles)), int(
-            min(iscore_safe_to_start, suc_total_nb_elements)
-        )
-
-    def build_Phase1_data(self):
+    def _build_Phase1_streamers_only(self):
+        """Same as main's build_Phase1_data but emits only streamers + scalars, no test_data."""
         mode_id = 1
         assert f"M{mode_id}_PHASE1" in self.kwargs, "verify mode_id"
         assert self.switchcore_width == BANKWIDTH
@@ -145,20 +91,17 @@ class DataGenerator(DataGeneratorBase):
         scalars = {**lengths, **deltas}
         self.phase1_scalars = scalars.copy()
 
-        tests = {"conv_out": self.seqLen * self.dInner, "iscore_out": self.seqLen * self.xProjDim}
+        # Emit streamers + scalars only, no test_data reading
+        self.build_mode(mode_id, streamers, scalars=scalars, test_data={}, tests={})
 
-        test_data = {
-            name: "uint8_t"
-            for name in (
-                "oscore_in", "oscore_weight", "conv_weight", "conv_bias",
-                "conv_out", "iscore_weight", "iscore_out",
-            )
-        }
-        test_data["iscore_bias"] = "uint16_t"
+        # Read shared Phase 1 weights from Scala generator (all under M2_ prefix)
+        mid = DATA_MODE_ID
+        for name in ("oscore_weight", "conv_weight", "conv_bias"):
+            self.read_and_format_vector(mid, "uint8_t", name)
+        self.read_and_format_vector(mid, "uint16_t", "iscore_bias")
 
-        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
-
-    def build_Phase2_data(self):
+    def _build_Phase2_streamers_only(self):
+        """Same as main's build_Phase2_data but emits only streamers + scalars."""
         mode_id = 2
         assert f"M{mode_id}_PHASE2" in self.kwargs, "verify mode_id"
         assert self.switchcore_width == BANKWIDTH
@@ -192,65 +135,38 @@ class DataGenerator(DataGeneratorBase):
                 [self.gemm_weight_width // 8, 0, self.downsized_dModel * self.gemm_weight_width // 8],
             ),
             "R2": (
-                [
-                    self.dtRank * FP8 // self.switchcore_width,
-                    self.seqLenUnroll,
-                    self.seqLen // self.seqLenUnroll,
-                    self.dInner // self.convUnroll,
-                ],
-                [
-                    (self.switchcore_width // 8) * self.seqLenUnroll,
-                    BANK_BYTES,
-                    self.seqLenUnroll * self.xProjDim * FP8 // 8,
-                    0,
-                ],
+                [self.dtRank * FP8 // self.switchcore_width, self.seqLenUnroll,
+                 self.seqLen // self.seqLenUnroll, self.dInner // self.convUnroll],
+                [(self.switchcore_width // 8) * self.seqLenUnroll, BANK_BYTES,
+                 self.seqLenUnroll * self.xProjDim * FP8 // 8, 0],
                 self.seqLenUnroll * BANK_BYTES,
             ),
             "R3": (
-                [
-                    (self.dtRank // self.dtRankUnroll)
-                    * (self.dInner // self.convUnroll)
-                    * (switchcore_parallel_width_W1 // self.switchcore_width)
-                ],
+                [(self.dtRank // self.dtRankUnroll) * (self.dInner // self.convUnroll)
+                 * (switchcore_parallel_width_W1 // self.switchcore_width)],
                 [self.switchcore_width // 8],
             ),
             "R4": ([(self.dInner * FP8) // self.switchcore_width], [self.switchcore_width // 8]),
             "R5": (
-                [
-                    (self.dtRank // self.dtRankUnroll)
-                    * (self.dInner // self.convUnroll)
-                    * (switchcore_parallel_width_W2 // self.switchcore_width)
-                ],
+                [(self.dtRank // self.dtRankUnroll) * (self.dInner // self.convUnroll)
+                 * (switchcore_parallel_width_W2 // self.switchcore_width)],
                 [self.switchcore_width // 8],
             ),
-            "R6": (
-                [self.dInner * (suc_parallel_widthA // self.suc_serial_width_A)],
-                [self.suc_serial_width_A // 8],
-            ),
+            "R6": ([self.dInner * (suc_parallel_widthA // self.suc_serial_width_A)],
+                   [self.suc_serial_width_A // 8]),
             "R7": (
-                [
-                    (2 * self.dState * FP8) // (2 * self.suc_serial_width_BC),
-                    self.seqLenUnroll,
-                    self.seqLen // self.seqLenUnroll,
-                    self.dInner // self.delaySU,
-                ],
-                [
-                    (2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll,
-                    BANK_BYTES,
-                    self.seqLenUnroll * self.xProjDim * FP8 // 8,
-                    0,
-                ],
+                [(2 * self.dState * FP8) // (2 * self.suc_serial_width_BC), self.seqLenUnroll,
+                 self.seqLen // self.seqLenUnroll, self.dInner // self.delaySU],
+                [(2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll, BANK_BYTES,
+                 self.seqLenUnroll * self.xProjDim * FP8 // 8, 0],
                 self.seqLenUnroll * BANK_BYTES,
             ),
             "R8": ([self.dInner * FP8 // BANKWIDTH], [BANK_BYTES]),
             "R9": (bounds_conv_to_suc, strides_conv_to_suc),
             "R10": (bounds_conv_to_suc, strides_conv_to_suc),
             "R11": (
-                [
-                    (self.dInner // self.dInnerUnroll)
-                    * (self.seqLen // self.seqLenUnroll)
-                    * (iscore_parallel_width_d // self.iscore_serial_width)
-                ],
+                [(self.dInner // self.dInnerUnroll) * (self.seqLen // self.seqLenUnroll)
+                 * (iscore_parallel_width_d // self.iscore_serial_width)],
                 [self.iscore_serial_width // 8],
             ),
             "R12": (
@@ -262,11 +178,8 @@ class DataGenerator(DataGeneratorBase):
                 [self.seqLenUnroll * BF16 // 8, 0],
             ),
             "W0": (
-                [
-                    (oscore_parallel_width_d // self.oscore_serial_width)
-                    * (self.seqLen // self.seqLenUnroll)
-                    * (self.dInner // self.dInnerUnroll)
-                ],
+                [(oscore_parallel_width_d // self.oscore_serial_width)
+                 * (self.seqLen // self.seqLenUnroll) * (self.dInner // self.dInnerUnroll)],
                 [self.oscore_serial_width // 8],
             ),
             "W2": (bounds_conv_to_suc, strides_conv_to_suc),
@@ -283,10 +196,8 @@ class DataGenerator(DataGeneratorBase):
             ("z", tensor_size),
             ("dt_BC", self.seqLen * self.xProjDim * FP8 // 8),
             ("dt_weight_1", self.dInner * (self.dtRank // self.dtRankUnroll) * self.dConv * FP8 // 8),
-            (
-                "dt_weight_2",
-                self.dInner * (self.dtRank // self.dtRankUnroll) * (self.dtRankUnroll - self.dConv) * FP8 // 8,
-            ),
+            ("dt_weight_2", self.dInner * (self.dtRank // self.dtRankUnroll)
+             * (self.dtRankUnroll - self.dConv) * FP8 // 8),
             ("dt_bias", self.dInner * FP8 // 8),
             ("x", tensor_size),
             ("A", self.dInner * self.dState * FP8 // 8),
@@ -299,32 +210,122 @@ class DataGenerator(DataGeneratorBase):
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         suc_start_cnt, iscore_start_cnt = self.get_safe_to_start_delay()
         scalars = {
-            **lengths,
-            **deltas,
+            **lengths, **deltas,
             "R10_start_cnt": suc_start_cnt,
             "R11_start_cnt": iscore_start_cnt,
             "dt_to_BC_offset": self.seqLenUnroll * self.dtRank * FP8 // 8,
         }
         self.phase2_scalars = scalars.copy()
 
-        tests = {
-            "z": self.seqLen * self.dInner,
-            "y": self.seqLen * self.dInner,
-            "iscore_out": self.seqLen * self.dModel,
+        # Emit streamers + scalars, no test_data
+        self.build_mode(mode_id, streamers, scalars=scalars, test_data={}, tests={})
+
+        # Read shared Phase 2 data from Scala generator (M2_ prefix)
+        mid = DATA_MODE_ID
+        for name in ("oscore_weight_P2", "dt_weight_1", "dt_weight_2", "dt_bias",
+                      "suc_A", "suc_D", "iscore_weight_P2"):
+            self.read_and_format_vector(mid, "uint8_t", name)
+        self.read_and_format_vector(mid, "uint16_t", "iscore_bias_P2")
+
+    def _build_vmamba_test_data(self):
+        """Read VMamba-specific data. Only per-direction INPUTS are K-stacked;
+        per-direction verification goldens are dropped to keep the binary small."""
+        mid = DATA_MODE_ID
+
+        # Single input in flattenA (dir 0) — cross-scan done at runtime
+        self.read_and_format_vector(mid, "uint8_t", "oscore_in")
+        # Per-direction weights + cross-merge data
+        for name in ("iscore_weight_K", "y_invperm_K"):
+            self.read_and_format_vector(mid, "uint8_t", name)
+
+        # Final output goldens (small, only L*D or L*dModel each)
+        for name in ("y_merged_flat",):
+            self.read_and_format_vector(mid, "uint8_t", name)
+        self.format_test_samples(mid, "y_merged_flat", self.seqLen * self.dInner, 25)
+
+        dir_LD = self.seqLen * self.dInner * FP8 // 8
+        self.format("uint32_t", "dir_size_iscore_weight", self.dInner * self.xProjDim * FP8 // 8)
+        self.format("uint32_t", "dir_size_y_invperm", dir_LD)
+
+        # SIMD ADD streamer config for cross-merge (FP8 element-wise add)
+        simd_fp8_lanes = self.kwargs["simdLanes_fp8"]
+        n_simd_cycles = self.seqLen * self.dInner // simd_fp8_lanes
+        simd_streamers = {
+            "R7": ([n_simd_cycles, 1, 1, 1], [simd_fp8_lanes, 0, 0, 0],
+                   [BANK_BYTES, 2 * BANK_BYTES]),
+            "R13": ([n_simd_cycles, 1, 1, 1], [simd_fp8_lanes, 0, 0, 0],
+                    [BANK_BYTES]),
+            "W3": ([n_simd_cycles, 1, 1, 1], [simd_fp8_lanes, 0, 0, 0],
+                   [BANK_BYTES]),
+        }
+        simd_mode_id = 16
+        assert f"M{simd_mode_id}_SIMD_ADD_FP8" in self.kwargs, f"verify mode_id {simd_mode_id}"
+        self.build_mode(simd_mode_id, simd_streamers, scalars={}, test_data={}, tests={})
+
+        # ---- RMSNorm SIMD streamer configs (adapted from rmsnorm datagen) ----
+        L = self.seqLen
+        D = self.dInner
+        simdLanes_bf16 = self.kwargs["simdLanes_bf16"]
+        assert simdLanes_bf16 == self.seqLenUnroll
+
+        bounds_LD = ([L * D // simdLanes_bf16], [simdLanes_bf16 * BF16 // 8])
+        bounds_L = ([L // simdLanes_bf16], [simdLanes_bf16 * BF16 // 8])
+
+        # Widen FP8→BF16 (from einfft)
+        n_fp8_cycles = L * D // simd_fp8_lanes
+        n_bf16_cycles = L * D // simdLanes_bf16
+        rmsnorm_streamers = {
+            "R7_widen": ([n_fp8_cycles, 1, 1, 1], [simd_fp8_lanes, 0, 0, 0],
+                         [BANK_BYTES, 2 * BANK_BYTES]),
+            "W3_widen": ([n_bf16_cycles, 1, 1, 1], [simdLanes_bf16 * BF16 // 8, 0, 0, 0],
+                         [BANK_BYTES]),
+            # Full x matrix (BF16)
+            "R7_x": bounds_LD,
+            "W3_x": bounds_LD,
+            # RMS vector
+            "R7_rms": bounds_L,
+            "W3_rms": bounds_L,
+            # x * rms broadcast
+            "R13_x_rms": (
+                [D, L // simdLanes_bf16],
+                [0, simdLanes_bf16 * BF16 // 8],
+            ),
+            # x * weight
+            "R7_x_w": ([L // simdLanes_bf16, D],
+                       [D * simdLanes_bf16 * BF16 // 8, simdLanes_bf16 * BF16 // 8]),
+            "R13_x_w": ([L // simdLanes_bf16, D],
+                        [0, simdLanes_bf16 * BF16 // 8]),
+            "W3_x_w": ([L // simdLanes_bf16, D],
+                       [D * simdLanes_bf16 * BF16 // 8, simdLanes_bf16 * BF16 // 8]),
+            # Narrow BF16→FP8
+            "W3_narrow": ([n_fp8_cycles, 1, 1, 1], [simd_fp8_lanes, 0, 0, 0],
+                          [BANK_BYTES]),
         }
 
-        test_data = {
-            name: "uint8_t"
-            for name in (
-                "oscore_in", "oscore_weight", "oscore_expected",
-                "dt_BC", "dt_weight_1", "dt_weight_2", "dt_bias",
-                "suc_A", "suc_D", "suc_x", "suc_expected",
-                "iscore_weight", "iscore_expected",
-            )
-        }
-        test_data["iscore_bias"] = "uint16_t"
+        # RMSNorm buffers AFTER Phase 1 + Phase 2 region
+        p1_end = self.phase1_scalars["addr_iscore_out"] + self.phase1_scalars["length_iscore_out"]
+        p2_end = p1_end + max(v for k, v in self.phase2_scalars.items()
+                              if k.startswith("addr_")) + max(
+                              v for k, v in self.phase2_scalars.items() if k.startswith("length_"))
+        rms_base = (p2_end + 63) & ~63  # align to 64
 
-        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
+        rms_specs = [
+            ("rms_x_bf16", L * D * BF16 // 8),     # widened x in BF16
+            ("rms_const", simdLanes_bf16 * BF16 // 8),  # d_inverse / ones constant
+            ("rms_weight", simdLanes_bf16 * D * BF16 // 8),  # weight duplicated
+            ("rms_vec", L * BF16 // 8),             # RMS vector
+        ]
+        rms_lengths, rms_deltas = self._collect_lengths_and_deltas(rms_specs, base_offset=rms_base)
+        rms_scalars = {**rms_lengths, **rms_deltas}
+
+        # Use mode 12 for RMSNorm base streamers (SIMD_INPROD_BF16)
+        rms_mode_id = 12
+        self.build_mode(rms_mode_id, rmsnorm_streamers, scalars=rms_scalars, test_data={}, tests={})
+
+        # Read RMSNorm data
+        self.read_and_format_vector(mid, "uint16_t", "norm_weight")
+        self.read_and_format_vector(mid, "uint8_t", "y_norm_flat")
+        self.format_test_samples(mid, "y_norm_flat", L * D, 25)
 
 
 if __name__ == "__main__":

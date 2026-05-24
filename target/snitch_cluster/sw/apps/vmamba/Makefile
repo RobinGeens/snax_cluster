@@ -6,8 +6,8 @@
 APP = vmamba
 
 INCDIRS = data \
-          ../../snax/simbacore/include \
-          ../main/src
+          ../main/src \
+          ../../snax/simbacore/include
 
 # SimbaCore support library
 SIMBACORE_LIB_DIR := $(abspath ../../snax/simbacore)

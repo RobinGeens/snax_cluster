@@ -11,170 +11,178 @@
 
 VMamba's SS2D (Selective State Space for 2D) applies the Mamba selective scan
 along K=4 cross-scan directions over a 2D spatial grid (H, W) where
-`seqLen = H * W`.  The full SS2D forward pass is:
+`seqLen = H * W`.
+
+## Full SS2D pipeline (`vmamba`)
+
+The `vmamba` program runs the complete SS2D forward pass on hardware:
 
 ```
-input (L, dModel)
+cross_scan(input) → K=4 directional sequences
   │
-  ├── Phase 1: osCore(in_proj) → conv → IsCore(x_proj)
-  │     produces conv_out (x) and xProj (dt, B, C)
+  ├── Per direction k (K=4 times):
+  │     Phase 1 (PHASE1): osCore(in_proj) → SwitchCore(conv1d+SiLU) → IS-core(x_proj)
+  │       produces conv_out (= SUC x) and iscore_out (= dt+B+C in xProj format)
+  │     Phase 2 (PHASE2): osCore(z) → SwitchCore(dt_proj) → SUC → IS-core(out_proj)
+  │       produces z, y_k (SUC out), iscore_out_k (per-direction output)
   │
-  ├── software: cross-scan x, z into K=4 directional sequences
+  ├── Cross-merge (SIMD ADD): sum inverse-permuted y_0..y_3 → y_merged
   │
-  ├── Phase 2 (× K directions):
-  │     osCore → z_k, SwitchCore(dt_proj) → delta_k,
-  │     SUC(x_k, z_k, delta_k, A, B_k, C_k, D) → y_k,
-  │     IsCore(out_proj) → output_k
-  │
-  ├── software: cross-merge y_0..y_3 → y
-  │
-  └── RMSNorm + final output projection
+  └── RMSNorm (8-step SIMD chain): widen → RMS → ÷D → √ → 1/√ → ×(1/√) → ×weight → narrow
 ```
 
-Both `vmamba` and `vmamba-tiled` implement the **base case**: a single Phase 1
-→ Phase 2 pass (one direction, no cross-scan/merge).  This validates the
-hardware path at VMamba-sized parameters (`seqLen = H*W`).
+Each direction runs the **exact same Phase 1 + Phase 2 as the `main` program**
+(using `helper.c` for Phase 1 streamers and `set_streamer_phase2` for Phase 2).
+The only per-direction differences are:
+- `oscore_in`: cross-scanned input for direction k
+- `iscore_weight`: per-direction x_proj weight W_xproj[k]
 
-## Relationship to the `main` / `main-tiled` programs
+### Hardware stages
 
-The hardware execution is the same two-phase split:
+| Stage | HW mode | Cores used | Per-dir? | Inputs | Outputs |
+|-------|---------|-----------|----------|--------|---------|
+| Phase 1 | PHASE1 | osCore + SwitchCore + IS-core | × K | cross_scan(input), W_x, conv_w, W_xproj[k] | conv_out, dt+B+C |
+| Phase 2 | PHASE2 | osCore + SwitchCore + SUC + IS-core | × K | input, W_z, dt+B+C, W_dt, A, D, W_out | z, y_k, iscore_out_k |
+| Cross-merge | SIMD_ADD_FP8 | SIMD | × 3 passes | y_invperm[0..3] | y_merged |
+| RMSNorm | 8 SIMD modes | SIMD | × 1 | y_merged, norm_weight | y_norm |
 
-- **Phase 1** (PHASE1 mode): osCore (in-projection) → Switch-core (conv1d +
-  SiLU) → IS-core (x_proj). Produces `conv_out` and `iscore_out` (= `dt+B+C`).
-- **Phase 2** (PHASE2 mode): osCore (z-projection) → Switch-core (dt_proj) →
-  SU-core (selective scan) → IS-core (out_proj). All four cores run
-  concurrently with on-chip forwarding.
+### Cross-phase buffer sharing
 
-**Cross-phase buffer sharing** is the same: Phase 1's `conv_out` is Phase 2's
-SU-core `x`, and Phase 1's `iscore_out` is Phase 2's Switch-core `dt_in`.
-No re-DMA between phases.
+Same as `main`: Phase 1's `conv_out` is Phase 2's SU-core `x`, and Phase 1's
+`iscore_out` is Phase 2's Switch-core `dt_in`. No re-DMA between Phase 1 and
+Phase 2 within a direction.
 
-The difference from `main` / `main-tiled` is in the data generator:
-`DataGeneratorVMamba` (chisel-ssm) generates the data, and the algorithmic
-parameters include `H`, `W`, `K` alongside the standard `seqLen`, `dModel`,
-`dInner`, `dtRank`.
+### Cross-scan
 
-## Tensors
+The raw input is cross-scanned into K=4 directional sequences before the
+per-direction loop. The cross-scan permutations (identity, transpose, reverse,
+reverse-transpose) are pre-computed in the data generator and loaded from L3.
 
-### Phase 1
+### Cross-merge
+
+After all K directions, the per-direction SUC outputs are inverse-permuted
+(undoing the cross-scan) and summed via 3 SIMD ADD (FP8 element-wise add)
+passes. The inverse-permuted y_k are pre-computed in the data generator.
+
+### RMSNorm
+
+An 8-step SIMD chain on the merged y (adapted from the `rmsnorm` program):
+
+1. **Widen** FP8 → BF16 (SIMD_NOOP_FP8_REQUANT)
+2. **RMS** Σ(x²) per token (SIMD_RMS_BF16)
+3. **÷ D** multiply by 1/dInner (SIMD_MUL_BF16)
+4. **√** square root (SIMD_SQRT_BF16)
+5. **1/√** inverse (SIMD_DIV_BF16)
+6. **Normalize** x × (1/√) (SIMD_MUL_BF16)
+7. **Scale** × weight (SIMD_MUL_BF16)
+8. **Narrow** BF16 → FP8 (SIMD_NOOP_BF16_REQUANT)
+
+### Tensors
+
+#### Phase 1 (per direction)
 
 | Tensor          | Role                                     | Origin      |
 | --------------- | ---------------------------------------- | ----------- |
-| `oscore_in`     | OS-core input A (= model input)          | DMA from L3 |
-| `oscore_weight` | OS-core weight B (in-projection x-branch)| DMA from L3 |
-| `conv_weight`   | Switch-core weight (conv1d kernel)       | DMA from L3 |
-| `conv_bias`     | Switch-core bias                         | DMA from L3 |
-| `iscore_weight` | IS-core weight (x_proj)                  | DMA from L3 |
-| `iscore_bias`   | IS-core bias (loaded into psum slot)     | DMA from L3 |
+| `oscore_in`     | OS-core input (cross-scanned for dir k)  | DMA from L3 (per-dir) |
+| `oscore_weight` | OS-core weight (in-projection x-branch)  | DMA from L3 (shared) |
+| `conv_weight`   | Switch-core weight (conv1d kernel)       | DMA from L3 (shared) |
+| `conv_bias`     | Switch-core bias                         | DMA from L3 (shared) |
+| `iscore_weight` | IS-core weight (x_proj, per-direction)   | DMA from L3 (per-dir) |
+| `iscore_bias`   | IS-core bias (loaded into psum slot)     | DMA from L3 (shared) |
 | `conv_out`      | Switch-core output (= P2 SU-core `x`)   | produced in P1 |
 | `iscore_out`    | IS-core output `xProj` (= P2 `dt_in`)   | produced in P1 |
 
-### Phase 2
+#### Phase 2 (per direction)
 
 | Tensor           | Role                                  | Origin                              |
 | ---------------- | ------------------------------------- | ----------------------------------- |
-| `oscore_in`      | OS-core input A                       | **shared from P1** (no re-DMA)      |
-| `oscore_weight`  | OS-core weight B (z-branch projection)| DMA from L3                         |
+| `oscore_in`      | OS-core input (same as P1)            | **shared from P1** (no re-DMA)      |
+| `oscore_weight`  | OS-core weight (z-branch projection)  | DMA from L3 (shared)                |
 | `dt_in` / `BC`   | Switch-core input (`xProj`)           | **shared from P1** (= `iscore_out`) |
-| `dt_weight_1/2`  | Switch-core weights (split)           | DMA from L3                         |
-| `dt_bias`        | Switch-core bias                      | DMA from L3                         |
+| `dt_weight_1/2`  | Switch-core weights (split)           | DMA from L3 (shared)                |
+| `dt_bias`        | Switch-core bias                      | DMA from L3 (shared)                |
 | `x`              | SU-core input                         | **shared from P1** (= `conv_out`)   |
-| `A`, `D`         | SU-core SSM parameters                | DMA from L3                         |
-| `iscore_weight`  | IS-core weight (out-projection)       | DMA from L3                         |
-| `iscore_bias`    | IS-core bias                          | DMA from L3                         |
+| `A`, `D`         | SU-core SSM parameters                | DMA from L3 (shared)                |
+| `iscore_weight`  | IS-core weight (out-projection)       | DMA from L3 (shared)                |
+| `iscore_bias`    | IS-core bias                          | DMA from L3 (shared)                |
 | `z`              | OS-core output → SU-core              | produced in P2                      |
 | `y`              | SU-core output → IS-core              | produced in P2                      |
 | `iscore_out`     | IS-core final output                  | produced in P2                      |
 
-## `vmamba`
+### Tested configurations
 
-Untiled Phase 1 → Phase 2.  All tensors stay FULL in TCDM. While Phase 1
-computes, the DM core overlaps the DMA-in of Phase 2's tensors. Structurally
-identical to `main`.
+| H | W | dModel | dInner | K | Per-dir errors | Merge+RMS errors | Total |
+|---|---|--------|--------|---|----------------|------------------|-------|
+| 4 | 4 |   48   |   96   | 4 | 0/300          | 37/50 (FP8 rounding) | 37/350 |
+| 4 | 4 |   96   |  192   | 4 | 1/300 (FP8)    | —                | 1/300+ |
 
-## `vmamba-tiled`
-
-Both phases are **dInner-tiled**, following the same strategy as `main-tiled`
-(see [04_mamba_main.md §main-tiled](04_mamba_main.md#main-tiled)). All tiling
-tricks, buffer reuse, and pipeline staging from `main-tiled` apply unchanged:
-
-| Lifecycle                       | Phase 1 tensors                                          | Phase 2 tensors                                                                                |
-| ------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **shared / FULL**               | `oscore_in`, `iscore_out_P1_psum`, `iscore_out_P1_final` | `oscore_in`, `dt_in` (= P1 `iscore_out_P1_final`), `iscore_out_P2`                            |
-| **tile-sized in TCDM, FULL in L3** | `conv_out`                                            | `x` (= P1 `conv_out`), `z`, `y`                                                               |
-| **tiled, ping-pong**            | `oscore_weight`, `conv_weight`, `conv_bias`, `iscore_weight` | `oscore_weight`, `dt_weight_1`, `dt_weight_2`, `dt_bias`, SU-core `A` and `D`, `iscore_weight` |
-
-### Memory-saving tricks (inherited from `main-tiled`)
-
-1. **`conv_out` (= P2 `x`) staged through L3.** TCDM holds a 2-slot
-   ping-pong; the FULL tensor lives in L3. P1 spills each tile to L3 two
-   iterations after it is written; P2 DMA-ins `x_tile[i]` from L3 alongside
-   loading weight tile `i`.
-2. **`z` and `y` staged through L3.** Tile-sized ping-pong in TCDM (W0/W2
-   write, R10/R11 read within the same P2 kernel call), then DMA'd out to L3.
-3. **`iscore_out_P1_psum` overlays `iscore_out_P2`.** The P1 psum buffer is
-   dead after P1's final K-tile; `iscore_out_P2` is only used in P2. They
-   share one address.
-4. **`iscore_out_P1_final` is a separate FULL buffer.** Required by the
-   K-tile + TRANSPOSE-final fix: the final tile's transposed W3 writes
-   element (m,n) to byte F(n,m) and would otherwise clobber partial psums.
-
-### 3-stage pipeline
-
-Both phases run a `nb_tiles + 2` iteration loop:
-
-- **Iter i** (DM core): DMA-in tile `i` weights into ping-pong slot `i%2`.
-- **Iter i** (compute core 0): run kernel(s) for tile `i−1`.
-- **Iter i** (DM core, after barrier): DMA-spill tile `i−2` output to L3.
-
-### Phase 1 kernel variants
-
-- **Bulk** (tiles 0 .. nb_tiles−2): K_i K-steps in `PHASE1_NO_REQUANT`.
-  Accumulates psum in-place.
-- **FinalLead** (final tile, only if K_i > 1): K_i−1 K-steps in
-  `PHASE1_NO_REQUANT`. Continues accumulating psum.
-- **FinalStep** (absolute last K-step): 1 K-step in `PHASE1` (requant +
-  transpose). Reads psum from `iscore_out_P1_psum`, writes transposed result
-  to `iscore_out_P1_final`.
-
-### Phase 2 kernel
-
-One kernel per DMA tile (K_i K-steps each). Non-final tiles use
-`PHASE2_NO_REQUANT`; the final tile uses `PHASE2` (HW gates requant to the
-absolute-final K-step via `isCoreOutIsFinal`). Only the MODE CSR changes
-between tiles; base pointers are updated via `write_csr`.
+Per-direction checks (z, SUC y, iscore_out) are exact or near-exact. Cross-merge
+and RMSNorm errors are accumulated FP8 rounding from summing 4 directions and
+the 8-step SIMD normalization chain — inherent to FP8 arithmetic.
 
 ### Tested configurations
 
-| H  | W  | dModel | dInner | nb_tiles | L1 usage   | Result       |
-|----|-----|--------|--------|----------|------------|--------------|
-|  4 |  4  |   48   |   96   |    2     |  ~30 KiB   | PASS 0/125   |
-| 14 | 16  |  192   |  384   |   16     | 246 KiB    | 12/125 (FP8 rounding) |
+| H | W | dModel | L | D | Binary | L1 | P1 (4 dirs) | P2 (4 dirs) | Post-merge errors | Status |
+|---|---|--------|---|---|--------|-----|-------------|-------------|-------------------|--------|
+| 4 | 4 | 48 | 16 | 96 | 117 KiB | 53 KiB | 3,164 cc | 12,440 cc | 34/50 (FP8) | PASS |
+| 4 | 8 | 48 | 32 | 96 | 129 KiB | 69 KiB | 5,784 cc | 24,328 cc | 35/50 (FP8) | PASS |
+| 8 | 8 | 48 | 64 | 96 | 153 KiB | 101 KiB | 11,016 cc | 48,076 cc | 32/50 (FP8) | PASS |
+| 4 | 4 | 96 | 16 | 192 | 234 KiB | 125 KiB | 6,512 cc | 24,616 cc | 36/50 (FP8) | PASS |
+| 4 | 8 | 96 | 32 | 192 | 254 KiB | 151 KiB | — | — | — | TIMEOUT |
 
-The 12 errors at L=224 D=384 are all off-by-one or off-by-two in the FP8
-quantization level — expected numerical noise from the long selective scan
-(L=224 timesteps) and wide IS-core reduction (D=384), not correctness bugs.
-Phase 1 outputs are exact at all tested sizes.
+Per-direction Phase 1 + Phase 2 checks (z, SUC y, iscore_out) are exact (0
+errors) at all sizes. Post-merge errors are from cross-merge FP8 summation (4
+directions) + 8-step SIMD RMSNorm chain — inherent to FP8 arithmetic.
 
-## VMamba-specific extensions (not yet implemented)
+Cross-merge and RMSNorm take 6 cc and 16 cc respectively (trivial vs. the
+Phase 1 + Phase 2 compute).
 
-The full SS2D requires these additions on top of the base Phase 1 + Phase 2:
+### Scaling limits (untiled)
 
-1. **Conv2d instead of conv1d.** The VMamba block uses a 2D depthwise
-   convolution (kH × kW kernel, same-padding) on the x-branch, not the 1D
-   conv with `dConv=4` that the Switch-core implements. A software fallback or
-   new hardware mode is needed.
+The untiled `vmamba` binary embeds per-direction x_proj weights
+(`iscore_weight_K` = K × dInner × xProjDim bytes) which dominate the ELF
+size. At dModel=96 (xProjDim=152, dInner=192), the per-direction weights
+alone are K × 192 × 152 = 117 KiB. The practical L3 limit is ~256 KiB,
+restricting the untiled version to L ≤ 64 at dModel=48 or L ≤ 16 at
+dModel=96.
 
-2. **K-direction loop.** After Phase 1 produces `conv_out` and `z` (or their
-   inputs), cross-scan permutes them into K=4 directional sequences. Phase 2
-   then runs K times — once per direction — each time loading the appropriate
-   cross-scanned slice of `x` and `z`. The SwitchCore weights, `A`, and `D`
-   are shared across directions; `dt_in` (`dt+B+C` from x_proj) may need to
-   be per-direction if x_proj weights differ across directions.
+### Cross-scan implementation
 
-3. **Cross-merge.** After all K selective scans, the per-direction outputs
-   `y_0..y_3` are inverse-permuted and summed in software to produce the
-   merged `y` of shape `(L, dInner)`.
+Cross-scan is currently implemented as a scalar permutation on the Snitch
+compute core: a single input in flattenA format (dir 0) is stored, and for
+dirs 1–3, `cross_scan_flattena()` reorders it byte-by-byte in TCDM. This
+eliminates K copies of oscore_in from the binary but uses scalar cycles
+(~2 cc/byte, ~12K cc for L=64 dModel=96).
 
-4. **RMSNorm + output projection.** A SIMD RMSNorm on the merged `y`, followed
-   by an IS-core output projection `y @ W_out → (L, dModel)`.
+For a real multi-layer deployment, the previous layer's output in L3 would be
+DMA'd into TCDM per direction, with the cross-scan permutation folded into
+the DMA source addressing (tile-level stride changes). No K copies would
+exist at any point — just one L3 output buffer and one TCDM input buffer
+reused per direction.
+
+## `vmamba-tiled`
+
+Both phases are **dInner-tiled** following `main-tiled`. Currently runs a single
+Phase 1 → Phase 2 pass (not yet K per-direction). See
+[04_mamba_main.md §main-tiled](04_mamba_main.md#main-tiled) for tiling details.
+
+### Tested configurations
+
+| H  | W  | dModel | dInner | nb_tiles | L1 usage | Result |
+|----|-----|--------|--------|----------|----------|--------|
+|  4 |  4  |   48   |   96   |    2     | ~30 KiB  | PASS 0/125 |
+| 14 | 16  |  192   |  384   |   16     | 246 KiB  | 12/125 (FP8 rounding) |
+
+## Future work
+
+1. **Conv2d → conv1d replacement.** The user will replace the 2D depthwise
+   conv with conv1d (same as SiMBA) so the Switch-core can run it natively.
+   Currently conv1d is used in the reference model.
+
+2. **DMA-based cross-scan.** Replace the scalar `cross_scan_flattena()` with
+   DMA 2D strided transfers that implement the tile-level permutation during
+   the L3 → TCDM copy. Requires per-tile source address computation based on
+   the (H, W) grid and cross-scan direction.
+
+3. **vmamba-tiled per-direction.** Extending the tiled version to run K=4
+   directions for large workloads (L=224+, D=384+).
