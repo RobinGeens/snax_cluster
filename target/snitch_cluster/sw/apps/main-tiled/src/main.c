@@ -232,6 +232,8 @@ int test_phase1_and_2() {
                 wait_simbacore_and_streamer();
                 simbacore_cycles_phase1 += read_simbacore_perf_counter();
             }
+            // Keep track of liveliness
+            // printf("[%u cc] P1 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
         }
 
         if (i >= 2 && snrt_is_dm_core()) {
@@ -288,26 +290,39 @@ int test_phase1_and_2() {
 
         if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
             uint32_t tile      = i - 1;
-            int cbuf           = tile % 2;
             bool is_final_tile = (tile == nb_tiles - 1);
 
-            write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P2[cbuf]);
-            write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_dt_weight_1[cbuf]);
-            write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_dt_bias[cbuf]);
-            write_csr(BASE_PTR_READER_5_LOW, (uint32_t)ptr_dt_weight_2[cbuf]);
-            write_csr(BASE_PTR_READER_6_LOW, (uint32_t)ptr_A[cbuf]);
-            write_csr(BASE_PTR_READER_8_LOW, (uint32_t)ptr_D[cbuf]);
-            write_csr(BASE_PTR_READER_9_LOW, (uint32_t)ptr_x_tile[cbuf]);
-            write_csr(BASE_PTR_READER_10_LOW, (uint32_t)ptr_z_tile[cbuf]);
-            write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_y_tile[cbuf]);
-            write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P2[cbuf]);
-            write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_z_tile[cbuf]);
-            write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y_tile[cbuf]);
-            write_csr(MODE, is_final_tile ? M2_PHASE2 : M29_PHASE2_NO_REQUANT);
+            // Tile 0: base ptrs set by initial set_streamer_phase2. Tile > 0: preloaded in prev iter.
+            if (is_final_tile) write_csr(MODE, M2_PHASE2);
             start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
-            wait_simbacore_and_streamer();
+            write_csr(STREAMER_START_CSR, 0);
+            write_csr(SIMBACORE_START, 0);
+            write_csr(DELAYED_START_READER_10, 0);
+            write_csr(DELAYED_START_READER_11, 0);
+
+            // Preload next tile's base ptrs while HW computes.
+            if (!is_final_tile) {
+                uint32_t next_tile = tile + 1;
+                int nbuf           = next_tile % 2;
+                write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P2[nbuf]);
+                write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_dt_weight_1[nbuf]);
+                write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_dt_bias[nbuf]);
+                write_csr(BASE_PTR_READER_5_LOW, (uint32_t)ptr_dt_weight_2[nbuf]);
+                write_csr(BASE_PTR_READER_6_LOW, (uint32_t)ptr_A[nbuf]);
+                write_csr(BASE_PTR_READER_8_LOW, (uint32_t)ptr_D[nbuf]);
+                write_csr(BASE_PTR_READER_9_LOW, (uint32_t)ptr_x_tile[nbuf]);
+                write_csr(BASE_PTR_READER_10_LOW, (uint32_t)ptr_z_tile[nbuf]);
+                write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_y_tile[nbuf]);
+                write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P2[nbuf]);
+                write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_z_tile[nbuf]);
+                write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y_tile[nbuf]);
+            }
+            while (read_csr(SIMBACORE_BUSY));
+            while (read_csr(STREAMER_BUSY_CSR));
             simbacore_cycles_phase2 += read_simbacore_perf_counter();
-            printf("[%u cc] P2 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
+
+            // Keep track of liveliness
+            // printf("[%u cc] P2 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
         }
 
         if (i >= 2 && snrt_is_dm_core()) {

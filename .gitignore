@@ -55,4 +55,5 @@ target/streams/
 target/scala*
 scripts_generated/
 regression_test_out*/
+.datagen_cache/
 
