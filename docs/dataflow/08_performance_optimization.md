@@ -140,15 +140,3 @@ The `alignment` parameter is already supported by `data_utils.py`'s
 `format_vector_definition()` — it was just never passed.
 
 ---
-
-## Summary: per-tile overhead budget
-
-| Source                     | Baseline   | After optimization | Technique    |
-|----------------------------|------------|--------------------|--------------|
-| Base-pointer CSR writes    | 5-12 writes| 0 (preloaded)      | Preloading   |
-| MODE CSR write             | 1 write    | 1 write            | (keep)       |
-| Printf per tile            | ~2000 cc   | 0                  | Removal      |
-| DELAYED_START clear (if unused) | 4 writes | 0              | Inlining     |
-| START + de-assert          | 4 writes   | 4 writes           | —            |
-| BUSY poll + perf read      | ~5 cc      | ~5 cc              | —            |
-| Barrier sync               | ~10 cc     | ~10 cc             | —            |
