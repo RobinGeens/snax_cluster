@@ -232,18 +232,17 @@ class DataGenerator(MainDataGenerator):
         per-direction verification goldens are dropped to keep the binary small."""
         mid = DATA_MODE_ID
 
-        # Single input in flattenA (dir 0) — cross-scan done at runtime
-        self.read_and_format_vector(mid, "uint8_t", "oscore_in")
-        # Per-direction weights + cross-merge data
-        for name in ("iscore_weight_K", "y_invperm_K"):
+        # Per-direction inputs (pre-flattened in Scala generator)
+        for name in ("oscore_in_K", "iscore_weight_K", "y_invperm_K"):
             self.read_and_format_vector(mid, "uint8_t", name)
 
-        # Final output goldens (small, only L*D or L*dModel each)
+        # Final output goldens
         for name in ("y_merged_flat",):
             self.read_and_format_vector(mid, "uint8_t", name)
         self.format_test_samples(mid, "y_merged_flat", self.seqLen * self.dInner, 25)
 
         dir_LD = self.seqLen * self.dInner * FP8 // 8
+        self.format("uint32_t", "dir_size_oscore_in", self.seqLen * self.dModel * FP8 // 8)
         self.format("uint32_t", "dir_size_iscore_weight", self.dInner * self.xProjDim * FP8 // 8)
         self.format("uint32_t", "dir_size_y_invperm", dir_LD)
 
