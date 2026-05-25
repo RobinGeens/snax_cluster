@@ -4,8 +4,7 @@
     //   - dModel   multiple of 4 * dInnerUnroll  (4 * 24 = 96)
     //   - dPerB    multiple of dInnerUnroll * nb_tiles
     //   - N_t = dPerB / (Nu * nb_tiles) >= 2
-    //     (OSGEMM requires N >= 2; see chisel-ssm/docs/memory_layouts/02_gemm_layouts.md §2.4)
-    "seqLen": 256,
+    "seqLen": 192,
     "dModel": 384,
     "nb_tiles": 2
 }
