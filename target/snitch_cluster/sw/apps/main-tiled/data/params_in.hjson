@@ -1,9 +1,9 @@
 {
     // Memory layout and tiling rationale: docs/dataflow/04_mamba_main.md §main-tiled.
-    "seqLen": 192,
-    "dModel": 384,
+    "seqLen": 64,
+    "dModel": 96,
     "dtRank": 24,
-    "nb_tiles": 32
+    "nb_tiles": 8
 }
 
 // Tested configs (K_i=1 unless noted; per-K-step kernel calls handle any nb_tiles

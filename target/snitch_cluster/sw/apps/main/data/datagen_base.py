@@ -121,11 +121,14 @@ class DataGeneratorBase(ABC):
         self.lines_params += [f"int32_t M{mode_id}_{streamer_name}_ss[] = {{{', '.join(map(str, strides))}}};"]
 
     def _read_data_int(self, filename: str):
-        """Read a vec from a file."""
-        with open(os.path.join(self.gen_data_dir, filename), "r") as f:
-            lines = f.readlines()
-        data_lines = [line.strip() for line in lines if not line.startswith("#")]
-        return [int(x) for x in data_lines]
+        """Read a vec of uint32 values from a binary file (little-endian)."""
+        import struct
+
+        filepath = os.path.join(self.gen_data_dir, filename)
+        with open(filepath, "rb") as f:
+            raw = f.read()
+        n = len(raw) // 4
+        return list(struct.unpack(f"<{n}I", raw))
 
     def format_test_samples(self, mode_id: int, tensor_name: str, tensor_size: int, nb_test_samples: int):
         """Format variables used to test only a subset of the output."""

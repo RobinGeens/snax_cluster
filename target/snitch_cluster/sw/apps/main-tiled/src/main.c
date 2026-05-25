@@ -51,8 +51,7 @@ int test_phase1_and_2() {
     // ---- FULL TCDM buffers.
     void* tcdm_base_ptr = snrt_l1_next();
 
-    // Memory layout rationale (split-W3, P1_psum/P2 overlay, L3-staged x/z/y):
-    // docs/dataflow/04_mamba_main.md §main-tiled "Memory-saving tricks".
+    // Memory saving trick (split-W3, P1_psum/P2 overlay, L3-staged x/z/y)
     uint8_t* ptr_oscore_in          = (uint8_t*)tcdm_base_ptr;
     uint8_t* ptr_iscore_out_P1_psum = ptr_oscore_in + M1_length_oscore_in;
     uint16_t* ptr_iscore_out_P2     = (uint16_t*)ptr_iscore_out_P1_psum;

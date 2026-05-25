@@ -23,7 +23,7 @@ GENERATOR_ARGS := $(strip $(shell grep -E '^[[:space:]]*("[^"]+"|[A-Za-z0-9_]+)[
 GENERATOR_ARGS += name=$(APP_NAME)
 
 
-.PHONY: clean-data clean
+.PHONY: clean-data clean datagen-register
 
 clean-data:
 	rm -f $(DATA_H) $(EXTRA_CLEAN)
@@ -44,6 +44,10 @@ $(DATA_CFG): $(CLUSTER_DIR)/generated/bender_lock.hash $(WORKLOAD_PARAMS)
 	@echo "Running Scala $(GENERATOR_CLASS) with args $(GENERATOR_ARGS)"
 	@cd $(CHISEL_SSM) && sbt "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)"
 	@touch $@
+
+# Register this app's sbt command for bulk datagen
+datagen-register:
+	@echo "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)" >> $(DATAGEN_MANIFEST)
 
 
 
