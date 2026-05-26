@@ -7,6 +7,7 @@
 SUBDIRS  = nop
 SUBDIRS += main
 SUBDIRS += vmamba
+SUBDIRS += vmamba-tiled
 SUBDIRS += fft
 # SUBDIRS += fft-3way
 # SUBDIRS += osgemm
