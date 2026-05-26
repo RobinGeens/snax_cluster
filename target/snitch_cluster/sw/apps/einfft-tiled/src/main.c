@@ -67,6 +67,8 @@ int main(void) {
     snrt_cluster_hw_barrier();
 
     uint32_t simbacore_cycles = 0, start_cycles = 0;
+    static uint32_t _dma_done = 0, _compute_done = 0;
+
     if (snrt_global_core_idx() == 0) {
         printf(
             "\nStarting program: einfft-tiled (L3-staged) "
@@ -111,7 +113,6 @@ int main(void) {
 
             // ---- Per-tile weight DMA + 4 OSGEMMs (2-stage ping-pong) ---
             // Iter i loads tile i, compute fires on tile i-1.
-            // Optimized: inline start/wait (no delayed streamers) + CSR preloading.
             for (uint32_t i = 0; i < nb_tiles + 1; i++) {
                 int buf = i & 1;
 
@@ -185,15 +186,18 @@ int main(void) {
                     while (read_csr(STREAMER_BUSY_CSR));
                     simbacore_cycles += read_simbacore_perf_counter();
 
-                    printf("[%u cc] L%d B%u tile %u/%d done\n", snrt_mcycle(), layer, b, tile + 1, nb_tiles);
+                    if (i == 1) _compute_done = snrt_mcycle();
+                    // printf("[%u cc] L%d B%u tile %u/%d done\n", snrt_mcycle(), layer, b, tile + 1, nb_tiles);
                 }
 
-                if (snrt_is_dm_core()) snrt_dma_wait_all();
+                if (snrt_is_dm_core()) {
+                    snrt_dma_wait_all();
+                    if (i == 1 && i < nb_tiles) _dma_done = snrt_mcycle();
+                }
                 snrt_cluster_hw_barrier();
             }
 
             // ---- Per-branch SIMD fuse (FULL per-branch bounds) ---------
-            // Optimized: inline start/wait + CSR preloading between kernels.
             if (snrt_global_core_idx() == 0) {
                 for (int side = 0; side < 2; side++) {
                     uint8_t* pos      = (side == 0) ? ptr_rr : ptr_ri;
@@ -264,7 +268,7 @@ int main(void) {
                     while (read_csr(STREAMER_BUSY_CSR));
                     simbacore_cycles += read_simbacore_perf_counter();
                 }
-                printf("[%u cc] L%d B%u SIMD done\n", snrt_mcycle(), layer, b);
+                // printf("[%u cc] L%d B%u SIMD done\n", snrt_mcycle(), layer, b);
             }
             snrt_cluster_hw_barrier();
 
@@ -274,16 +278,19 @@ int main(void) {
                 snrt_dma_start_1d(layer_out_im_l3 + b * M3_length_out_branch, ptr_out_im_b, M3_length_out_branch);
                 snrt_dma_wait_all();
             }
+
             snrt_cluster_hw_barrier();
         }
 
-        if (snrt_global_core_idx() == 0) printf("[%u cc] Layer %d done\n", snrt_mcycle(), layer);
+        // if (snrt_global_core_idx() == 0) printf("[%u cc] Layer %d done\n", snrt_mcycle(), layer);
     }
 
+    // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
-        printf("[%u cc] Simbacore total (sum over launches): %u cycles\n", end_cycles, simbacore_cycles);
-        printf("[%u cc] Snitch elapsed: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("[%u cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles);
+        printf("[%u cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("DMA latency hiding: wgt_tile=%s\n", _dma_done < _compute_done ? "hidden" : "STALL");
 
         err += check_result_sample(l3_out_l1_re, M3_output_1_real, M3_test_samples_output_1_real, nb_test_samples,
                                    "l1_real");

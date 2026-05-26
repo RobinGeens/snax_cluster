@@ -265,6 +265,9 @@ int test_ss2d() {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%u cc] P1: %u cc, P2: %u cc, merge: %u cc, RMSNorm: %u cc, Snitch: %u cc\n", end_cycles, p1_cycles,
                p2_cycles, merge_cycles, rms_cycles, end_cycles - start_cycles);
+        printf("[%u cc] Simbacore elapsed time: %u cycles\n", end_cycles,
+               p1_cycles + p2_cycles + merge_cycles + rms_cycles);
+        printf("[%u cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
         printf("Test VMamba SS2D: H=%d, W=%d, dModel=%d, K=%d\n", H, W, dModel, K);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 2 * nb_test_samples);
     }

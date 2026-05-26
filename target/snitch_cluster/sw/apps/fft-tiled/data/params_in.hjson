@@ -3,5 +3,6 @@
     dModel: 384,
     L1: 16,
     L2: 16,
-    nb_tiles: 2
+    nb_tiles: 4,
+    nb_tiles_B: 2
 }

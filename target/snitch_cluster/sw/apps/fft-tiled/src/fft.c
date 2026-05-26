@@ -87,8 +87,8 @@ int test() {
         int buf = i & 1;
 
         if (snrt_is_dm_core()) {
-            // Start spill BEFORE load (FIFO ordering ensures spill reads
-            // complete before load's zero-fill overwrites the same slot).
+            // Start spill BEFORE load (FIFO ordering ensures spill reads complete before load's zero-fill overwrites
+            // the same slot).
             if (i >= 2) {
                 uint32_t spill_tile = i - 2;
                 int sbuf            = spill_tile & 1;
@@ -98,6 +98,7 @@ int test() {
                 snrt_dma_start_1d(imags_dst, ptr_had_reord_a_tile[sbuf] + M6_length_hadamard_reordered_tile_re,
                                   M6_phaseA_dma_per_tile_per_part);
             }
+
             if (i < nb_tiles) {
                 snrt_dma_start_1d(ptr_in_tile[buf], M6_dft_in + i * M6_length_in_tile, M6_length_in_tile);
                 snrt_dma_start_1d(ptr_partition1_out_tile[buf], (void*)snrt_zero_memory_ptr(),
@@ -118,36 +119,69 @@ int test() {
             int cbuf      = tile & 1;
 
             // ---- Step 1: partition1 (IS-core) ----
-            // Full streamer setup every tile: Steps 2/2B clobber IS-core bounds.
-            set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts,
-                                    (uint32_t)ptr_in_tile[cbuf], M6_R12_1_ss, M6_R12_1_tb, M6_R12_1_ts,
-                                    (uint32_t)ptr_partition1_out_tile[cbuf], M6_W3_1_ss, M6_W3_1_tb, M6_W3_1_ts);
-            set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, M6_N_1_tile);
-            start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
-            wait_simbacore_and_streamer();
+            // Tile 0: full setup. Tile > 0: CSRs preloaded from prev Step 2B.
+            if (tile == 0) {
+                set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts,
+                                        (uint32_t)ptr_in_tile[0], M6_R12_1_ss, M6_R12_1_tb, M6_R12_1_ts,
+                                        (uint32_t)ptr_partition1_out_tile[0], M6_W3_1_ss, M6_W3_1_tb, M6_W3_1_ts);
+            }
+            write_csr(MODE, M7_ISGEMM_SQ_TRANSPOSE);
+            _set_streamer_start();
+            _set_simbacore_start();
+            if (M6_R10_en) write_csr(DELAYED_START_READER_10, 1);
+            write_csr(DELAYED_START_READER_11, 1);
+            write_csr(STREAMER_START_CSR, 0);
+            write_csr(SIMBACORE_START, 0);
+            if (M6_R10_en) write_csr(DELAYED_START_READER_10, 0);
+            write_csr(DELAYED_START_READER_11, 0);
+
+            // Preload Step 2 SIMD streamers during IS-core compute
+            set_simd_streamer_csr((uint32_t)ptr_partition1_out_tile[cbuf], M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts,
+                                  (uint32_t)ptr_twiddles_tiled, M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts,
+                                  (uint32_t)ptr_hadamard_out_tile[cbuf], M6_W3_2_ss, M6_W3_2_tb, M6_W3_2_ts);
+            while (read_csr(SIMBACORE_BUSY));
+            while (read_csr(STREAMER_BUSY_CSR));
             simbacore_cycles_phaseA += read_simbacore_perf_counter();
 
             asm volatile("fence" ::: "memory");
 
-            // ---- Step 2: hadamard CMUL (SIMD) ----
-            set_simd_streamer_csr((uint32_t)ptr_partition1_out_tile[cbuf], M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts,
-                                  (uint32_t)ptr_twiddles_tiled, M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts,
-                                  (uint32_t)ptr_hadamard_out_tile[cbuf], M6_W3_2_ss, M6_W3_2_tb, M6_W3_2_ts);
-            set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
-            start_simbacore_and_streamers(0, 0, 0, 0);
-            wait_simbacore_and_streamer();
-            simbacore_cycles_phaseA += read_simbacore_perf_counter();
-
-            // ---- Step 2B: reorder NOOP (SIMD) ----
+            // ---- Step 2: hadamard CMUL (streamers preloaded, just MODE+START) ----
+            write_csr(MODE, M20_SIMD_CMUL_FP8);
+            _set_streamer_start();
+            _set_simbacore_start();
+            write_csr(STREAMER_START_CSR, 0);
+            write_csr(SIMBACORE_START, 0);
+            // Preload Step 2B SIMD streamers during CMUL compute
             set_simd_streamer_no_b((uint32_t)ptr_hadamard_out_tile[cbuf], M6_R7_2B_ss, M6_R7_2B_tb, M6_R7_2B_ts,
                                    (uint32_t)ptr_had_reord_a_tile[cbuf], M6_W3_2B_ss, M6_W3_2B_tb, M6_W3_2B_ts);
-            set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
-            start_simbacore_and_streamers(0, 0, 0, 0);
-            wait_simbacore_and_streamer();
+            while (read_csr(SIMBACORE_BUSY));
+            while (read_csr(STREAMER_BUSY_CSR));
             simbacore_cycles_phaseA += read_simbacore_perf_counter();
-            if (tile == 0) _compute_done = snrt_mcycle();
 
-            printf("[%u cc] Phase A tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
+            // ---- Step 2B: reorder NOOP (streamers preloaded, just MODE+START) ----
+            write_csr(MODE, M23_SIMD_NOOP_FP8);
+            _set_streamer_start();
+            _set_simbacore_start();
+            write_csr(STREAMER_START_CSR, 0);
+            write_csr(SIMBACORE_START, 0);
+            // Preload next tile's Step 1 IS-core CSRs during NOOP compute
+            if (tile < nb_tiles - 1) {
+                int nbuf = (tile + 1) & 1;
+                set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts,
+                                        (uint32_t)ptr_in_tile[nbuf], M6_R12_1_ss, M6_R12_1_tb, M6_R12_1_ts,
+                                        (uint32_t)ptr_partition1_out_tile[nbuf], M6_W3_1_ss, M6_W3_1_tb, M6_W3_1_ts);
+                write_csr(SEQ_LEN, 2 * L1);
+                write_csr(D_MODEL, 1);
+                write_csr(D_INNER, L1_padded);
+                write_csr(DT_RANK, 1);
+                write_csr(D_FINAL, M6_N_1_tile);
+            }
+            while (read_csr(SIMBACORE_BUSY));
+            while (read_csr(STREAMER_BUSY_CSR));
+            simbacore_cycles_phaseA += read_simbacore_perf_counter();
+            // Clean delayed-start state so Phase B starts clean
+            write_csr(DELAYED_START_READER_10, 0);
+            write_csr(DELAYED_START_READER_11, 0);
         }
 
         snrt_cluster_hw_barrier();
@@ -156,8 +190,6 @@ int test() {
     // ========================================================================
     // Phase B: partition 2, K-axis tiled. Serial DMA/compute.
     // ========================================================================
-    if (snrt_global_core_idx() == 0)
-        printf("[%u cc] Phase B: zeroing p2out (%d B)\n", snrt_mcycle(), M6_length_partition2_out);
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_partition2_out, (void*)snrt_zero_memory_ptr(), M6_length_partition2_out);
         snrt_dma_wait_all();
@@ -165,7 +197,6 @@ int test() {
     snrt_cluster_hw_barrier();
 
     if (snrt_global_core_idx() == 0) {
-        printf("[%u cc] Phase B: setting CSRs\n", snrt_mcycle());
         set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,
                                 (uint32_t)ptr_had_reord_b_ktile, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,
                                 (uint32_t)ptr_partition2_out, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);
@@ -174,8 +205,6 @@ int test() {
     snrt_cluster_hw_barrier();
 
     for (uint32_t tile = 0; tile < M6_nb_tiles_B; tile++) {
-        if (snrt_global_core_idx() == 0)
-            printf("[%u cc] Phase B tile %d/%d: DMA load\n", snrt_mcycle(), tile, M6_nb_tiles_B);
         if (snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_had_reord_b_ktile,
                               ptr_hadamard_reordered_l3 + tile * M6_length_hadamard_reordered_ktile,
@@ -186,14 +215,12 @@ int test() {
         snrt_cluster_hw_barrier();
 
         if (snrt_global_core_idx() == 0) {
-            printf("[%u cc] Phase B tile %d/%d: starting compute\n", snrt_mcycle(), tile, M6_nb_tiles_B);
             write_csr(BASE_PTR_READER_11_LOW, (uint32_t)(ptr_weight2 + tile * M6_length_weight2_ktile));
             write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_had_reord_b_ktile);
             write_csr(MODE, (tile == M6_nb_tiles_B - 1) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT);
             start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
             wait_simbacore_and_streamer();
             simbacore_cycles_phaseB += read_simbacore_perf_counter();
-            printf("[%u cc] Phase B tile %d/%d done\n", snrt_mcycle(), tile + 1, M6_nb_tiles_B);
         }
 
         snrt_cluster_hw_barrier();
