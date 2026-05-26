@@ -100,7 +100,7 @@ class DataGenerator(DataGeneratorBase):
         len_twiddles_tiled = len_twiddles  # shared across tiles, no relayout
 
         always_live = align64(len_weight1) + align64(len_weight2) + align64(len_twiddles_tiled)
-        # Phase A working set (dModel-axis TILED)
+        # Phase A working set (dModel-axis TILED), single-buffered
         phase_a = (
             align64(len_in // nb)
             + align64(len_partition1_out // nb)
@@ -108,18 +108,14 @@ class DataGenerator(DataGeneratorBase):
             + align64(len_hadamard_reordered // nb)
         )
         # Phase B working set (K-axis TILED, overlays Phase A): FULL partition2_out + per-K-tile B
-        phase_b = align64(len_hadamard_reordered // nb) + align64(len_partition2_out)
-        peak = always_live + max(phase_a, phase_b)
+        # Double-buffered (ping-pong for DMA/compute overlap)
+        phase_a_pp = 2 * phase_a
+        phase_b_pp = 2 * align64(len_hadamard_reordered // nb) + align64(len_partition2_out)
+        peak_pp = always_live + max(phase_a_pp, phase_b_pp)
 
-        untiled = (
-            align64(len_weight1) + align64(len_weight2) + align64(len_in) + align64(len_twiddles)
-            + align64(len_partition1_out) + align64(len_hadamard_out)
-            + align64(len_hadamard_reordered) + align64(len_partition2_out)
-        )
         print(
-            f"// TCDM peak usage (fft-tiled): {peak} B ({peak/1024:.2f} KiB), "
-            f"saves {untiled - peak} B ({(untiled-peak)/1024:.2f} KiB) vs un-tiled fft "
-            f"(was {untiled} B)"
+            f"// TCDM peak (ping-pong): {peak_pp} B ({peak_pp/1024:.2f} KiB)"
+            f"{' *** EXCEEDS 512 KiB ***' if peak_pp > 512*1024 else ''}"
         )
         print(f"// L3 buffers used: hadamard_reordered ({len_hadamard_reordered} B)")
 
@@ -141,9 +137,9 @@ class DataGenerator(DataGeneratorBase):
         # Tile dims
         assert L2 % nb_tiles == 0, f"L2 ({L2}) must be divisible by nb_tiles ({nb_tiles})"
         assert dModel % nb_tiles == 0, f"dModel ({dModel}) must be divisible by nb_tiles ({nb_tiles})"
-        L2_tile = L2 // nb_tiles                 # Phase A tile size along L2
-        dModel_tile = dModel // nb_tiles         # Phase B tile size along dModel
-        L_tile_a = L1 * L2_tile                  # Phase A per-tile sequence length
+        L2_tile = L2 // nb_tiles  # Phase A tile size along L2
+        dModel_tile = dModel // nb_tiles  # Phase B tile size along dModel
+        L_tile_a = L1 * L2_tile  # Phase A per-tile sequence length
 
         M_1 = (2 * L1) // seqLenUnroll
         M_2 = (2 * L2) // seqLenUnroll
@@ -152,11 +148,11 @@ class DataGenerator(DataGeneratorBase):
         # Phase B: K-AXIS tiling (per isgemm-tiled). Each tile consumes K_2_t macros of K_2,
         # accumulating in-place into the FULL partition2_out (R13/W3 hit the same address).
         assert K_2 % nb_tiles == 0, f"K_2 ({K_2}) must be divisible by nb_tiles ({nb_tiles})"
-        K_2_t = K_2 // nb_tiles                  # K macros per Phase B tile invocation
-        dInner_2_tile = K_2_t * dInnerUnroll     # K elements per Phase B tile invocation
+        K_2_t = K_2 // nb_tiles  # K macros per Phase B tile invocation
+        dInner_2_tile = K_2_t * dInnerUnroll  # K elements per Phase B tile invocation
         N_1 = dModel * L2
         N_2 = dModel * L1
-        N_1_tile = dModel * L2_tile              # Phase A: GEMM N axis per tile
+        N_1_tile = dModel * L2_tile  # Phase A: GEMM N axis per tile
 
         assert L1 % seqLenUnroll == 0
         assert L1 * L2 == L
@@ -166,7 +162,6 @@ class DataGenerator(DataGeneratorBase):
         b_in_width = self.kwargs["gemm_weight_width"]
         b_array_width = seqLenUnroll * FP8
         b_downsize_factor = b_in_width / b_array_width
-        downsized_N_1 = int(N_1 / b_downsize_factor)
         downsized_N_2 = int(N_2 / b_downsize_factor)
         downsized_N_1_tile = int(N_1_tile / b_downsize_factor)
         assert downsized_N_1_tile == N_1_tile / b_downsize_factor
@@ -202,25 +197,25 @@ class DataGenerator(DataGeneratorBase):
             # Step 2: hadamard (Phase A, tiled). Operates on per-tile L_tile_a sequence positions.
             #
             "R7_2": (  # SIMD input from per-tile partition1_out tile slot.
-                       # dModel tiling: L stays un-tiled, dModel outer is halved.
+                # dModel tiling: L stays un-tiled, dModel outer is halved.
                 [
-                    2 * L * FP8 // (2 * suc_serial_width_BC),      # inner = un-tiled
-                    dModel_tile,                                    # outer = halved
+                    2 * L * FP8 // (2 * suc_serial_width_BC),  # inner = un-tiled
+                    dModel_tile,  # outer = halved
                 ],
                 [
                     BANK_BYTES,
-                    L * FP8 // 8,                                   # outer stride un-tiled (= 1 d row in [d][l] col-major)
+                    L * FP8 // 8,  # outer stride un-tiled (= 1 d row in [d][l] col-major)
                 ],
                 [
-                    L1 * BANK_BYTES,                                # spatial[0]: 2 matrices in parallel
-                    L * dModel_tile * FP8 // 8,                     # spatial[1]: re/im split (= tile re region size)
+                    L1 * BANK_BYTES,  # spatial[0]: 2 matrices in parallel
+                    L * dModel_tile * FP8 // 8,  # spatial[1]: re/im split (= tile re region size)
                 ],
             ),
             "R13_2": (  # twiddles — un-tiled storage, broadcast across dModel_tile.
-                       # Twiddles only depend on (l1, l2), NOT d, so dModel tiling needs no slicing.
+                # Twiddles only depend on (l1, l2), NOT d, so dModel tiling needs no slicing.
                 [
-                    2 * L * FP8 // (2 * suc_serial_width_BC),      # inner = un-tiled
-                    dModel_tile,                                    # outer = halved
+                    2 * L * FP8 // (2 * suc_serial_width_BC),  # inner = un-tiled
+                    dModel_tile,  # outer = halved
                 ],
                 [4 * BANK_BYTES, 0],
             ),
@@ -257,18 +252,12 @@ class DataGenerator(DataGeneratorBase):
             ),
             #
             # Step 3: partition 2 (Phase B, K-AXIS tiled, accumulating in place).
-            # Mirrors isgemm-tiled. Each tile consumes K_2_t macros of weight2 +
-            # hadamard_reordered, writes R13/W3 back to the same FULL partition2_out
-            # in TCDM (psum accumulates across tiles). Non-final tiles use
-            # M30_ISGEMM_SQ_NO_REQUANT to keep psums in the BF16 accumulator format;
-            # the final tile uses M6_ISGEMM_SQ to apply the requant on the FULL
-            # accumulated psum (= the un-tiled "last K iteration").
             #
             "R11_3": (  # iscore A (weight2) — PER-TILE slice (K-major, contiguous per tile)
                 [(2 * L2 * 2 * L2_padded * FP8 // iscore_serial_width) // nb_tiles],
                 [iscore_serial_width // 8],
             ),
-            "R12_3": (  # iscore B (hadamard_reordered) — PER-TILE K-slice; same TCDM addr
+            "R12_3": (  # iscore B (hadamard_reordered) — PER-TILE K-slice
                 [downsized_N_2, M_2, K_2_t],
                 [
                     b_in_width // 8,
@@ -308,21 +297,21 @@ class DataGenerator(DataGeneratorBase):
         len_hadamard_reordered_tile = len_hadamard_reordered // nb_tiles  # tile total (re + im)
         len_hadamard_reordered_tile_re = len_hadamard_reordered_tile // 2  # tile reals chunk
         # Phase B: K-axis tiled (FULL partition2_out, partial weight2 + hadamard_reordered)
-        len_weight2_ktile           = len_weight2 // nb_tiles                       # per-K-tile A bytes
-        len_hadamard_reordered_ktile = len_hadamard_reordered // nb_tiles            # per-K-tile B bytes
+        len_weight2_ktile = len_weight2 // nb_tiles  # per-K-tile A bytes
+        len_hadamard_reordered_ktile = len_hadamard_reordered // nb_tiles  # per-K-tile B bytes
 
-        # ---- Twiddles: NO relayout for dModel tiling ----
+        # ---- Twiddles: no relayout for dModel tiling ----
         # The FFT twiddles only depend on (l1, l2), not on d. With dModel tiling,
         # all tiles use the SAME twiddle table — just load it un-tiled once.
-        len_twiddles_per_tile_padded = len_twiddles      # = 512 B (un-tiled)
-        len_twiddles_tiled_total     = len_twiddles      # one shared copy in TCDM
+        len_twiddles_per_tile_padded = len_twiddles  # = 512 B (un-tiled)
+        len_twiddles_tiled_total = len_twiddles  # one shared copy in TCDM
 
         # ---- Phase A DMA-out: 1D contiguous into L3 [d][l] col-major. ----
         # `hadamard_reordered` in L3 is `[reals|imags]` each in `[d][l]` col-major
         # (= [d outer, l inner], per `__flattenColMajor` in DataGeneratorFFT).
         # With dModel tiling, tile k contributes d-rows [k*dModel_tile, (k+1)*dModel_tile)
         # — a contiguous chunk of dModel_tile*L bytes per re/im in L3.
-        len_phaseA_dma_per_tile_per_part = dModel_tile * L * FP8 // 8   # = 4096 B for nb=2
+        len_phaseA_dma_per_tile_per_part = dModel_tile * L * FP8 // 8  # = 4096 B for nb=2
 
         # Phase B is K-axis tiled (accumulating into FULL partition2_out in TCDM).
         # Per tile: DMA-in K-slice of hadamard_reordered into the TCDM tile B-slot;

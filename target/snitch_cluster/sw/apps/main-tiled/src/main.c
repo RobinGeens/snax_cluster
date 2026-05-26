@@ -151,6 +151,8 @@ int test_phase1_and_2() {
     uint32_t start_cycles            = 0;
     uint32_t simbacore_cycles_phase1 = 0;
     uint32_t simbacore_cycles_phase2 = 0;
+    static uint32_t _p1_dma_done = 0, _p1_compute_done = 0;
+    static uint32_t _p2_dma_done = 0, _p2_compute_done = 0;
 
     const uint32_t K_i = M1_dInner_tile / dInnerUnroll;  // K-steps per DMA tile (P1, P2 share)
 
@@ -206,6 +208,7 @@ int test_phase1_and_2() {
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
                 simbacore_cycles_phase1 += read_simbacore_perf_counter();
+                if (i == 1) _p1_compute_done = snrt_mcycle();
             } else {
                 if (K_i > 1) {
                     set_streamer_phase1_finalLead((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[cbuf],
@@ -243,7 +246,11 @@ int test_phase1_and_2() {
                               M1_length_conv_out_tile);
         }
 
-        if (snrt_is_dm_core()) snrt_dma_wait_all();
+        if (snrt_is_dm_core()) {
+            snrt_dma_wait_all();
+            if (i == 1) _p1_dma_done = snrt_mcycle();
+        }
+
         snrt_cluster_hw_barrier();
     }
 
@@ -320,6 +327,7 @@ int test_phase1_and_2() {
             while (read_csr(SIMBACORE_BUSY));
             while (read_csr(STREAMER_BUSY_CSR));
             simbacore_cycles_phase2 += read_simbacore_perf_counter();
+            if (i == 1) _p2_compute_done = snrt_mcycle();
 
             // Keep track of liveliness
             // printf("[%u cc] P2 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
@@ -332,7 +340,10 @@ int test_phase1_and_2() {
             snrt_dma_start_1d(ptr_y_l3 + spill_tile * M2_length_y_tile, ptr_y_tile[sbuf], M2_length_y_tile);
         }
 
-        if (snrt_is_dm_core()) snrt_dma_wait_all();
+        if (snrt_is_dm_core()) {
+            snrt_dma_wait_all();
+            if (i == 1) _p2_dma_done = snrt_mcycle();
+        }
         snrt_cluster_hw_barrier();
     }
 
@@ -343,9 +354,11 @@ int test_phase1_and_2() {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore Phase1 (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phase1);
         printf("[%d cc] Simbacore Phase2 (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phase2);
-        printf("[%d cc] Simbacore total elapsed time: %u cycles\n", end_cycles,
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles,
                simbacore_cycles_phase1 + simbacore_cycles_phase2);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("DMA latency hiding: P1=%s, P2=%s\n", _p1_dma_done < _p1_compute_done ? "hidden" : "STALL",
+               _p2_dma_done < _p2_compute_done ? "ok" : "STALL");
 
         // P1 outputs (inputs to P2/SUC) — checking these first isolates whether bad y
         // is caused by bad x (= conv_out) or bad dt+BC (= iscore_out_P1) rather than a SUC bug.
@@ -353,35 +366,6 @@ int test_phase1_and_2() {
                                    nb_test_samples, "P1 conv_out (= P2 x, from L3)");
         err += check_result_sample(ptr_iscore_out_P1_final, M1_iscore_out, M1_test_samples_iscore_out, nb_test_samples,
                                    "P1 iscore_out (= P2 dt+BC)");
-
-        // Full memcmp on P1 conv_out: walks every byte and prints the first 16 mismatches.
-        {
-            uint32_t mismatches = 0;
-            uint32_t conv_len   = seqLen * dInner;  // FP8, 1 byte/elt
-            for (uint32_t i = 0; i < conv_len && mismatches < 16; i++) {
-                uint8_t got = ptr_conv_out_l3[i];
-                uint8_t ref = M1_conv_out[i];
-                if (got != ref && !((got == 0 && ref == 128) || (got == 128 && ref == 0))) {
-                    printf("DBG conv_out[%u] = %d, ref = %d, diff %d\n", i, got, ref, (int)got - (int)ref);
-                    mismatches++;
-                }
-            }
-            printf("DBG conv_out first-16 scan: %u mismatches reported (FP8, total %u bytes)\n", mismatches, conv_len);
-        }
-        // Same for iscore_out_P1_final (the post-transpose buffer that P2 actually consumes).
-        {
-            uint32_t mismatches = 0;
-            uint32_t isc_len    = seqLen * xProjDim * 2;  // BF16
-            for (uint32_t i = 0; i < isc_len && mismatches < 16; i++) {
-                if (ptr_iscore_out_P1_final[i] != M1_iscore_out[i]) {
-                    printf("DBG iscore_out_P1_final[%u] = %d, ref = %d, diff %d\n", i, ptr_iscore_out_P1_final[i],
-                           M1_iscore_out[i], (int)ptr_iscore_out_P1_final[i] - (int)M1_iscore_out[i]);
-                    mismatches++;
-                }
-            }
-            printf("DBG iscore_out_P1_final first-16 scan: %u mismatches reported (BF16 bytes, total %u bytes)\n",
-                   mismatches, isc_len);
-        }
 
         // z and y now live in L3 (P2 spills them per-tile). check_result_sample reads via
         // AXI directly from L3 — slow per-byte, but only 25 samples, so cost is negligible.

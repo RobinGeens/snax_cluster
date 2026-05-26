@@ -58,6 +58,7 @@ int test_osgemm_tiled() {
 
     uint32_t start_cycles           = 0;
     uint32_t simbacore_cycles_total = 0;
+    static uint32_t _dma_done = 0, _compute_done = 0;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: OSGeMM tiled (nb_tiles=%d)\n\n", nb_tiles);
@@ -84,10 +85,8 @@ int test_osgemm_tiled() {
         if (i >= 1 && i < nb_tiles + 1) {
             uint32_t tile = i - 1;
             int buf       = tile % 2;
+
             if (snrt_global_core_idx() == 0) {
-#ifdef VERBOSE
-                printf("[%d cc] Compute tile %u (buf %d)\n", snrt_mcycle(), tile, buf);
-#endif
                 // Only the B and D base pointers vary between tiles; bounds, strides, A's pointer and the simbacore
                 // CSRs are constant and were configured once before the loop.
                 write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_b[buf]);
@@ -95,6 +94,9 @@ int test_osgemm_tiled() {
                 start_simbacore_and_streamers(M3_R10_en, 0, M3_R11_en, 0);
                 wait_simbacore_and_streamer();
                 simbacore_cycles_total += read_simbacore_perf_counter();
+
+                // First iteration: check if time(DMA) < time(compute) for latency hiding
+                if (i == 1) _compute_done = snrt_mcycle();
             }
         }
 
@@ -108,16 +110,21 @@ int test_osgemm_tiled() {
         }
 
         // sync(): wait for all DMAs of this iteration, then cluster barrier.
-        if (snrt_is_dm_core()) snrt_dma_wait_all();
+        if (snrt_is_dm_core()) {
+            snrt_dma_wait_all();
+            // First iteration: check if time(DMA) < time(compute) for latency hiding
+            if (i == 1) _dma_done = snrt_mcycle();
+        }
+
         snrt_cluster_hw_barrier();
     }
 
-    // Verify and report
+    // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
-        printf("[%d cc] Simbacore total elapsed time (sum over tiles): %u cycles\n", end_cycles,
-               simbacore_cycles_total);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("DMA latency hiding: tile=%s\n", _dma_done < _compute_done ? "hidden" : "STALL");
 
         err += check_result_sample(ptr_d_out, M3_D, M3_test_samples_D, nb_test_samples, "out");
 

@@ -80,8 +80,10 @@ int test() {
     uint32_t simbacore_cycles_phaseB = 0;
     uint32_t simbacore_cycles_phaseC = 0;
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: tiled 3-way FFT (nb_tiles_A=%d, nb_tiles_C=%d, L=%d, dModel=%d, "
-               "L1=%d, L2=%d, L3=%d)\n\n", nb_tiles_A, nb_tiles_C, seqLen, dModel, L1, L2, L3);
+        printf(
+            "\nStarting program: tiled 3-way FFT (nb_tiles_A=%d, nb_tiles_C=%d, L=%d, dModel=%d, "
+            "L1=%d, L2=%d, L3=%d)\n\n",
+            nb_tiles_A, nb_tiles_C, seqLen, dModel, L1, L2, L3);
         start_cycles = snrt_mcycle();
     }
 
@@ -225,7 +227,7 @@ int test() {
         snrt_cluster_hw_barrier();
     }
 
-    // ---------- Verify ------------------------------------------------------
+    // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore Phase A (sum over tiles, 3 steps each): %u cycles\n", end_cycles,
@@ -233,6 +235,8 @@ int test() {
         printf("[%d cc] Simbacore Phase B (partition2 + hadamard2 + reorder2): %u cycles\n", end_cycles,
                simbacore_cycles_phaseB);
         printf("[%d cc] Simbacore Phase C (partition3 K-tiles): %u cycles\n", end_cycles, simbacore_cycles_phaseC);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles,
+               simbacore_cycles_phaseA + simbacore_cycles_phaseB + simbacore_cycles_phaseC);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         // Only the final output is verified — intermediate buffers diverge at byte

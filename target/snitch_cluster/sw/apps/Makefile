@@ -15,6 +15,7 @@ SUBDIRS += rmsnorm
 # SUBDIRS += simd
 # SUBDIRS += osgemm-tiled
 # SUBDIRS += isgemm-tiled
+SUBDIRS += is-osgemm-tiled
 # SUBDIRS += fft-tiled
 # SUBDIRS += fft-3way-tiled
 # SUBDIRS += main-full

@@ -1,0 +1,6 @@
+{
+    "seqLen": 32, // M dimension. Must be multiple of seqLenUnroll=16
+    "dModel": 48, // K for oscore, N for iscore. Must satisfy: dModel * 3 % 4 == 0 (downsizer)
+    "dInner": 48, // N for oscore, K for iscore. Tiled dimension. Must be multiple of dInnerUnroll * nb_tiles
+    "nb_tiles": 2
+}

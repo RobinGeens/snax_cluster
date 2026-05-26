@@ -38,9 +38,8 @@ int test_isgemm_tiled() {
 
     // One-time streamer setup. R11/R12 base ptrs are rewritten per tile.
     if (snrt_global_core_idx() == 0) {
-        set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts,
-                                (uint32_t)ptr_b[0], M4_R12_ss, M4_R12_tb, M4_R12_ts,
-                                (uint32_t)ptr_cd, M4_W3_ss, M4_W3_tb, M4_W3_ts);
+        set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts, (uint32_t)ptr_b[0], M4_R12_ss,
+                                M4_R12_tb, M4_R12_ts, (uint32_t)ptr_cd, M4_W3_ss, M4_W3_tb, M4_W3_ts);
         set_simbacore_csr(M4_ISGEMM, dim0, 1, M4_dInner_tile, 1, dim2);
     }
 
@@ -48,6 +47,7 @@ int test_isgemm_tiled() {
 
     uint32_t start_cycles           = 0;
     uint32_t simbacore_cycles_total = 0;
+    static uint32_t _dma_done = 0, _compute_done = 0;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: ISGeMM tiled (nb_tiles=%d)\n\n", nb_tiles);
@@ -69,28 +69,29 @@ int test_isgemm_tiled() {
             uint32_t tile = i - 1;
             int cbuf      = tile % 2;
             if (snrt_global_core_idx() == 0) {
-#ifdef VERBOSE
-                printf("[%d cc] Compute tile %u (buf %d)\n", snrt_mcycle(), tile, cbuf);
-#endif
                 write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_a[cbuf]);
                 write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_b[cbuf]);
                 write_csr(MODE, (tile == nb_tiles - 1) ? M4_ISGEMM : M5_ISGEMM_NO_REQUANT);
                 start_simbacore_and_streamers(M4_R10_en, 0, M4_R11_en, 0);
                 wait_simbacore_and_streamer();
                 simbacore_cycles_total += read_simbacore_perf_counter();
+                if (i == 1) _compute_done = snrt_mcycle();
             }
         }
 
-        if (snrt_is_dm_core()) snrt_dma_wait_all();
+        if (snrt_is_dm_core()) {
+            snrt_dma_wait_all();
+            if (i == 1) _dma_done = snrt_mcycle();
+        }
         snrt_cluster_hw_barrier();
     }
 
-    // Verify and report
+    // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
-        printf("[%d cc] Simbacore total elapsed time (sum over tiles): %u cycles\n", end_cycles,
-               simbacore_cycles_total);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("DMA latency hiding: tile=%s\n", _dma_done < _compute_done ? "ok" : "STALL");
 
         err += check_result_sample((uint8_t*)ptr_cd, M4_D, M4_test_samples_D, nb_test_samples, "out");
 

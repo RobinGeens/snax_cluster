@@ -59,3 +59,73 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+---
+
+## 5. Building
+
+All commands from `target/snitch_cluster/`
+
+**Podman shorthand** (used for RTL gen and SW compilation):
+```bash
+POD="podman run --rm -i -v $(pwd):$(pwd) -w $(pwd) ghcr.io/kuleuven-micas/snax:main"
+```
+
+### Day-to-day: rebuild one app and simulate
+
+After editing C source or `params_in.hjson`:
+```bash
+$POD make -C sw/apps/<app_name>              # rebuild single app (in container)
+./bin/snitch_cluster.vsim sw/apps/<app_name>/build/<app_name>.elf |& tee tmp-<app_name>.log
+```
+This only recompiles the changed app (+ re-runs datagen if params changed). Takes seconds.
+
+### Rebuild all SW
+
+```bash
+$POD make $CFG sw                            # rebuild all enabled apps (in container)
+```
+
+### Rebuild vsim (after unwanted `make clean`)
+
+```bash
+$POD make $CFG rtl-gen                       # regenerate RTL wrappers (in container)
+$POD make $CFG vsim_preparation              # rebuild fesvr + bootdata (in container)
+make $CFG bin/snitch_cluster.vsim            # recompile Questasim simulator (on host, needs license)
+```
+
+### Full build from scratch
+
+Only needed on a fresh clone or after `make clean`:
+```bash
+# From repo root:
+./scripts/build_sim.sh          # clean + RTL + SW + vsim (slow, uses podman)
+```
+
+**Active apps** are listed in `sw/apps/Makefile` (`SUBDIRS`). Commented-out entries are disabled.
+
+## 6. Running Simulations
+
+Always redirect to `tmp-<name>.log` so the output can be followed with `tail -f`:
+
+```bash
+./bin/snitch_cluster.vsim sw/apps/<app_name>/build/<app_name>.elf |& tee tmp-<app_name>.log
+```
+
+- `exit code = 0` at the end of the log = PASS.
+- Waveforms: `vsim.wlf`. Per-hart traces: `logs/trace_chip_*_hart_*.dasm`.
+
+## 7. chisel-ssm
+
+Bender dependency declared in `Bender.yml`, local checkout at `/esat/micas-lapserv11/users/rgeens/chisel-ssm`. Resolved by `bender path chisel-ssm`.
+
+**Contents:**
+- Scala data generators producing golden test data per app — invoked via sbt from `sw/apps/common-datagen.mk`
+- Generated data: `chisel-ssm/generated/data/<app_name>/`
+- Memory layout docs: `chisel-ssm/docs/memory_layouts/`
+
+**Datagen flow** (runs automatically during app SW build):
+1. `common-datagen.mk` checks `.datagen_cache/` for cached sbt output (keyed on L, D params)
+2. Cache miss → runs `sbt "test:runMain <GeneratorClass> <args>"` inside chisel-ssm
+3. Python `datagen.py` reads sbt output + `params_in.hjson` → produces `data.h`
+
