@@ -185,7 +185,7 @@ int test_ss2d_tiled() {
                 write_csr(SIMBACORE_START, 0);
                 if (!is_final_tile) {
                     uint32_t next_tile = tile + 1;
-                    int nbuf = next_tile % 2;
+                    int nbuf           = next_tile % 2;
                     write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P1[nbuf]);
                     write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_conv_weight[nbuf]);
                     write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[nbuf]);
@@ -444,8 +444,8 @@ int test_ss2d_tiled() {
         printf("[%u cc] Simbacore elapsed time: %u cycles\n", end_cycles,
                p1_cycles + p2_cycles + merge_cycles + rms_cycles);
         printf("[%u cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
-        printf("DMA latency hiding: P1=%s, P2=%s\n", _p1_dma_done < _p1_compute_done ? "hidden" : "STALL",
-               _p2_dma_done < _p2_compute_done ? "hidden" : "STALL");
+        printf("DMA latency hiding: P1=%s, P2=%s\n", _p1_dma_done < _p1_compute_done ? "ok" : "STALL",
+               _p2_dma_done < _p2_compute_done ? "ok" : "STALL");
         printf("Test VMamba SS2D tiled: H=%d, W=%d, dModel=%d, K=%d, nb_tiles=%d\n", H, W, dModel, K, nb_tiles);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 2 * nb_test_samples);
     }

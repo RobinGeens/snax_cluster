@@ -1,0 +1,10 @@
+{
+    // N-tiled iscore_out version of main-tiled.
+    // nb_n_tiles: tiles the IS-core output dimension (xProjDim for P1, dModel for P2).
+    // Must divide both xProjDim and dModel.
+    "seqLen": 64,
+    "dModel": 96,
+    "dtRank": 24,
+    "nb_tiles": 8,
+    "nb_n_tiles": 2
+}

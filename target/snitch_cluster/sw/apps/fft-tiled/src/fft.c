@@ -238,7 +238,7 @@ int test() {
                simbacore_cycles_phaseA);
         printf("[%d cc] Simbacore Phase B (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phaseB);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
-        printf("DMA latency hiding: phaseA=%s\n", _dma_done < _compute_done ? "hidden" : "STALL");
+        printf("DMA latency hiding: phaseA=%s\n", _dma_done < _compute_done ? "ok" : "STALL");
 
         err += check_result_sample(ptr_hadamard_reordered_l3, M6_hadamard_reordered, M6_test_samples_expected,
                                    nb_test_samples, "hadamard_reordered (L3)");

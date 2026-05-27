@@ -307,7 +307,7 @@ int test_phase1_and_2() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles,
                simbacore_cycles_phase1 + simbacore_cycles_phase2);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
-        printf("DMA latency hiding: P1=%s, P2=%s\n", _p1_dma_done < _p1_compute_done ? "hidden" : "STALL",
+        printf("DMA latency hiding: P1=%s, P2=%s\n", _p1_dma_done < _p1_compute_done ? "ok" : "STALL",
                _p2_dma_done < _p2_compute_done ? "ok" : "STALL");
 
         // P1 outputs (inputs to P2/SUC) — checking these first isolates whether bad y

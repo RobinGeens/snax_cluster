@@ -7,7 +7,7 @@
 SUBDIRS  = nop
 SUBDIRS += main
 SUBDIRS += vmamba
-SUBDIRS += vmamba-tiled
+# SUBDIRS += vmamba-tiled
 SUBDIRS += fft
 # SUBDIRS += fft-3way
 # SUBDIRS += osgemm
@@ -22,6 +22,7 @@ SUBDIRS += fft-tiled
 # SUBDIRS += main-full
 # SUBDIRS += einfft
 SUBDIRS += einfft-tiled
+SUBDIRS += main-tiled-v2
 SUBDIRS += main-tiled
 # SUBDIRS += streamer-burner
 # SUBDIRS += core-burner

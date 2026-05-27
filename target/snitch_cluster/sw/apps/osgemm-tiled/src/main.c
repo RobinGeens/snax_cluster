@@ -124,7 +124,7 @@ int test_osgemm_tiled() {
         uint32_t end_cycles = snrt_mcycle();
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
-        printf("DMA latency hiding: tile=%s\n", _dma_done < _compute_done ? "hidden" : "STALL");
+        printf("DMA latency hiding: tile=%s\n", _dma_done < _compute_done ? "ok" : "STALL");
 
         err += check_result_sample(ptr_d_out, M3_D, M3_test_samples_D, nb_test_samples, "out");
 
