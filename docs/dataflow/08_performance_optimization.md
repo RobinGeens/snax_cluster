@@ -1,5 +1,16 @@
 # Performance optimization techniques for tiled Snitch+SimbaCore programs
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> **8. Performance optimization (this page)**
+
 SW-level techniques for reducing Snitch elapsed time (wall-clock cycles) in
 tiled programs that pipeline DMA transfers with SimbaCore kernel invocations.
 

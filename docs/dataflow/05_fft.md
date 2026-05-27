@@ -1,5 +1,16 @@
 # 5. FFT family: `fft`, `fft-tiled`, `fft-3way`, `fft-3way-tiled`
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> **5. FFT family (this page)** ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md)
+
 > Byte layouts (weights, twiddles, intermediates, the `[d][l]`-col-major
 > reorder output): [memory_layouts/09](../../../chisel-ssm/docs/memory_layouts/09_fft.md).
 

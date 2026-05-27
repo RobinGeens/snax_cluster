@@ -1,5 +1,16 @@
 # 7. VMamba SS2D: `vmamba`, `vmamba-tiled`
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> **7. VMamba SS2D (this page)** ·
+> [8. Performance optimization](08_performance_optimization.md)
+
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),
 > [03 — ConvFormat](../../../chisel-ssm/docs/memory_layouts/03_conv_format.md),

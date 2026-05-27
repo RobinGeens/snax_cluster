@@ -1,5 +1,16 @@
 # 6. EinFFT MLP: `einfft` and `einfft-tiled`
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> **6. EinFFT MLP (this page)** ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md)
+
 > Byte layouts of A, B, D for the OS-core:
 > [memory_layouts/02](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)
 > and [03 — ConvFormat](../../../chisel-ssm/docs/memory_layouts/03_conv_format.md).

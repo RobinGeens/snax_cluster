@@ -115,7 +115,32 @@ Always redirect to `tmp-<name>.log` so the output can be followed with `tail -f`
 - `exit code = 0` at the end of the log = PASS.
 - Waveforms: `vsim.wlf`. Per-hart traces: `logs/trace_chip_*_hart_*.dasm`.
 
-## 7. chisel-ssm
+## 7. Changing Apps — Test Small, Debug Until Pass
+
+**Whenever you change app source, params, or datagen: shrink parameters, run the sim, fix failures, repeat.**
+
+Do not hand off untested changes or wait for the user to run sims. Loop locally the errors are reduced to quantization noise.
+
+### 1. Use small parameters first
+
+Edit `sw/apps/<app_name>/data/params_in.hjson` to the smallest meaningful case. Goal: fast rebuild + fast sim, not full benchmark size.
+
+### 2. Rebuild and simulate after every meaningful change
+
+```bash
+$POD make -C sw/apps/<app_name>
+./bin/snitch_cluster.vsim sw/apps/<app_name>/build/<app_name>.elf |& tee tmp-<app_name>.log
+```
+
+### 3. Debug on the go
+
+On failure, inspect `tmp-<app_name>.log` (and traces under `logs/` if needed), fix the root cause, rebuild, and re-run. Repeat until PASS.
+
+### 4. Done when verified
+
+Success = small-params sim passes with your changes. Mention any param values you temporarily reduced so the user can scale up if needed.
+
+## 8. chisel-ssm
 
 Bender dependency declared in `Bender.yml`, local checkout at `/esat/micas-lapserv11/users/rgeens/chisel-ssm`. Resolved by `bender path chisel-ssm`.
 

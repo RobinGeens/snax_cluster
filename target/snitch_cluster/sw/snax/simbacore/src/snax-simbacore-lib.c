@@ -262,7 +262,7 @@ void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_
     write_csr(T_BOUND_BASE_WRITER_1, 0);
     write_csr(T_BOUND_BASE_WRITER_2, 0);
 
-    // Fully initialize R13 to a safe disabled state. When this function is
+    // Fully initialize R13 to a safe disabled state
     // The stride-zero bug forces bound=1 when stride=0, so all strides must be non-zero to keep R13 truly disabled.
     write_csr(S_STRIDE_BASE_READER_13, 1);
     write_csr(T_BOUND_BASE_READER_13 + 0, 0);

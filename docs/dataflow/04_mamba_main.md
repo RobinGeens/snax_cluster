@@ -1,5 +1,16 @@
 # 4. Mamba main: `main`, `main-tiled`, `main-full`, `suc-only`
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> **4. Mamba main (this page)** ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md)
+
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),
 > [04 — SUCFormat](../../../chisel-ssm/docs/memory_layouts/04_suc_format.md),
@@ -70,11 +81,11 @@ mode, final tile applies the requant — same trick as `isgemm-tiled`).
 Phase 1 completes fully, then Phase 2 starts. Phase 2 reuses Phase 1's
 ping-pong region for its own ping-pong, since Phase 1 is done with it.
 
-| Lifecycle                       | Phase 1 tensors                                              | Phase 2 tensors                                                                                |
-| ------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **shared / FULL**               | `oscore_in`, `iscore_out_P1_psum`, `iscore_out_P1_final`     | `oscore_in`, `dt_in` (= P1 `iscore_out_P1_final`), `iscore_out_P2`                             |
-| **tile-sized in TCDM, FULL in L3** | `conv_out`                                                | `x` (= P1 `conv_out`), `z`, `y`                                                                |
-| **tiled, ping-pong**            | `oscore_weight`, `conv_weight`, `conv_bias`, `iscore_weight` | `oscore_weight`, `dt_weight_1`, `dt_weight_2`, `dt_bias`, SU-core `A` and `D`, `iscore_weight` |
+| Lifecycle                          | Phase 1 tensors                                              | Phase 2 tensors                                                                                |
+| -------------------------------    | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **shared / FULL**                  | `oscore_in`, `iscore_out_P1`                                 | `oscore_in`, `dt_in` (= P1 `iscore_out_P1`), `iscore_out_P2`                                   |
+| **tile-sized in TCDM, FULL in L3** | `conv_out`                                                   | `x` (= P1 `conv_out`), `z`, `y`                                                                |
+| **tiled, ping-pong**               | `oscore_weight`, `conv_weight`, `conv_bias`, `iscore_weight` | `oscore_weight`, `dt_weight_1`, `dt_weight_2`, `dt_bias`, SU-core `A` and `D`, `iscore_weight` |
 
 ### Memory-saving tricks
 
@@ -85,44 +96,34 @@ ping-pong region for its own ping-pong, since Phase 1 is done with it.
 - **`z` and `y` staged through L3.** Tile-sized ping-pong in TCDM (W0/W2
   write, R10/R11 read within the same P2 kernel call), then DMA'd out to L3
   after the kernel. Verification reads from L3.
-- **`iscore_out_P1_psum` overlays `iscore_out_P2`.** The P1 psum buffer is
-  dead after P1's final K-tile (R13/W3 switch to `iscore_out_P1_final` on the
-  last tile); `iscore_out_P2` is only used in P2. They never coexist, so they
-  share one address. Saves `min(length_iscore_P1, length_iscore_P2)` bytes.
-- **`iscore_out_P1_final` is a separate FULL buffer.** Required by the
-  K-tile + TRANSPOSE-final fix (see `main_tiled_p1_split_buffer_fix` memory).
-  `iscore_out_P1_psum` holds the standard-layout BF16 psum accumulating
-  across K (R13 reads, W3 writes on non-final tiles, no-requant mode).
-  `iscore_out_P1_final` receives the final tile's W3 in TRANSPOSE mode and
-  holds the requantized output in the bank-transposed layout that P2's R2/R7
-  `dt`+`BC` readers expect. Without the split, the final tile's transposed
-  W3 writes element (m,n) to byte F(n,m) and would otherwise clobber
-  `psum_partial(n,m)` before IS-core reads it.
 
-**Kernel-call layout.** `datagen.py` emits four streamer
-bound configurations:
+**Why `iscore_out_P1` uses a single buffer (no psum/final split).**
+The BankTransposer is gated on `isCoreOutIsFinal`
+([MambaCore.scala:370](../../../chisel-ssm/src/main/scala/mambacore/MambaCore.scala#L370)):
+intermediate K-steps accumulate in standard layout, and the transposer
+only fires on the hardware's internal final K-step. This is the same
+mechanism the untiled `main` program relies on. Within a single
+`M1_PHASE1` invocation with K_i K-steps, the first K_i-1 steps
+write standard-layout psums via W3 and the last step writes the
+transposed+requantized output — so R13 and W3 can safely share one
+buffer.
+
+**Kernel-call layout.** `datagen.py` emits two streamer bound
+configurations (one per phase):
 
 | Config | K-steps per kernel | Mode | W3 destination | Used for |
 |---|---|---|---|---|
-| **P1 bulk** (`M1_R*_tb`) | `K_i` | `M28_PHASE1_NO_REQUANT` | `iscore_out_P1_psum` | non-final P1 tiles (×`nb_tiles-1`) |
-| **P1 finalLead** (`M1_R*_tb_finalLead`) | `K_i-1` | `M28_PHASE1_NO_REQUANT` | `iscore_out_P1_psum` | final-tile lead (only if `K_i>1`) |
-| **P1 finalStep** (`M1_R*_tb_finalStep`) | `1` | `M1_PHASE1` (transpose+requant) | `iscore_out_P1_final` | absolute-final K-step |
+| **P1 tile** (`M1_R*_tb`) | `K_i` | `M28_PHASE1_NO_REQUANT` / `M1_PHASE1` | `iscore_out_P1` | every P1 tile (mode flips for the final tile) |
 | **P2 tile** (`M2_R*_tb`) | `K_i` | `M29_PHASE2_NO_REQUANT` / `M2_PHASE2` | `iscore_out_P2` | every P2 tile (mode flips for the final tile) |
 
-Total kernel calls per phase: P1 = `nb_tiles + (K_i>1 ? 1 : 0)`, P2 = `nb_tiles`.
-P1's finalStep ALWAYS runs (it carries the requant+transpose); finalLead only
-runs when `K_i>1`. P2 needs no split because PHASE2 doesn't transpose, so HW's
-`isCoreOutIsFinal` gate cleanly applies requant to just the last K-step.
-
-R13 (psum reader) always points at `iscore_out_P1_psum`; W3 redirects to
-`iscore_out_P1_final` only on finalStep. The finalStep streamer base pointers
-along the K axis (R1/R3/R4/R12/W1) advance by `(K_i-1) × M1_<streamer>_K_step_delta`
-so the kernel reads the LAST K-step's slice of weights/conv_out.
+Total kernel calls per phase: P1 = `nb_tiles`, P2 = `nb_tiles`.
+Both phases follow the same pattern: non-final tiles run in NO_REQUANT
+mode, the final tile writes `MODE = M*_PHASE*` before starting. HW's
+`isCoreOutIsFinal` gate applies requant (and bank-transpose in P1) to
+just the last K-step of the final tile's invocation.
 
 `nb_tiles` is a free choice (must divide `dInner / dInnerUnroll`), trading off
-DMA-tile size against kernel-launch overhead. Smaller `nb_tiles` → larger DMA
-tiles → fewer kernel launches. Per-K-step bumps come from `M*_<streamer>_K_step_delta`
-scalars emitted by `datagen.py`.
+DMA-tile size against kernel-launch overhead.
 
 ### Possible further tricks (not yet implemented)
 
@@ -137,3 +138,34 @@ output `z` is preloaded from the golden reference instead of being produced
 upstream; the IS-core stage is disabled. Used to demonstrate the bank-
 conflict throughput hit when the `BC` operand is given an incorrect spatial
 stride.
+
+## Enabling large seqLen
+
+`main-tiled` cannot be expanded to large seqLen because it assumes `iscore_out_P1` (size `L*xProjDim`) and `iscore_out_P2` (size `L*dModel`) remain in TCDM.
+
+To mitigate this, we have 3 options:
+
+1. Split P1 and P2 in half over seqLen. However, this is completely impossible because it requires the intermediate SSM 
+states to be read out and restored during the second half. P1 and P2 must always be fully completed.
+
+2. Tile the IS-core output dimension (xProjDim). However, since this tensor is a BF16 psum, we need to load all 
+xProjDim-tiles in and out for every psum accumulation iteration (K in total). The full tensor needs to be transferred 2*K times.
+Since xProjDim is small, it should be possible to fully hide this latency by overlapping it with compute.
+A second complication is that in `main-tiled`, IS-core bank-transposes its output (via the BankTransposer on the final K-step).
+If we tile in xProjDim, the bank-transpose still works within each tile, but the downstream consumer must
+handle per-tile transposed chunks. Implemented in `main-tiled-dtRank`
+
+3. Tile the whole P1 in seqLen. This simply means we do the full P1 kernel call for every seqLen tile. The downside is that
+we loose the weight-reuse on the projection weight matrices, and we need to load in the full weight matrices for every seqLen tile.
+This costs extra energy, but the latency should be manageable by overlapping it with compute. The same bank-transpose complication applies here.
+To be implemented in `main-tiled-seqLen`.
+
+
+## `main-tiled-dtRank`
+
+Tiles `iscore_out_P1` in xProjDim.
+
+## `main-tiled-seqLen`
+
+Not implemented yet
+

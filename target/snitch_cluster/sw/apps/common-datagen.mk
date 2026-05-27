@@ -59,7 +59,7 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 	if [ -f "$$CACHED" ]; then \
 		echo "[DATAGEN CACHE] Hit ($(APP_NAME)) — restoring sbt output"; \
 		mkdir -p "$(SBT_GEN_DIR)"; \
-		tar xf "$$CACHED" -C "$(SBT_GEN_DIR)"; \
+		tar xf "$$CACHED" --no-same-owner -C "$(SBT_GEN_DIR)"; \
 	else \
 		echo "[DATAGEN CACHE] Miss ($(APP_NAME)) — running sbt"; \
 		echo "  Scala $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \

@@ -26,7 +26,8 @@ Bender.lock
 !bootrom.bin
 
 simbacore-work
-target/snitch_cluster/sw/apps/snax-simbacore/data/params.hjson
+memory_report.txt
+
 # Keep track of these generated files
 !simbacore-work/flist.tcl
 !target/snitch_cluster/generated/snax_simbacore

@@ -54,7 +54,17 @@ class DataGenerator(MainTiledDataGenerator):
         self._build_Phase1_tiled_streamers()
         self._build_Phase2_tiled_streamers()
         self._build_vmamba_test_data()
-        self.emit_l1_usage_comment()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     # =========================================================================
     # Phase 1 — tiled streamer configs (reuses main-tiled's _build_p1_streamers)
@@ -66,14 +76,6 @@ class DataGenerator(MainTiledDataGenerator):
 
         K_i = self.dInner_tile // self.dInnerUnroll
         streamers_bulk = self._build_p1_streamers(K_i)
-
-        K_step_deltas = {
-            "R1_K_step_delta": self.downsized_dModel * self.gemm_weight_width // 8,
-            "R3_K_step_delta": self.dConv * self.dInnerUnroll * FP8 // 8,
-            "R4_K_step_delta": self.dInnerUnroll * FP8 // 8,
-            "R12_K_step_delta": self.downsized_xProjDim * self.gemm_weight_width // 8,
-            "W1_K_step_delta": self.seqLen * self.dInnerUnroll * FP8 // 8,
-        }
 
         nb = self.nb_tiles
         len_oscore_in = self.seqLen * self.dModel * FP8 // 8
@@ -106,13 +108,10 @@ class DataGenerator(MainTiledDataGenerator):
             "length_conv_out_tile": len_conv_out // nb,
             "length_iscore_weight_tile": len_iscore_weight // nb,
         }
-        scalars = {**lengths, **deltas, **tile_scalars, **K_step_deltas}
+        scalars = {**lengths, **deltas, **tile_scalars}
         self.phase1_scalars = scalars.copy()
 
         self.build_mode(mode_id, streamers_bulk, scalars=scalars, test_data={}, tests={})
-
-        self._emit_alt_bounds(mode_id, self._build_p1_streamers(max(K_i - 1, 0)), "finalLead")
-        self._emit_alt_bounds(mode_id, self._build_p1_streamers(1), "finalStep")
 
         mid = DATA_MODE_ID
         for name in ("oscore_weight", "conv_weight", "conv_bias"):

@@ -44,7 +44,17 @@ class DataGenerator(MainDataGenerator):
         self._build_Phase2_streamers_only()
         # Emit per-direction VMamba test data
         self._build_vmamba_test_data()
-        self.emit_l1_usage_comment()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     def _build_Phase1_streamers_only(self):
         """Same as main's build_Phase1_data but emits only streamers + scalars, no test_data."""

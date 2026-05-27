@@ -234,9 +234,6 @@ int test_phase1_and_2() {
         //                            nb_test_samples, "P1: iscore_out");
     }
 
-    // Disable to transfer to L1 in parallel with Phase1 computation
-    // snrt_cluster_hw_barrier();
-
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_oscore_weight_P2, M2_oscore_weight, M2_length_oscore_weight);
         snrt_dma_start_1d(ptr_dt_weight_1, M2_dt_weight_1, M2_length_dt_weight_1);

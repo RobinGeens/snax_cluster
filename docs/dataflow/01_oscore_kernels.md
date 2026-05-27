@@ -1,5 +1,16 @@
 # 1. OS-core kernels: `osgemm` and `osgemm-tiled`
 
+> **All pages:**
+> [README](README.md) ·
+> **1. OS-core kernels (this page)** ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md)
+
 > Byte layouts of A, B, D: [memory_layouts/02](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md).
 
 The OS-core computes `D = A · B` with no input bias. The output lands in

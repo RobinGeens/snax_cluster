@@ -56,7 +56,7 @@ int test() {
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
 
-    // ---------- Preload always-live small inputs: weights + twiddles ----
+    // Preload always-live small inputs: weights + twiddles
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_weight1, M6_dft_weight1, M6_length_weight1);
         snrt_dma_start_1d(ptr_weight2, M6_dft_weight2, M6_length_weight2);
@@ -124,6 +124,11 @@ int test() {
                 set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts,
                                         (uint32_t)ptr_in_tile[0], M6_R12_1_ss, M6_R12_1_tb, M6_R12_1_ts,
                                         (uint32_t)ptr_partition1_out_tile[0], M6_W3_1_ss, M6_W3_1_tb, M6_W3_1_ts);
+                write_csr(SEQ_LEN, 2 * L1);
+                write_csr(D_MODEL, 1);
+                write_csr(D_INNER, L1_padded);
+                write_csr(DT_RANK, 1);
+                write_csr(D_FINAL, M6_N_1_tile);
             }
             write_csr(MODE, M7_ISGEMM_SQ_TRANSPOSE);
             _set_streamer_start();

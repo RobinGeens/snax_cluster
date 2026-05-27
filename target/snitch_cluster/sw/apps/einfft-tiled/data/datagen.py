@@ -80,18 +80,28 @@ class DataGenerator(DataGeneratorBase):
                         for c in range(conv_unroll):
                             yield l2 * Mu + l1, d3 * Nu + d2 * conv_unroll + c
 
-    def _expand_bias_conv_order(self, bias_flat: list[int], nBranches: int, L: int, dPerB: int,
-                                Mu: int, Nu: int, conv_unroll: int) -> list[int]:
-        """Per (branch, conv-walk position t over the full (L, dPerB) tensor),
-        emit `bias[branch][col(t)]`. The SIMD ADD step's R13 walks this linearly
-        alongside the full per-branch bf16_a buffer."""
+    def _semi_expand_bias(self, bias_flat: list[int], nBranches: int, dPerB: int,
+                          seqLen: int, Mu: int, Nu: int, conv_unroll: int) -> list[int]:
+        """Semi-expand bias: repeat each conv_unroll-wide column group
+        (16/conv_unroll) times per BF16 cycle, and duplicate d2 groups L/Mu
+        times per d3 block so R13 walks flat (no negative stride).
+        Size: (dPerB/Nu)*(L/Mu)*(Nu/cu)*32 bytes/branch."""
+        repeat = 16 // conv_unroll
+        groups_per_d3 = Nu // conv_unroll
+        n_d3 = dPerB // Nu
+        l2_count = seqLen // Mu
         assert len(bias_flat) == nBranches * dPerB
         out: list[int] = []
         for branch in range(nBranches):
-            branch_bias = bias_flat[branch * dPerB:(branch + 1) * dPerB]
-            for _, col in self._conv_walk_indices(L, dPerB, Mu, Nu, conv_unroll):
-                out.append(branch_bias[col])
-        assert len(out) == nBranches * L * dPerB
+            bb = bias_flat[branch * dPerB:(branch + 1) * dPerB]
+            for d3 in range(n_d3):
+                for _ in range(l2_count):
+                    for d2 in range(groups_per_d3):
+                        g = d3 * groups_per_d3 + d2
+                        group = bb[g * conv_unroll:(g + 1) * conv_unroll]
+                        out.extend(group * repeat)
+        expected = nBranches * n_d3 * l2_count * groups_per_d3 * 16
+        assert len(out) == expected, f"{len(out)} != {expected}"
         return out
 
     def build_einfft_data(self):
@@ -162,11 +172,27 @@ class DataGenerator(DataGeneratorBase):
         n_fp8_cycles  = n_elems_full // 32
         n_bf16_cycles = n_elems_full // 16
 
+        # R13 bias: 4-dim walk over mini-expanded bias (768 B/branch at dPerB=96).
+        # dim0: l1-block repeat (stride=0 → Reader repeater handles it)
+        # dim1: l2 repeat (stride=0 → AGU natively stays; NOT innermost, no workaround)
+        # dim2: d2 group advance
+        # dim3: d3 block advance
+        groups_per_d3 = Nu // conv_unroll       # 6
+        group_bytes = 16 * BF16 // 8            # 32
+        l2_count = seqLen // Mu
+        dim1_bound = l2_count * groups_per_d3
+        r13_bias_tb = [Mu // (16 // conv_unroll),  # 4: l1-block repeat (repeater)
+                       dim1_bound,                  # l2*d2 flat walk within d3
+                       dPerB // Nu,                 # 4: d3 blocks
+                       1]
+        r13_bias_ts = [0, group_bytes, dim1_bound * group_bytes, 0]
+
         simd_streamers = {
             "R7_widen": ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "W3_widen": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "R7_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "R13_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
+            "R13_bias": (r13_bias_tb, r13_bias_ts, [BANK_BYTES]),
             "W3_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "W3_fp8":   ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
         }
@@ -183,12 +209,12 @@ class DataGenerator(DataGeneratorBase):
         len_d_tile      = seqLen * dPerB_t * FP8 // 8     # one per-tile OS-core scratch slot
         len_d_branch    = len_out_branch                  # FULL per-branch scratch (= sum of tiles)
         len_bf16        = n_elems_full * BF16 // 8        # FULL per-branch BF16 staging
-        len_bias_bcast_branch = n_elems_full * BF16 // 8  # FULL per-branch bias broadcast
+        len_bias_mini_branch = (dPerB // Nu) * l2_count * groups_per_d3 * 16 * BF16 // 8
 
         len_x          = nBranches * len_x_branch
         len_w          = nBranches * len_w_branch
         len_bias       = nBranches * len_bias_branch
-        len_bias_bcast = nBranches * len_bias_bcast_branch
+        len_bias_mini  = nBranches * len_bias_mini_branch
         len_out        = nBranches * len_out_branch
 
         # ---- TCDM footprint sanity check --------------------------------------
@@ -200,8 +226,8 @@ class DataGenerator(DataGeneratorBase):
 
         per_branch_resident = (
             _align64(len_x_branch) * 2 +                    # x_re_b + x_im_b
-            _align64(len_bias_bcast_branch) * 2 +           # b_re_bc_b + b_im_bc_b
-            _align64(len_out_branch) * 2 +                  # out_re_b + out_im_b
+            _align64(len_bias_mini_branch) * 2 * 2 +        # b_re_pp[2] + b_im_pp[2]
+            _align64(len_out_branch) * 2 * 2 +              # out_re_pp[2] + out_im_pp[2]
             _align64(len_w_branch_tile) * 2 * 2 +           # W_re_pp[2] + W_im_pp[2]
             _align64(len_out_branch) * 4 +                  # rr, ii, ri, ir (FULL per branch)
             _align64(len_bf16) * 2                          # bf16_a, bf16_b
@@ -212,9 +238,9 @@ class DataGenerator(DataGeneratorBase):
         )
         print(f"// einfft-tiled L1 usage (per-branch resident): {total_l1_bytes} B")
 
-        # ---- Pre-expand bias per branch in FULL conv-walk order --------------
+        # ---- Mini-expand bias per branch for streamer reuse -------------------
         bias_names = ("bias_1_real", "bias_1_imag", "bias_2_real", "bias_2_imag")
-        bias_expanded: dict[str, list[int]] = {}
+        bias_mini: dict[str, list[int]] = {}
         for name in bias_names:
             try:
                 flat = self._read_data_int(f"M{mode_id}_{name}.bin")
@@ -222,9 +248,7 @@ class DataGenerator(DataGeneratorBase):
                 raise RuntimeError(
                     f"Missing chisel-ssm output for {name}: {e}. Run the scala data generator first."
                 )
-            bias_expanded[name] = self._expand_bias_conv_order(
-                flat, nBranches, seqLen, dPerB, Mu, Nu, conv_unroll
-            )
+            bias_mini[name] = self._semi_expand_bias(flat, nBranches, dPerB, seqLen, Mu, Nu, conv_unroll)
 
         # ---- Specs ------------------------------------------------------------
         specs = [
@@ -236,10 +260,10 @@ class DataGenerator(DataGeneratorBase):
             ("weight_1_imag", len_w),
             ("weight_2_real", len_w),
             ("weight_2_imag", len_w),
-            ("bias_1_real_bcast", len_bias_bcast),
-            ("bias_1_imag_bcast", len_bias_bcast),
-            ("bias_2_real_bcast", len_bias_bcast),
-            ("bias_2_imag_bcast", len_bias_bcast),
+            ("bias_1_real_mini", len_bias_mini),
+            ("bias_1_imag_mini", len_bias_mini),
+            ("bias_2_real_mini", len_bias_mini),
+            ("bias_2_imag_mini", len_bias_mini),
             ("output_1_real", len_out),
             ("output_1_imag", len_out),
             ("output_2_real", len_out),
@@ -259,7 +283,7 @@ class DataGenerator(DataGeneratorBase):
             "length_w_branch_tile":      len_w_branch_tile,
             "length_d_tile":             len_d_tile,
             "length_bf16":               len_bf16,
-            "length_bias_bcast_branch": len_bias_bcast_branch,
+            "length_bias_mini_branch":  len_bias_mini_branch,
             "SIMD_ADD_BF16_RELU":        _simd_add_bf16_relu_mode(),
         }
 
@@ -291,7 +315,7 @@ class DataGenerator(DataGeneratorBase):
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
         for name in bias_names:
-            self.format_vector("uint16_t", f"M{mode_id}_{name}_bcast", bias_expanded[name])
+            self.format_vector("uint16_t", f"M{mode_id}_{name}_mini", bias_mini[name])
 
 
 if __name__ == "__main__":

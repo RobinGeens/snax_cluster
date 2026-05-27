@@ -15,24 +15,6 @@
 #include "helper.c"
 #include "snax-simbacore-lib.h"
 
-#define _SET_P1_STREAMERS_VARIANT(suffix, p_osc_in, p_osc_wgt, p_conv_wgt, p_conv_bias, p_isc_wgt, p_isc_psum,         \
-                                  p_isc_out_w3, p_conv_out)                                                            \
-    set_streamer_csr((uint32_t)(p_osc_in), M1_R0_ss, M1_R0_tb##suffix, M1_R0_ts, M1_R0_en, (uint32_t)(p_osc_wgt),      \
-                     M1_R1_ss, M1_R1_tb##suffix, M1_R1_ts, M1_R1_en, (uint32_t)0, 0, 0, 0, M1_R2_en,                   \
-                     (uint32_t)(p_conv_wgt), M1_R3_ss, M1_R3_tb##suffix, M1_R3_ts, M1_R3_en, (uint32_t)(p_conv_bias),  \
-                     M1_R4_ss, M1_R4_tb##suffix, M1_R4_ts, M1_R4_en, (uint32_t)0, 0, 0, 0, M1_R5_en, (uint32_t)0, 0,   \
-                     0, 0, M1_R6_en, (uint32_t)0, 0, 0, 0, M1_R7_en, (uint32_t)0, 0, 0, 0, M1_R8_en, (uint32_t)0, 0,   \
-                     0, 0, M1_R9_en, (uint32_t)0, 0, 0, 0, M1_R10_en, (uint32_t)0, 0, 0, 0, M1_R11_en,                 \
-                     (uint32_t)(p_isc_wgt), M1_R12_ss, M1_R12_tb##suffix, M1_R12_ts, M1_R12_en,                        \
-                     (uint32_t)(p_isc_psum), M1_R13_ss, M1_R13_tb##suffix, M1_R13_ts, M1_R13_en, (uint32_t)0, 0, 0, 0, \
-                     M1_W0_en, (uint32_t)(p_conv_out), M1_W1_ss, M1_W1_tb##suffix, M1_W1_ts, M1_W1_en, (uint32_t)0, 0, \
-                     0, 0, M1_W2_en, (uint32_t)(p_isc_out_w3), M1_W3_ss, M1_W3_tb##suffix, M1_W3_ts, M1_W3_en)
-
-#define set_streamer_phase1_finalLead(po, pow, pcw, pcb, piw, pip, piw3, pco) \
-    _SET_P1_STREAMERS_VARIANT(_finalLead, po, pow, pcw, pcb, piw, pip, piw3, pco)
-#define set_streamer_phase1_finalStep(po, pow, pcw, pcb, piw, pip, piw3, pco) \
-    _SET_P1_STREAMERS_VARIANT(_finalStep, po, pow, pcw, pcb, piw, pip, piw3, pco)
-
 static inline uint16_t fp32_to_bf16(float f) {
     union {
         float f;
@@ -62,19 +44,15 @@ int test_ss2d_tiled() {
     // ---- FULL TCDM buffers ----
     void* tcdm_base_ptr = snrt_l1_next();
 
-    uint8_t* ptr_oscore_in          = (uint8_t*)tcdm_base_ptr;
-    uint8_t* ptr_iscore_out_P1_psum = ptr_oscore_in + M1_length_oscore_in;
-    uint16_t* ptr_iscore_out_P2     = (uint16_t*)ptr_iscore_out_P1_psum;
-    uint32_t iscore_shared_bytes =
-        (M1_length_iscore_out > M2_length_iscore_out) ? M1_length_iscore_out : M2_length_iscore_out;
-    uint8_t* ptr_iscore_out_P1_final = ptr_iscore_out_P1_psum + iscore_shared_bytes;
-
-    uint8_t* ptr_dt_in = ptr_iscore_out_P1_final;
-    uint8_t* ptr_BC    = ptr_dt_in + M2_dt_to_BC_offset;
+    uint8_t* ptr_oscore_in      = (uint8_t*)tcdm_base_ptr;
+    uint8_t* ptr_iscore_out_P1  = ptr_oscore_in + M1_length_oscore_in;
+    uint8_t* ptr_dt_in          = ptr_iscore_out_P1;
+    uint8_t* ptr_BC             = ptr_dt_in + M2_dt_to_BC_offset;
+    uint16_t* ptr_iscore_out_P2 = (uint16_t*)(ptr_iscore_out_P1 + M1_length_iscore_out);
 
 #define _ALIGN64(p) ((uint8_t*)(((uintptr_t)(p) + 63u) & ~(uintptr_t)63u))
 
-    uint8_t* pingpong_base_ptr = _ALIGN64(ptr_iscore_out_P1_final + M1_length_iscore_out);
+    uint8_t* pingpong_base_ptr = _ALIGN64((uint8_t*)ptr_iscore_out_P2 + M2_length_iscore_out);
 
     // ---- Phase 1 ping-pong slots ----
     uint8_t* ptr_oscore_weight_P1[2] = {
@@ -163,7 +141,7 @@ int test_ss2d_tiled() {
         // ---- Load per-direction FULL data ----
         if (snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_oscore_in, M2_oscore_in_K + k * dir_size_oscore_in, M1_length_oscore_in);
-            snrt_dma_start_1d(ptr_iscore_out_P1_psum, M2_iscore_bias, M1_length_iscore_out);
+            snrt_dma_start_1d(ptr_iscore_out_P1, M2_iscore_bias, M1_length_iscore_out);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -175,7 +153,7 @@ int test_ss2d_tiled() {
         if (snrt_global_core_idx() == 0) {
             set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0],
                                 (uint32_t)ptr_conv_weight[0], (uint32_t)ptr_conv_bias[0],
-                                (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1_psum,
+                                (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
                                 (uint32_t)ptr_conv_out_tile[0]);
             set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
         }
@@ -198,53 +176,26 @@ int test_ss2d_tiled() {
 
             if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
                 uint32_t tile      = i - 1;
-                int cbuf           = tile % 2;
                 bool is_final_tile = (tile == nb_tiles - 1);
 
+                if (is_final_tile) write_csr(MODE, M1_PHASE1);
+                _set_streamer_start();
+                _set_simbacore_start();
+                write_csr(STREAMER_START_CSR, 0);
+                write_csr(SIMBACORE_START, 0);
                 if (!is_final_tile) {
-                    _set_streamer_start();
-                    _set_simbacore_start();
-                    write_csr(STREAMER_START_CSR, 0);
-                    write_csr(SIMBACORE_START, 0);
                     uint32_t next_tile = tile + 1;
-                    if (next_tile < nb_tiles - 1) {
-                        int nbuf = next_tile % 2;
-                        write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P1[nbuf]);
-                        write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_conv_weight[nbuf]);
-                        write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[nbuf]);
-                        write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[nbuf]);
-                        write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)ptr_conv_out_tile[nbuf]);
-                    }
-                    while (read_csr(SIMBACORE_BUSY));
-                    while (read_csr(STREAMER_BUSY_CSR));
-                    p1_cycles += read_simbacore_perf_counter();
-                    if (i == 1) _p1_compute_done = snrt_mcycle();
-                } else {
-                    if (K_i > 1) {
-                        set_streamer_phase1_finalLead(
-                            (uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[cbuf],
-                            (uint32_t)ptr_conv_weight[cbuf], (uint32_t)ptr_conv_bias[cbuf],
-                            (uint32_t)ptr_iscore_weight_P1[cbuf], (uint32_t)ptr_iscore_out_P1_psum,
-                            (uint32_t)ptr_iscore_out_P1_psum, (uint32_t)ptr_conv_out_tile[cbuf]);
-                        set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, (K_i - 1) * dInnerUnroll, dtRank,
-                                          xProjDim);
-                        start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
-                        wait_simbacore_and_streamer();
-                        p1_cycles += read_simbacore_perf_counter();
-                    }
-                    uint32_t k_off = K_i - 1;
-                    set_streamer_phase1_finalStep((uint32_t)ptr_oscore_in,
-                                                  (uint32_t)ptr_oscore_weight_P1[cbuf] + k_off * M1_R1_K_step_delta,
-                                                  (uint32_t)ptr_conv_weight[cbuf] + k_off * M1_R3_K_step_delta,
-                                                  (uint32_t)ptr_conv_bias[cbuf] + k_off * M1_R4_K_step_delta,
-                                                  (uint32_t)ptr_iscore_weight_P1[cbuf] + k_off * M1_R12_K_step_delta,
-                                                  (uint32_t)ptr_iscore_out_P1_psum, (uint32_t)ptr_iscore_out_P1_final,
-                                                  (uint32_t)ptr_conv_out_tile[cbuf] + k_off * M1_W1_K_step_delta);
-                    set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInnerUnroll, dtRank, xProjDim);
-                    start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
-                    wait_simbacore_and_streamer();
-                    p1_cycles += read_simbacore_perf_counter();
+                    int nbuf = next_tile % 2;
+                    write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P1[nbuf]);
+                    write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_conv_weight[nbuf]);
+                    write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[nbuf]);
+                    write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[nbuf]);
+                    write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)ptr_conv_out_tile[nbuf]);
                 }
+                while (read_csr(SIMBACORE_BUSY));
+                while (read_csr(STREAMER_BUSY_CSR));
+                p1_cycles += read_simbacore_perf_counter();
+                if (i == 1) _p1_compute_done = snrt_mcycle();
             }
 
             if (i >= 2 && snrt_is_dm_core()) {

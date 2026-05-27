@@ -61,109 +61,17 @@ class DataGenerator(DataGeneratorBase):
         self.check_tiling_constraints()
         self.build_Phase1_data()
         self.build_Phase2_data()
-        self.emit_l1_usage_comment()
+        self._run_memory_model()
 
-    # snax_simbacore_cluster.hjson: tcdm.size = 512 kB.
-    TCDM_BYTES = 512 * 1024
-
-    def emit_l1_usage_comment(self):
-        """Emit expected peak L1 footprint and hard-assert it fits in TCDM.
-
-        Layout assumed by main.c after the x-tiling refactor:
-          - oscore_in, iscore_out_P1, z, y, iscore_out_P2 stay FULL.
-          - conv_out (= P2 x) is tiled: P1 writes a tile-sized slot then
-            DMAs to L3; P2 DMAs a tile-sized slot back from L3. Two
-            ping-pong slots in the shared scratch region (sized length_conv_out_tile each).
-        """
-
-        def align64(value: int) -> int:
-            return (value + 63) & ~63
-
-        def pingpong_bytes(tile_lengths: list[int]) -> int:
-            """Bytes consumed by two aligned ping-pong slots per tiled tensor."""
-            cursor = 0
-            for length in tile_lengths:
-                # First buffer
-                cursor = align64(cursor + length)
-                # Second buffer
-                cursor = align64(cursor + length)
-            return cursor
-
-        # Shared region in test_phase1_and_2 (always live across both phases).
-        # conv_out is no longer FULL: it lives in the ping-pong region as a tile-sized
-        # slot pair (P1 writes, DMAs to L3; P2 DMAs back into the same slots).
-        # iscore_out_P1 now has TWO buffers: psum (R13/W3 non-final) + final (W3 final
-        # = bank-transposed output that P2's R2/R7 reads). This split is needed because the
-        # final-tile TRANSPOSE W3 would otherwise overwrite psum_partial(n,m) before
-        # IS-core processes element (n,m). See main.c for the explanation.
-        # z and y are also no longer FULL: they live in the P2 ping-pong region as
-        # tile-sized slot pairs (W0/R10 and W2/R11 access the SAME slot within a kernel,
-        # then DM spills the slot to L3 once the kernel is done).
-        # iscore_out_P1_psum and iscore_out_P2 OVERLAP: psum is dead after P1's final
-        # tile (R13/W3 redirect to iscore_out_P1_final on that tile); iscore_out_P2 is
-        # only used in P2 (bias preload overwrites psum's stale data). Reserve max(.,.)
-        # bytes for the shared block.
-        iscore_p1_p2_shared = max(
-            self.phase1_scalars["length_iscore_out"],  # P1 psum_buf
-            self.phase2_scalars["length_iscore_out"],  # P2 iscore_out
-        )
-        shared_bytes = (
-            self.phase1_scalars["length_oscore_in"]
-            + iscore_p1_p2_shared  # P1 psum / P2 iscore_out (overlap)
-            + self.phase1_scalars["length_iscore_out"]  # P1 final (separate; transposed buffer)
-        )
-
-        # Ping-pong scratch used only by Phase 1. conv_out_tile is in the ping-pong area
-        # so it can be double-buffered against the L3 DMA-out.
-        p1_pingpong_bytes = pingpong_bytes(
-            [
-                self.phase1_scalars["length_oscore_weight_tile"],
-                self.phase1_scalars["length_conv_weight_tile"],
-                self.phase1_scalars["length_conv_bias_tile"],
-                self.phase1_scalars["length_iscore_weight_tile"],
-                self.phase1_scalars["length_conv_out_tile"],  # P1 W1 ping-pong, DMA-out to L3
-            ]
-        )
-
-        # Ping-pong scratch used only by Phase 2 (reuses Phase 1 scratch base).
-        # x_tile is the P2-side reuse of conv_out_tile slots (DMA-in from L3 per K-tile).
-        # z_tile and y_tile are also ping-ponged (W0/R10 + W2/R11 within a kernel, DMA-out
-        # to L3 between kernels).
-        p2_pingpong_bytes = pingpong_bytes(
-            [
-                self.phase2_scalars["length_oscore_weight_tile"],
-                self.phase2_scalars["length_dt_weight_1_tile"],
-                self.phase2_scalars["length_dt_weight_2_tile"],
-                self.phase2_scalars["length_dt_bias_tile"],
-                self.phase2_scalars["length_A_tile"],
-                self.phase2_scalars["length_D_tile"],
-                self.phase2_scalars["length_iscore_weight_tile"],
-                self.phase1_scalars["length_conv_out_tile"],  # x_tile ping-pong, DMA-in from L3
-                self.phase2_scalars["length_z_tile"],  # z_tile ping-pong, DMA-out to L3
-                self.phase2_scalars["length_y_tile"],  # y_tile ping-pong, DMA-out to L3
-            ]
-        )
-
-        # main.c aligns ping-pong base to 64 bytes after the shared region.
-        total_l1_bytes = align64(shared_bytes) + max(p1_pingpong_bytes, p2_pingpong_bytes)
-        total_l1_kib = total_l1_bytes / 1024
-        tcdm_kib = self.TCDM_BYTES / 1024
-        print(
-            f"// Expected total L1 usage (tiled test_phase1_and_2 layout): {total_l1_bytes} B ({total_l1_kib:.2f} KiB)"
-        )
-        print(f"//   shared FULL (oscore_in + iscore_out_P1 + z + y + iscore_out_P2) = {shared_bytes} B")
-        print(
-            f"//   pingpong scratch (max of P1/P2 incl. conv_out_tile / x_tile)    = {max(p1_pingpong_bytes, p2_pingpong_bytes)} B"
-        )
-        # Hard-assert fit so silent OOB writes can never reach the simulator.
-        # When you see this fire, lower seqLen or raise nb_tiles, or extend the tiling
-        # strategy (iscore_out, z, y currently stay FULL — see params_in.hjson notes).
-        assert total_l1_bytes <= self.TCDM_BYTES, (
-            f"main-tiled L1 footprint {total_l1_bytes} B ({total_l1_kib:.2f} KiB) "
-            f"exceeds TCDM budget {self.TCDM_BYTES} B ({tcdm_kib:.0f} KiB). "
-            f"shared FULL = {shared_bytes} B, pingpong = {max(p1_pingpong_bytes, p2_pingpong_bytes)} B. "
-            f"Lower seqLen, raise nb_tiles, or extend tiling (z/y/iscore_out_P2 stay FULL today)."
-        )
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     def save_params(self):
         """Saves params to self as shorthand notation"""
@@ -251,10 +159,8 @@ class DataGenerator(DataGeneratorBase):
     # Phase 1
     # =========================================================================
     def _build_p1_streamers(self, N_kern):
-        """Build P1 streamer bound/stride dict for an arbitrary K-step count N_kern.
-        N_kern = K_i for the "bulk" config (used for non-final tiles AND the K_i-1
-        lead chunk via N_kern=K_i-1), 1 for the "finalStep" config (used for the
-        absolute-final K-step kernel that does requant+transpose).
+        """Build P1 streamer bound/stride dict for K-step count N_kern (= K_i).
+        All P1 tiles use the same config; only the MODE CSR changes for the final tile.
         """
         dInner_kern = N_kern * self.dInnerUnroll
         return {
@@ -344,27 +250,13 @@ class DataGenerator(DataGeneratorBase):
         assert f"M{mode_id}_PHASE1" in self.kwargs, "verify mode_id"
         assert self.switchcore_width == BANKWIDTH
 
-        # Three P1 kernel configurations (per main.c §main-tiled in docs/dataflow/04_mamba_main.md):
-        #   bulk      (K_i K-steps in M28_PHASE1_NO_REQUANT)  → used for non-final tiles
-        #   finalLead (K_i-1 K-steps in M28_PHASE1_NO_REQUANT)→ only on final tile when K_i>1
-        #   finalStep (1 K-step in M1_PHASE1, transpose+requant)→ absolute-final K-step
-        # Strides and spatial strides are identical across the three configs (the access
-        # pattern within each K-step is unchanged); only the K-axis temporal bound differs.
-        # We emit the strides once via build_mode (under the bulk config, no suffix) and
-        # then append `_finalLead` / `_finalStep` overrides for the temporal bounds only.
+        # All P1 tiles use the same streamer config (K_i K-steps). Non-final tiles run
+        # M28_PHASE1_NO_REQUANT; the final tile runs M1_PHASE1 — only the MODE CSR changes.
+        # The BankTransposer is gated on isCoreOutIsFinal (MambaCore.scala:370), so it only
+        # fires on the last K-step within the M1_PHASE1 invocation.
         K_i = self.dInner_tile // self.dInnerUnroll  # K-steps per DMA tile
 
         streamers_bulk = self._build_p1_streamers(K_i)
-
-        # K-axis stride per streamer (= byte advance per single K-step). Used by main.c
-        # to position the finalStep kernel at the last K-step of the final DMA tile.
-        K_step_deltas = {
-            "R1_K_step_delta": self.downsized_dModel * self.gemm_weight_width // 8,
-            "R3_K_step_delta": self.dConv * self.dInnerUnroll * FP8 // 8,
-            "R4_K_step_delta": self.dInnerUnroll * FP8 // 8,
-            "R12_K_step_delta": self.downsized_xProjDim * self.gemm_weight_width // 8,
-            "W1_K_step_delta": self.seqLen * self.dInnerUnroll * FP8 // 8,
-        }
 
         # ---------- Buffer sizes -------------------------------------------------
         # Full sizes are kept (used for L3 buffers / DMA copies) and we additionally
@@ -401,7 +293,7 @@ class DataGenerator(DataGeneratorBase):
             "length_conv_out_tile": len_conv_out // nb,
             "length_iscore_weight_tile": len_iscore_weight // nb,
         }
-        scalars = {**lengths, **deltas, **tile_scalars, **K_step_deltas}
+        scalars = {**lengths, **deltas, **tile_scalars}
         self.phase1_scalars = scalars.copy()
 
         tests = {"conv_out": self.seqLen * self.dInner, "iscore_out": self.seqLen * self.xProjDim}
@@ -423,12 +315,6 @@ class DataGenerator(DataGeneratorBase):
 
         self.build_mode(mode_id, streamers_bulk, scalars=scalars, test_data=test_data, tests=tests)
 
-        # Append alternate bound arrays for the finalLead (K_i-1) and finalStep (1) kernels.
-        # K_i=1 → finalLead is degenerate (0 K-steps) and main.c skips that call; emit anyway
-        # so the symbol exists.
-        self._emit_alt_bounds(mode_id, self._build_p1_streamers(max(K_i - 1, 0)), "finalLead")
-        self._emit_alt_bounds(mode_id, self._build_p1_streamers(1), "finalStep")
-
     # =========================================================================
     # Phase 2
     # =========================================================================
@@ -440,10 +326,8 @@ class DataGenerator(DataGeneratorBase):
 
         # P2 runs ONE kernel per DMA tile (K_i K-steps per kernel). Non-final tiles run
         # M29_PHASE2_NO_REQUANT; the final tile runs M2_PHASE2 — HW's `isCoreOutIsFinal`
-        # gates the requant to the last K-step. No transpose in P2 (en_isCoreTranspose=0)
-        # so W3 and R13 both hit byte F(m,n) of `iscore_out_P2` and accumulate in place
-        # across all K-steps within the kernel. Same bound config for both modes; only
-        # the MODE CSR changes per kernel call. K_step_deltas are NOT needed for P2.
+        # gates the requant to the last K-step. No transpose in P2 (en_isCoreTranspose=0).
+        # Same bound config for both modes; only the MODE CSR changes per kernel call.
         N_kern = self.dInner_tile // self.dInnerUnroll  # = K_i
         dInner_kern = self.dInner_tile
 

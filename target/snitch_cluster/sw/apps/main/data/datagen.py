@@ -32,28 +32,17 @@ class DataGenerator(DataGeneratorBase):
         self.save_params()
         self.build_Phase1_data()
         self.build_Phase2_data()
-        self.emit_l1_usage_comment()
+        self._run_memory_model()
 
-    @staticmethod
-    def _max_end_from_scalars(scalars: dict[str, int]) -> int:
-        """Return the highest addr+length endpoint from existing scalar dictionaries."""
-        return max(
-            scalars[addr_key] + value
-            for length_key, value in scalars.items()
-            if length_key.startswith("length_")
-            for addr_key in [length_key.replace("length_", "addr_")]
-            if addr_key in scalars
-        )
-
-    def emit_l1_usage_comment(self):
-        """Emit expected peak L1 footprint for the fused Phase1+Phase2 test layout."""
-        phase2_base = self.phase1_scalars["addr_iscore_out"] + self.phase1_scalars["length_iscore_out"]
-        phase2_peak = self._max_end_from_scalars(self.phase2_scalars)
-        total_l1_bytes = phase2_base + phase2_peak
-        total_l1_kib = total_l1_bytes / 1024
-        self.lines_params.append(
-            f"// Expected total L1 usage (test_phase1_and_2 layout): {total_l1_bytes} B ({total_l1_kib:.2f} KiB)"
-        )
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     def save_params(self):
         """Saves params to self as shorthand notation"""

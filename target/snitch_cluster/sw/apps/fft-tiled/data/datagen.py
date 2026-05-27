@@ -75,49 +75,17 @@ class DataGenerator(DataGeneratorBase):
 
     def run(self):
         self.build_data()
-        self.emit_tcdm_usage_comment()
+        self._run_memory_model()
 
-    def emit_tcdm_usage_comment(self):
-        def align64(value: int) -> int:
-            return (value + 63) & ~63
-
-        L = self.kwargs["seqLen"]
-        L1 = self.kwargs["L1"]
-        L2 = self.kwargs["L2"]
-        L1_padded = self.kwargs["L1_padded"]
-        L2_padded = self.kwargs["L2_padded"]
-        dModel = self.kwargs["dModel"]
-        nb_A = self.kwargs["nb_tiles"]
-        nb_B = self.kwargs.get("nb_tiles_B", nb_A)
-
-        len_weight1 = 2 * L1 * L1_padded * FP8 // 8
-        len_weight2 = 2 * L2 * 2 * L2_padded * FP8 // 8
-        len_twiddles = 2 * L * FP8 // 8
-        len_in = L * dModel * FP8 // 8
-        len_partition1_out = 2 * L * dModel * BF16 // 8
-        len_hadamard_out = 2 * L * dModel * FP8 // 8
-        len_hadamard_reordered = 2 * L * dModel * FP8 // 8
-        len_partition2_out = 2 * L * dModel * BF16 // 8
-        len_twiddles_tiled = len_twiddles
-
-        always_live = align64(len_weight1) + align64(len_weight2) + align64(len_twiddles_tiled)
-        # Phase A: ping-pong (2×), uses nb_tiles
-        phase_a_pp = 2 * (
-            align64(len_in // nb_A)
-            + align64(len_partition1_out // nb_A)
-            + align64(len_hadamard_out // nb_A)
-            + align64(len_hadamard_reordered // nb_A)
-        )
-        # Phase B: single-buffered, uses nb_tiles_B
-        phase_b = align64(len_hadamard_reordered // nb_B) + align64(len_partition2_out)
-        peak = always_live + max(phase_a_pp, phase_b)
-
-        print(
-            f"// TCDM peak: {peak} B ({peak/1024:.2f} KiB)"
-            f"  [Phase A PP={always_live+phase_a_pp} B, Phase B={always_live+phase_b} B]"
-            f"{' *** EXCEEDS 512 KiB ***' if peak > 512*1024 else ''}"
-        )
-        print(f"// L3 buffers used: hadamard_reordered ({len_hadamard_reordered} B)")
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     def build_data(self):
         mode_id = 6
