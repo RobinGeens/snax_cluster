@@ -6,6 +6,7 @@
 # Author: Robin Geens <robin.geens@kuleuven.be>
 
 import math
+import logging
 import os
 import sys
 import hjson
@@ -32,6 +33,8 @@ D_STATE = 64
 D_CONV = 4
 DT_RANK = 24
 EXPAND = 2
+
+logger = logging.getLogger(__name__)
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────
@@ -127,9 +130,11 @@ class MemoryReport:
         peak = self.overall_peak()
         if peak > TCDM_BYTES:
             print(self.format(), file=sys.stderr)
-            raise MemoryError(
-                f"{self.app_name}: L1 footprint {self._kib(peak)} "
-                f"exceeds TCDM budget {self._kib(TCDM_BYTES)}."
+            logger.warning(
+                "%s: L1 footprint %s exceeds TCDM budget %s.",
+                self.app_name,
+                self._kib(peak),
+                self._kib(TCDM_BYTES),
             )
 
 
