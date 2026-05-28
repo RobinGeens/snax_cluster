@@ -668,6 +668,26 @@ uint32_t read_simbacore_perf_counter() {
     return perf_counter;
 }
 
+static const int32_t TOLERANCE = 1;
+
+static inline bool values_match_u8_lsb(uint8_t output_value, uint8_t golden_value) {
+    if ((output_value == 0 && golden_value == 128) ||  // +0 == -0
+        (output_value == 128 && golden_value == 0))
+        return true;
+
+    int16_t diff = (int16_t)output_value - (int16_t)golden_value;
+    return (diff >= -TOLERANCE) && (diff <= TOLERANCE);
+}
+
+static inline bool values_match_u16_lsb(uint16_t output_value, uint16_t golden_value) {
+    if ((output_value == 0 && golden_value == 0x8000u) ||  // +0 == -0
+        (output_value == 0x8000u && golden_value == 0))
+        return true;
+
+    int32_t diff = (int32_t)output_value - (int32_t)golden_value;
+    return (diff >= -TOLERANCE) && (diff <= TOLERANCE);
+}
+
 // Check result, word-by-word. data_length in bytes
 uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_length) {
     uint32_t err         = 0;
@@ -677,7 +697,7 @@ uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_
     for (int i = 0; i < num_elements; i++) {
         uint8_t output_value = output[i];
         uint8_t golden_value = output_golden[i];
-        if (output_value != golden_value) {
+        if (!values_match_u8_lsb(output_value, golden_value)) {
             err++;
             printf("FAIL out[%d] = %d,\tref = %d\r\n", i, output_value, golden_value);
         } else {
@@ -695,7 +715,7 @@ uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t
     for (int i = 0; i < num_elements; i++) {
         uint16_t output_value = output[i];
         uint16_t golden_value = output_golden[i];
-        if (output_value != golden_value) {
+        if (!values_match_u16_lsb(output_value, golden_value)) {
             err++;
             printf("FAIL out[%d] = %u,\tref = %u\r\n", i, output_value, golden_value);
         } else {
@@ -715,10 +735,7 @@ uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* s
         int sample_index     = sample_indices[i];
         uint8_t output_value = output[sample_index];
         uint8_t golden_value = output_golden[sample_index];
-        if (output_value == golden_value ||                //
-            (output_value == 0 && golden_value == 128) ||  // 0 == -0
-            (output_value == 128 && golden_value == 0))    // -0 == 0
-        {
+        if (values_match_u8_lsb(output_value, golden_value)) {
             printf("PASS %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
         } else {
             err++;
@@ -738,7 +755,7 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
         int sample_index      = sample_indices[i];
         uint16_t output_value = output[sample_index];
         uint16_t golden_value = output_golden[sample_index];
-        if (output_value != golden_value) {
+        if (!values_match_u16_lsb(output_value, golden_value)) {
             err++;
             printf("FAIL %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
         } else {

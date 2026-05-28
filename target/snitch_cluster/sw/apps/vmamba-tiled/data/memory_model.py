@@ -108,7 +108,7 @@ def build_report(params: dict) -> MemoryReport:
     report.add_section("Cross-merge (overlays all at TCDM base)", merge_bufs)
     merge_end = sequential_bytes([s for _, s in merge_bufs])
 
-    # RMSNorm: placed after merge buffers
+    # RMSNorm: overlays merge_b (no longer needed after cross-merge); merge_a stays live as widen source.
     D = dInner
     rms_bufs = [
         ("rms_x_bf16",  L * D * BF16 // 8),
@@ -116,8 +116,8 @@ def build_report(params: dict) -> MemoryReport:
         ("rms_weight",  SIMD_LANES_BF16 * D * BF16 // 8),
         ("rms_vec",     L * BF16 // 8),
     ]
-    report.add_section("RMSNorm (placed after merge buffers)", rms_bufs)
-    rms_base = align64(merge_end)
+    report.add_section("RMSNorm (overlays merge_b, after merge_a)", rms_bufs)
+    rms_base = align64(L * dInner * FP8 // 8)
     rms_total = sequential_bytes([s for _, s in rms_bufs])
     rms_peak = rms_base + rms_total
 

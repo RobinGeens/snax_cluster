@@ -47,16 +47,16 @@ int test_phase1_and_2() {
     int err = 0;
 
     // ---- L3 staging buffers. Reserve 16 KiB at the L3 base to skip putc_buffer
-    // (see memory note about snrt_l3alloc/putc_buffer overlap).
-    //   conv_out_l3         : P1 spills here, P2 fetches into x_tile slots.
-    //   z_l3, y_l3          : P2 spills here per-tile.
-    //   iscore_out_P1_l3    : P1 iscore_out spilled per N_tile (transposed FP8 chunks).
-    //   iscore_out_P2_l3    : P2 iscore_out spilled per N_tile (requanted FP8 chunks).
-    static uint8_t* ptr_conv_out_l3       = NULL;
-    static uint8_t* ptr_z_l3              = NULL;
-    static uint8_t* ptr_y_l3              = NULL;
-    static uint8_t* ptr_iscore_out_P1_l3  = NULL;
+    // P2 iscore_out spilled per N_tile (requanted FP8 chunks).
+    static uint8_t* ptr_conv_out_l3 = NULL;
+    // P2 spills here per-tile.
+    static uint8_t* ptr_z_l3 = NULL;
+    static uint8_t* ptr_y_l3 = NULL;
+    // P1 iscore_out spilled per N_tile (transposed FP8 chunks).
+    static uint8_t* ptr_iscore_out_P1_l3 = NULL;
+    // P1 spills here, P2 fetches into x_tile slots.
     static uint16_t* ptr_iscore_out_P2_l3 = NULL;
+
     if (snrt_global_core_idx() == 0) {
         (void)snrt_l3alloc(16 * 1024);
         ptr_conv_out_l3      = (uint8_t*)snrt_l3alloc(M1_length_conv_out);
@@ -65,6 +65,7 @@ int test_phase1_and_2() {
         ptr_iscore_out_P1_l3 = (uint8_t*)snrt_l3alloc(M1_length_iscore_out);
         ptr_iscore_out_P2_l3 = (uint16_t*)snrt_l3alloc(M2_length_iscore_out);
     }
+
     snrt_cluster_hw_barrier();
 
     // ---- TCDM buffers.
@@ -181,27 +182,30 @@ int test_phase1_and_2() {
         start_cycles = snrt_mcycle();
     }
 
+    // Outer loop: isCore xProjDim (N) tile
     for (uint32_t n = 0; n < nb_n_tiles; n++) {
-        uint32_t r12_n_off = n * M1_iscore_weight_n_offset;
+        uint32_t iscore_weight_offset = n * M1_iscore_weight_n_offset;
 
         // Load the n-th column-slice of iscore bias into the psum tile (2D DMA).
+        // TODO can we overlap this with compute?
         if (snrt_is_dm_core()) {
             snrt_dma_start_2d(ptr_iscore_out_P1, (uint8_t*)M1_iscore_bias + n * M1_iscore_bias_n_inner,
                               M1_iscore_bias_n_inner, M1_iscore_bias_n_inner, M1_iscore_bias_n_src_stride,
                               M1_iscore_bias_n_count);
             snrt_dma_wait_all();
         }
-        snrt_cluster_hw_barrier();
 
         if (snrt_global_core_idx() == 0) {
             set_streamer_phase1_nTile((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0],
                                       (uint32_t)ptr_conv_weight[0], (uint32_t)ptr_conv_bias[0],
-                                      (uint32_t)ptr_iscore_weight_P1[0] + r12_n_off, (uint32_t)ptr_iscore_out_P1,
-                                      (uint32_t)ptr_conv_out_tile[0]);
+                                      (uint32_t)ptr_iscore_weight_P1[0] + iscore_weight_offset,
+                                      (uint32_t)ptr_iscore_out_P1, (uint32_t)ptr_conv_out_tile[0]);
             set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim_tile);
         }
+
         snrt_cluster_hw_barrier();
 
+        // Inner loop: dInner tile
         for (uint32_t i = 0; i < nb_tiles + 2; i++) {
             int buf = i % 2;
 
@@ -225,18 +229,21 @@ int test_phase1_and_2() {
                 _set_simbacore_start();
                 write_csr(STREAMER_START_CSR, 0);
                 write_csr(SIMBACORE_START, 0);
+
                 if (!is_final_tile) {
                     uint32_t next_tile = tile + 1;
                     int nbuf           = next_tile % 2;
                     write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P1[nbuf]);
                     write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_conv_weight[nbuf]);
                     write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_conv_bias[nbuf]);
-                    write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[nbuf] + r12_n_off);
+                    write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[nbuf] + iscore_weight_offset);
                     write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)ptr_conv_out_tile[nbuf]);
                 }
+
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
                 simbacore_cycles_phase1 += read_simbacore_perf_counter();
+                // Check if time(compute) > time(DMA)
                 if (n == 0 && i == 1) _p1_compute_done = snrt_mcycle();
             }
 
@@ -281,7 +288,7 @@ int test_phase1_and_2() {
     /////////////////////////////////
 
     for (uint32_t n = 0; n < nb_n_tiles; n++) {
-        uint32_t r12_n_off = n * M2_iscore_weight_n_offset;
+        uint32_t iscore_weight_offset = n * M2_iscore_weight_n_offset;
 
         // Load the n-th column-slice of P2 iscore bias into the psum tile (2D DMA).
         if (snrt_is_dm_core()) {
@@ -297,7 +304,8 @@ int test_phase1_and_2() {
                                       (uint32_t)ptr_z_tile[0], (uint32_t)ptr_dt_in, (uint32_t)ptr_dt_weight_1[0],
                                       (uint32_t)ptr_dt_weight_2[0], (uint32_t)ptr_dt_bias[0], (uint32_t)ptr_x_tile[0],
                                       (uint32_t)ptr_A[0], (uint32_t)ptr_BC, (uint32_t)ptr_D[0], (uint32_t)ptr_y_tile[0],
-                                      (uint32_t)ptr_iscore_weight_P2[0] + r12_n_off, (uint32_t)ptr_iscore_out_P2);
+                                      (uint32_t)ptr_iscore_weight_P2[0] + iscore_weight_offset,
+                                      (uint32_t)ptr_iscore_out_P2);
             set_simbacore_csr(M29_PHASE2_NO_REQUANT, seqLen, dModel, M2_dInner_tile, dtRank, dModel_tile);
         }
         snrt_cluster_hw_barrier();
@@ -343,7 +351,7 @@ int test_phase1_and_2() {
                     write_csr(BASE_PTR_READER_9_LOW, (uint32_t)ptr_x_tile[nbuf]);
                     write_csr(BASE_PTR_READER_10_LOW, (uint32_t)ptr_z_tile[nbuf]);
                     write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_y_tile[nbuf]);
-                    write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P2[nbuf] + r12_n_off);
+                    write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P2[nbuf] + iscore_weight_offset);
                     write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_z_tile[nbuf]);
                     write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y_tile[nbuf]);
                 }

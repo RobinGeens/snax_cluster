@@ -348,9 +348,11 @@ class DataGenerator(MainTiledDataGenerator):
                           [BANK_BYTES]),
         }
 
-        # RMSNorm buffers placed after two merge buffers (which reuse TCDM after P1/P2)
-        merge_buffer_end = 2 * L * D * FP8 // 8
-        rms_base = (merge_buffer_end + 63) & ~63
+        # RMSNorm overlays merge_b: cross-merge consumes merge_b on the fly and
+        # only merge_a (final y) is needed past the cross-merge loop. Starting
+        # rms_x_bf16 at merge_b's address keeps merge_a (FP8 source) intact while
+        # widening writes BF16 into the merge_b region, fitting RMSNorm in TCDM.
+        rms_base = (L * D * FP8 // 8 + 63) & ~63
 
         rms_specs = [
             ("rms_x_bf16", L * D * BF16 // 8),
