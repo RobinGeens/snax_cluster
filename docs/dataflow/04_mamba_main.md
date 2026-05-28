@@ -141,31 +141,49 @@ stride.
 
 ## Enabling large seqLen
 
-`main-tiled` cannot be expanded to large seqLen because it assumes `iscore_out_P1` (size `L*xProjDim`) and `iscore_out_P2` (size `L*dModel`) remain in TCDM.
+`main-tiled` cannot be expanded to large seqLen because it assumes `iscore_out_P1` (size `L*xProjDim`), `iscore_out_P2` (size `L*dModel`) and `oscore_in` (size `L*dModel`) remain in TCDM.
 
-To mitigate this, we have 3 options:
+To mitigate the isCore output sizes, we have 3 options:
 
-1. Split P1 and P2 in half over seqLen. However, this is completely impossible because it requires the intermediate SSM 
-states to be read out and restored during the second half. P1 and P2 must always be fully completed.
+1. Split P1 and P2 in half over seqLen. However, this is completely impossible because it requires the
+   intermediate SSM states to be read out and restored during the second half. P1 and P2 must always be fully
+   completed.
 
-2. Tile the IS-core output dimension (xProjDim). However, since this tensor is a BF16 psum, we need to load all 
-xProjDim-tiles in and out for every psum accumulation iteration (K in total). The full tensor needs to be transferred 2*K times.
-Since xProjDim is small, it should be possible to fully hide this latency by overlapping it with compute.
-A second complication is that in `main-tiled`, IS-core bank-transposes its output (via the BankTransposer on the final K-step).
-If we tile in xProjDim, the bank-transpose still works within each tile, but the downstream consumer must
-handle per-tile transposed chunks. Implemented in `main-tiled-dtRank`
+2. Tile the IS-core output dimension N (xProjDim in P1, dModel in P2). The outer loop is still the dInner tiles,
+   inner loop is the N-tiles. However, since this tensor is a BF16 psum, we need to load all N-tiles (i.e. the whole
+   psum matrix) in and out for every reduction dimension tile K (tile in dInner, i.e. `n_tiles`).
+Feasibility check:
+- The full psum tensor needs to be transferred 2*n_tiles times -> data = 2*n_tiles*2*L*N bytes.
+- The total compute time L*dInner*N / (dInnerUnroll*dModelUnroll) = L*dInner*N / 384
+- Required bandwidth > 1536*n_tiles / dInner
+-> Certainly feasible.
 
-3. Tile the whole P1 in seqLen. This simply means we do the full P1 kernel call for every seqLen tile. The downside is that
-we loose the weight-reuse on the projection weight matrices, and we need to load in the full weight matrices for every seqLen tile.
-This costs extra energy, but the latency should be manageable by overlapping it with compute. The same bank-transpose complication applies here.
-To be implemented in `main-tiled-seqLen`.
+A second complication is that in `main-tiled`, P1 IS-core bank-transposes its output, both via the bank-transpose and
+by scattering the transposed output over the full-size buffer. If we tile in xProjDim, the full-size buffer is no
+longer available and the destination address is in L3, not TCDM. For this reason, we omit the P1 scattering and
+write to L3 contiguously.
+We assume the address reordering is done by the DMA engine or off-chip. Implemented in `main-tiled-v3`
+
+3. Tile the whole P1 in seqLen. This simply means we do the full P1 kernel call for every seqLen tile. The downside
+   is that we lose the weight-reuse on the projection weight matrices, and we need to load in the full weight
+   matrices for every seqLen tile. This costs extra energy, but the latency should be manageable by overlapping it
+   with compute. The same bank-transpose complication applies here.
+To be implemented in `main-tiled-TODO`.
+
+To mitigate the OS-core input size: TODO 
 
 
-## `main-tiled-dtRank`
+## `main-tiled-v2`
 
-Tiles `iscore_out_P1` in xProjDim.
+Tiles `iscore_out_P1` in xProjDim and `iscore_out_P2` in dModel. Same idea as option 2, but uses the N-tile as outer loop.
 
-## `main-tiled-seqLen`
+## `main-tiled-v3`
 
-Not implemented yet
+Implements option 2.
+
+## `main-tiled-TODO`
+
+Implements option 3.
+Not implemented yet.
+
 
