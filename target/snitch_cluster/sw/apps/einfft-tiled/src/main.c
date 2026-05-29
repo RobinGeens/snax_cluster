@@ -84,6 +84,8 @@ int main(void) {
             "\nStarting program: einfft-tiled-opt "
             "(L=%u, dModel=%u, dPerB=%u, dPerB_tile=%u, nb_tiles=%u, nBranches=%u)\n\n",
             seqLen, dModel, M3_dPerB, M3_dPerB_tile, nb_tiles, M3_nBranches);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
     }
 

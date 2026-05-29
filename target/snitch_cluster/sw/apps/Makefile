@@ -7,10 +7,8 @@
 SUBDIRS  = nop
 SUBDIRS += main
 SUBDIRS += vmamba
-SUBDIRS += main-tiled-v3
 SUBDIRS += vmamba-tiled
 SUBDIRS += main-tiled
-SUBDIRS += main-tiled-v2
 SUBDIRS += fft
 SUBDIRS += rmsnorm
 SUBDIRS += fft-tiled

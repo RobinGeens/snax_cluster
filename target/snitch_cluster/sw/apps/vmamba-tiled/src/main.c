@@ -131,6 +131,8 @@ int test_ss2d_tiled() {
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting VMamba SS2D tiled: K=%d dirs, nb_tiles=%d, K_i=%u\n\n", K, nb_tiles, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
     }
 
@@ -194,6 +196,7 @@ int test_ss2d_tiled() {
                 }
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
+                asm volatile("fence" ::: "memory");
                 p1_cycles += read_simbacore_perf_counter();
                 if (i == 1) _p1_compute_done = snrt_mcycle();
             }
@@ -283,6 +286,7 @@ int test_ss2d_tiled() {
                 }
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
+                asm volatile("fence" ::: "memory");
                 p2_cycles += read_simbacore_perf_counter();
                 if (i == 1) _p2_compute_done = snrt_mcycle();
             }
@@ -302,6 +306,7 @@ int test_ss2d_tiled() {
         }
 
         // if (snrt_global_core_idx() == 0) printf("[%u cc] Dir %u done\n", snrt_mcycle(), k);
+        asm volatile("fence" ::: "memory");
         snrt_cluster_hw_barrier();
     }
 

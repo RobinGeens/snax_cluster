@@ -68,8 +68,11 @@ All commands from `target/snitch_cluster/`
 
 **Podman shorthand** (used for RTL gen and SW compilation):
 ```bash
-POD="podman run --rm -i -v $(pwd):$(pwd) -w $(pwd) ghcr.io/kuleuven-micas/snax:main"
+# Mount the whole repo (compiles reference repo-root paths like sw/snRuntime), keep CWD at target/snitch_cluster.
+ROOT=$(git rev-parse --show-toplevel)
+POD="podman run --rm -i -v $ROOT:$ROOT -w $(pwd) ghcr.io/kuleuven-micas/snax:main"
 ```
+Mounting only `$(pwd)` (target/snitch_cluster) fails: includes like `alloc_decls.h` live under the repo-root `sw/`, outside that subtree.
 
 ### Day-to-day: rebuild one app and simulate
 
@@ -106,11 +109,14 @@ Only needed on a fresh clone or after `make clean`:
 
 ## 6. Running Simulations
 
-Always redirect to `tmp-<name>.log` so the output can be followed with `tail -f`:
+Always redirect to `tmp-<app_name>.log` so the output can be followed with `tail -f`:
 
 ```bash
 ./bin/snitch_cluster.vsim sw/apps/<app_name>/build/<app_name>.elf |& tee tmp-<app_name>.log
 ```
+
+Don't append anything (like the parameter, current iteration, etc.) to the `tmp-<app_name>` filename. Prevent making many different log files for the same app.
+
 
 - `exit code = 0` at the end of the log = PASS.
 - Waveforms: `vsim.wlf`. Per-hart traces: `logs/trace_chip_*_hart_*.dasm`.

@@ -170,7 +170,7 @@ def run_model(model_fn, app_dir: str):
 
 def run_model_from_datagen(model_fn, app_dir: str):
     """Called from datagen to run the memory model, write report, and check OOM.
-    Returns a one-line summary suitable for inclusion as a C comment in data.h."""
+    Returns C source lines (comment + L1_TCDM_PEAK_BYTES define) for data.h."""
     params_path = os.path.join(app_dir, "params_in.hjson")
     params = read_params_in(params_path)
     report = model_fn(params)
@@ -178,4 +178,7 @@ def run_model_from_datagen(model_fn, app_dir: str):
     report.write(report_path)
     report.check_oom()
     peak = report.overall_peak()
-    return f"// L1 TCDM peak: {peak / 1024:.2f} KiB — see memory_report.txt"
+    return (
+        f"// L1 TCDM peak: {peak / 1024:.2f} KiB — see memory_report.txt\n"
+        f"#define L1_TCDM_PEAK_BYTES {peak}u"
+    )

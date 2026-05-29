@@ -42,6 +42,8 @@ int test() {
     // Call compute core
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: DFT partition 1\n\n");
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         uint32_t start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);

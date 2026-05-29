@@ -96,7 +96,7 @@ for name in "${TESTS[@]}"; do
   # Run test (12 hour timeout; SIGKILL after 60s if still running).
   # Must not fail under set -e: timeout exits 124 when the limit is hit.
   rc=0
-  timeout -k 60 43200 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1 || rc=$?
+  timeout -k 60 14400 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1 || rc=$?
 
   # Parse error count from this test's log
   errors=""

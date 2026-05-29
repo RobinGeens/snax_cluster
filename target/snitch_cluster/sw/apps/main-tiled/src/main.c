@@ -136,6 +136,8 @@ int test_phase1_and_2() {
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Mamba main tiled (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, x-tiled via L3)\n\n",
                seqLen, dModel, nb_tiles, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
                             (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
@@ -276,6 +278,7 @@ int test_phase1_and_2() {
             }
             while (read_csr(SIMBACORE_BUSY));
             while (read_csr(STREAMER_BUSY_CSR));
+            asm volatile("fence" ::: "memory");
             simbacore_cycles_phase2 += read_simbacore_perf_counter();
             if (i == 1) _p2_compute_done = snrt_mcycle();
 

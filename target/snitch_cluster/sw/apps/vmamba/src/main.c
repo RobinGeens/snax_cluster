@@ -81,6 +81,8 @@ int test_ss2d() {
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting VMamba SS2D: K=%d dirs, Phase1 + Phase2 per dir\n\n", K);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
     }
 

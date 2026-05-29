@@ -143,13 +143,13 @@ stride.
 
 `main-tiled` cannot be expanded to large seqLen because it assumes `iscore_out_P1` (size `L*xProjDim`), `iscore_out_P2` (size `L*dModel`) and `oscore_in` (size `L*dModel`) remain in TCDM.
 
-To mitigate the isCore output sizes, we have 3 options:
+To mitigate the IS-core output sizes, we have 3 options:
 
-1. Split P1 and P2 in half over seqLen. However, this is completely impossible because it requires the
+A1. **Split SSM in L:** Split P1 and P2 in half over seqLen. However, this is completely impossible because it requires the
    intermediate SSM states to be read out and restored during the second half. P1 and P2 must always be fully
    completed.
 
-2. Tile the IS-core output dimension N (xProjDim in P1, dModel in P2). The outer loop is still the dInner tiles,
+A2. **Async tiling on psums:** Tile the IS-core output dimension N (xProjDim in P1, dModel in P2). The outer loop is still the dInner tiles,
    inner loop is the N-tiles. However, since this tensor is a BF16 psum, we need to load all N-tiles (i.e. the whole
    psum matrix) in and out for every reduction dimension tile K (tile in dInner, i.e. `n_tiles`).
 Feasibility check:
@@ -162,28 +162,28 @@ A second complication is that in `main-tiled`, P1 IS-core bank-transposes its ou
 by scattering the transposed output over the full-size buffer. If we tile in xProjDim, the full-size buffer is no
 longer available and the destination address is in L3, not TCDM. For this reason, we omit the P1 scattering and
 write to L3 contiguously.
-We assume the address reordering is done by the DMA engine or off-chip. Implemented in `main-tiled-v3`
+We assume the address reordering is done by the DMA engine or off-chip.
 
-3. Tile the whole P1 in seqLen. This simply means we do the full P1 kernel call for every seqLen tile. The downside
+A third complication is that we need to support async tiling in some way. We cannot simply re-launch Simbacore, because we
+cannot control the IS-core and other cores independently, and all streamers are fired as one. See docs/dataflow/09_async_tiling.md.
+
+A3. **Split P1 in L:**Tile the whole P1 in seqLen. This simply means we do the full P1 kernel call for every seqLen tile. The downside
    is that we lose the weight-reuse on the projection weight matrices, and we need to load in the full weight
    matrices for every seqLen tile. This costs extra energy, but the latency should be manageable by overlapping it
    with compute. The same bank-transpose complication applies here.
-To be implemented in `main-tiled-TODO`.
-
-To mitigate the OS-core input size: TODO 
-
-
-## `main-tiled-v2`
-
-Tiles `iscore_out_P1` in xProjDim and `iscore_out_P2` in dModel. Same idea as option 2, but uses the N-tile as outer loop.
-
-## `main-tiled-v3`
-
-Implements option 2.
-
-## `main-tiled-TODO`
-
-Implements option 3.
 Not implemented yet.
+
+To mitigate the OS-core input size:
+
+B1. **Async tiling on oscore_in:** Tile the OS-core input tensor in seqLen.
+
+## `main-tiled-A2`
+
+Not implemented yet.
+
+## `main-tiled-B1`
+
+Implements option B1.
+
 
 

@@ -73,6 +73,8 @@ int test() {
     if (snrt_global_core_idx() == 0) {
         printf("\nFFT tiled: L=%d D=%d L1=%d L2=%d nb_tiles=%d nb_tiles_B=%d\n", seqLen, dModel, L1, L2, nb_tiles,
                M6_nb_tiles_B);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         printf("Phase A tile: in=%d p1out=%d hadout=%d reord=%d\n", M6_length_in_tile, M6_length_partition1_out_tile,
                M6_length_hadamard_out_tile, M6_length_hadamard_reordered_tile);
         start_cycles = snrt_mcycle();

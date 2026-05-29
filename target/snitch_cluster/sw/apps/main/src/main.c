@@ -208,6 +208,8 @@ int test_phase1_and_2() {
     uint32_t simbacore_cycles_phase1 = 0;
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Mamba main (Phase1 and Phase2)\n\n");
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
