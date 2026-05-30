@@ -28,8 +28,6 @@ static inline uint16_t fp32_to_bf16(float f) {
 int test_ss2d() {
     int err = 0;
 
-    printf("VMamba SS2D: H=%d, W=%d, seqLen=%d, dModel=%d, dInner=%d, K=%d\n", H, W, seqLen, dModel, dInner, K);
-
     void* tcdm_base_ptr = snrt_l1_next();
 
     // Phase 1 buffers
@@ -80,9 +78,8 @@ int test_ss2d() {
     uint32_t p1_cycles = 0, p2_cycles = 0;
 
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting VMamba SS2D: K=%d dirs, Phase1 + Phase2 per dir\n\n", K);
-        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
-               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+        printf("VMamba SS2D: H=%d, W=%d, seqLen=%d, dModel=%d, dInner=%d, K=%d\r\n", H, W, seqLen, dModel, dInner, K);
+        printf("Expected L1 TCDM usage: %u KiB\r\n", (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
     }
 

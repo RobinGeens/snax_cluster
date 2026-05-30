@@ -93,25 +93,14 @@ for name in "${TESTS[@]}"; do
   elf_rel="sw/apps/${name}/build/${name}.elf"
   test_log="${RUN_DIR}/${name}.log"
 
-  # Run test (12 hour timeout; SIGKILL after 60s if still running).
+  # Run test
   # Must not fail under set -e: timeout exits 124 when the limit is hit.
   rc=0
   timeout -k 60 14400 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1 || rc=$?
 
-  # Parse error count from this test's log
+  # Parse error count from this test's log (124 = timeout exit code)
   errors=""
-  timed_out=0
-  if [ "${rc}" -eq 124 ]; then
-    timed_out=1
-    {
-      echo ""
-      echo "# ============================================================================="
-      echo "# REGRESSION TIMEOUT: simulation killed after 12 hours (timeout exit 124)"
-      echo "# ============================================================================="
-    } >> "${test_log}"
-    echo "[regression] TIMEOUT: ${name} (12h limit, SIGTERM → SIGKILL after 60s)" >&2
-    TIMEOUT_TESTS+=("${name}")
-  fi
+  timed_out=$(( rc == 124 ))
   parsed_errors="$(sed -n 's/.*Finished with exit code[[:space:]]\+\([0-9]\+\).*/\1/p' "${test_log}" | tail -n1)"
   if [ -z "${parsed_errors}" ]; then
     # Fallback pattern present in some logs: "Errors: N"
@@ -145,15 +134,5 @@ for name in "${TESTS[@]}"; do
 done
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "${SUMMARY_FILE}"
-
-if [ "${#TIMEOUT_TESTS[@]}" -gt 0 ]; then
-  {
-    echo
-    echo "Timed out (12h limit, see per-test logs for REGRESSION TIMEOUT banner):"
-    for t in "${TIMEOUT_TESTS[@]}"; do
-      echo "  - ${t}"
-    done
-  } >> "${SUMMARY_FILE}"
-fi
 
 popd >/dev/null

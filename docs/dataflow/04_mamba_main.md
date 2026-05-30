@@ -135,9 +135,10 @@ DMA-tile size against kernel-launch overhead.
 
 Stand-alone SU-core run, used to probe the SU-core in isolation. The OS-core
 output `z` is preloaded from the golden reference instead of being produced
-upstream; the IS-core stage is disabled. Used to demonstrate the bank-
-conflict throughput hit when the `BC` operand is given an incorrect spatial
-stride.
+upstream; the IS-core stage is disabled. Used to demonstrate the bank-conflict throughput hit it `BC`.
+The regular (correct) memory layout gives bank conflicts it `BC` because the spatial stride of BC is 16 banks, so
+every two elements come from the same bank. In this app, we overwrite the stride with an incorrect one, just to verify
+utilization.
 
 ## Enabling large seqLen
 

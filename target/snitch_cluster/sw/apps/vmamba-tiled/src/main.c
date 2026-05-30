@@ -26,9 +26,6 @@ static inline uint16_t fp32_to_bf16(float f) {
 int test_ss2d_tiled() {
     int err = 0;
 
-    printf("VMamba SS2D tiled: H=%d, W=%d, seqLen=%d, dModel=%d, dInner=%d, K=%d, nb_tiles=%d\n", H, W, seqLen, dModel,
-           dInner, K, nb_tiles);
-
     // ---- L3 staging buffers ----
     static uint8_t* ptr_conv_out_l3 = NULL;
     static uint8_t* ptr_z_l3        = NULL;
@@ -130,8 +127,9 @@ int test_ss2d_tiled() {
     const uint32_t K_i = M1_dInner_tile / dInnerUnroll;
 
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting VMamba SS2D tiled: K=%d dirs, nb_tiles=%d, K_i=%u\n\n", K, nb_tiles, K_i);
-        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+        printf("\nStarting VMamba SS2D tiled: H=%d, W=%d, seqLen=%d, dModel=%d, K=%d dirs, nb_tiles=%d, K_i=%u\r\n", H,
+               W, seqLen, dModel, K, nb_tiles, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\r\n", (uint32_t)L1_TCDM_PEAK_BYTES,
                (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
     }
@@ -153,6 +151,7 @@ int test_ss2d_tiled() {
         /////////////////////////////////
 
         if (snrt_global_core_idx() == 0) {
+            // printf("[%u cc] Setting up Phase 1 for dir %u\n", snrt_mcycle(), k);
             set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0],
                                 (uint32_t)ptr_conv_weight[0], (uint32_t)ptr_conv_bias[0],
                                 (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
@@ -199,6 +198,8 @@ int test_ss2d_tiled() {
                 asm volatile("fence" ::: "memory");
                 p1_cycles += read_simbacore_perf_counter();
                 if (i == 1) _p1_compute_done = snrt_mcycle();
+
+                // printf("[%u cc] P1 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
             }
 
             if (i >= 2 && snrt_is_dm_core()) {
@@ -230,6 +231,7 @@ int test_ss2d_tiled() {
         /////////////////////////////////
 
         if (snrt_global_core_idx() == 0) {
+            // printf("[%u cc] Setting up Phase 2 for dir %u\n", snrt_mcycle(), k);
             set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2[0], (uint32_t)ptr_z_tile[0],
                                 (uint32_t)ptr_dt_in, (uint32_t)ptr_dt_weight_1[0], (uint32_t)ptr_dt_weight_2[0],
                                 (uint32_t)ptr_dt_bias[0], (uint32_t)ptr_x_tile[0], (uint32_t)ptr_A[0], (uint32_t)ptr_BC,
@@ -289,6 +291,8 @@ int test_ss2d_tiled() {
                 asm volatile("fence" ::: "memory");
                 p2_cycles += read_simbacore_perf_counter();
                 if (i == 1) _p2_compute_done = snrt_mcycle();
+
+                // printf("[%u cc] P2 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
             }
 
             if (i >= 2 && snrt_is_dm_core()) {
@@ -331,6 +335,7 @@ int test_ss2d_tiled() {
         snrt_cluster_hw_barrier();
 
         if (snrt_global_core_idx() == 0) {
+            // printf("[%u cc] Setting up Cross-merge for dir %u\n", snrt_mcycle(), k);
             set_simd_streamer_csr((uint32_t)ptr_merge_a, M16_R7_ss, M16_R7_tb, M16_R7_ts, (uint32_t)ptr_merge_b,
                                   M16_R13_ss, M16_R13_tb, M16_R13_ts, (uint32_t)ptr_merge_a, M16_W3_ss, M16_W3_tb,
                                   M16_W3_ts);
@@ -342,11 +347,6 @@ int test_ss2d_tiled() {
         snrt_cluster_hw_barrier();
     }
 
-    // if (snrt_global_core_idx() == 0) {
-    //     err += check_result_sample(ptr_merge_a, M2_y_merged_flat, M2_test_samples_y_merged_flat, nb_test_samples,
-    //                                "y_merged");
-    //     printf("[%u cc] Cross-merge done (%u cc)\n", snrt_mcycle(), merge_cycles);
-    // }
     snrt_cluster_hw_barrier();
 
     // ---- RMSNorm: 8-step SIMD chain ----

@@ -16,32 +16,9 @@ This folder describes, for every program under
 **high-level dataflow**: the order of accelerator stages, the tiling axis (and
 why), and which buffers are reused vs. tiled between stages.
 
-These docs are intentionally code-free. For byte-level tensor layouts see
+For byte-level tensor layouts see
 [../../../chisel-ssm/docs/memory_layouts/](../../../chisel-ssm/docs/memory_layouts/README.md);
 for the exact streamer/CSR programming see the program sources.
-
-## Programs at a glance
-
-| Program            | Kernel                                  | Tiled? | Tile axis            |
-| ------------------ | --------------------------------------- | ------ | -------------------- |
-| `osgemm`           | OS-core GeMM                            | no     | —                    |
-| `osgemm-tiled`     | OS-core GeMM                            | yes    | N (dInner)           |
-| `isgemm`           | IS-core GeMM (with / without requant)   | no     | —                    |
-| `isgemm-tiled`     | IS-core GeMM                            | yes    | K (dInner)           |
-| `simd`             | Every SIMD op (BF16 + FP8 coverage)     | no     | —                    |
-| `rmsnorm`          | RMSNorm via 6 chained SIMD ops          | no     | —                    |
-| `main`             | Mamba block: Phase 1 → Phase 2          | no     | —                    |
-| `main-tiled`       | Mamba block                             | yes    | dInner (both phases) |
-| `main-full`        | Same as `main`, different parameters    | no     | —                    |
-| `suc-only`              | SU-core stand-alone (debug)             | no     | —                    |
-| `fft`              | 2-way partitioned EinFFT                | no     | —                    |
-| `fft-tiled`        | 2-way partitioned EinFFT                | yes    | Phase A: dModel; Phase B: K |
-| `fft-3way`         | 3-way partitioned EinFFT                | no     | —                    |
-| `fft-3way-tiled`   | 3-way partitioned EinFFT                | yes    | Phase A: dModel; Phase B: —; Phase C: K |
-| `einfft`           | 2-layer EinFFT MLP                      | no     | —                                       |
-| `einfft-tiled`     | 2-layer EinFFT MLP                      | yes    | N (D/4); requires N_t >= 2 (datagen enforces) |
-| `vmamba`           | VMamba SS2D (Phase 1 → Phase 2)         | no     | —                    |
-| `vmamba-tiled`     | VMamba SS2D                             | yes    | dInner (both phases) |
 
 ## Cardinal rules
 

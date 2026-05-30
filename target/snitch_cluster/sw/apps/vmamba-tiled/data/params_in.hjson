@@ -1,6 +1,6 @@
 {
     "H": 12,
     "W": 16,
-    "dModel": 384,
-    "nb_tiles": 32,
+    "dModel": 192,
+    "nb_tiles": 16,
 }

@@ -36,11 +36,13 @@ class DataGenerator(DataGeneratorBase):
 
     def _run_memory_model(self):
         import importlib.util
+
         app_dir = os.path.dirname(os.path.abspath(__file__))
         spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         from memory_model_base import run_model_from_datagen
+
         comment = run_model_from_datagen(mod.build_report, app_dir)
         self.lines_params.append(comment)
 
@@ -68,6 +70,13 @@ class DataGenerator(DataGeneratorBase):
         self.suc_serial_width_BC = self.kwargs["suc_serial_width_BC"]  # Streamer width is 2x this value!
         self.switchcore_width = self.kwargs["switchcore_width"]
         self.gemm_weight_width = self.kwargs["gemm_weight_width"]
+        # BC bank-conflict padding geometry, shared by both phases: `bc_pad_banks` banks of zeros are
+        # appended after each bank-transpose matrix in dt_BC. 0 = disabled.
+        # See chisel-ssm docs/memory_layouts/05_xproj_format.md §5.5.
+        self.bc_pad_banks = self.kwargs.get("bc_pad_banks", 0)
+        self.bc_pad_bytes = self.bc_pad_banks * BANK_BYTES
+        self.bc_matrix_bytes = self.seqLenUnroll * BANK_BYTES  # one bank-transpose matrix
+        self.bc_matrix_stride = self.bc_matrix_bytes + self.bc_pad_bytes
         self.weight_downsize_factor = self.gemm_weight_width / (self.dInnerUnroll * FP8)  # >= 1
         # Derived
         self.downsized_dModel = int(self.dModel / self.weight_downsize_factor)
@@ -128,6 +137,15 @@ class DataGenerator(DataGeneratorBase):
         assert f"M{mode_id}_PHASE1" in self.kwargs, "verify mode_id"
         assert self.switchcore_width == BANKWIDTH
 
+        # BC bank-conflict fix: split the W3/R13 inner loop into (cycles-per-matrix, matrices) with a
+        # padded matrix stride so the IS-core writes the gapped dt_BC layout on-chip. R13 reads the
+        # zero bias init back at the same addresses. See chisel-ssm docs/memory_layouts/05_xproj_format.md
+        # §5.5. bc_pad_banks == 0 reproduces the original loops.
+        psum_cycle_bytes = self.seqLenUnroll * BF16 // 8  # W3/R13 inner stride (one spatial beat)
+        psum_cycles_per_matrix = self.bc_matrix_bytes // psum_cycle_bytes
+        n_psum_matrices = ((self.seqLen // self.seqLenUnroll) * self.xProjDim) // psum_cycles_per_matrix
+        iscore_out_bytes = self.seqLen * self.xProjDim * BF16 // 8 + n_psum_matrices * self.bc_pad_bytes
+
         streamers = {
             "R0": (  # osCore in
                 [
@@ -175,14 +193,19 @@ class DataGenerator(DataGeneratorBase):
             ),
             "R13": (  # isCore psum
                 # First inject zeros, then (K-1) times the full output matrix
-                # The initial values (C) can be at the same addresses as the output matrix
+                # The initial values (C) can be at the same addresses as the output matrix.
+                # Inner loop split into (cycles-per-matrix, matrices) to insert the BC bank pad.
                 [
-                    (self.seqLen // self.seqLenUnroll) * self.xProjDim,  # one output matrix
+                    psum_cycles_per_matrix,  # beats within one bank-transpose matrix
+                    n_psum_matrices,  # matrices in one output buffer
                     self.dInner // self.dInnerUnroll,  # complete reduction dimension (K)
+                    1,
                 ],
                 [
-                    self.seqLenUnroll * BF16 // 8,
+                    psum_cycle_bytes,
+                    self.bc_matrix_stride,  # padded matrix stride
                     0,  # Go to same addresses again
+                    0,
                 ],
             ),
             "W1": (  # conv output
@@ -191,11 +214,15 @@ class DataGenerator(DataGeneratorBase):
             ),
             "W3": (  # isCore output: EXACTLY the same as psum reader R13
                 [
-                    (self.seqLen // self.seqLenUnroll) * self.xProjDim,
+                    psum_cycles_per_matrix,
+                    n_psum_matrices,
                     self.dInner // self.dInnerUnroll,
+                    1,
                 ],
                 [
-                    self.seqLenUnroll * BF16 // 8,
+                    psum_cycle_bytes,
+                    self.bc_matrix_stride,
+                    0,
                     0,
                 ],
             ),
@@ -209,7 +236,7 @@ class DataGenerator(DataGeneratorBase):
             ("conv_out", self.seqLen * self.dInner * FP8 // 8),
             ("iscore_weight", self.dInner * self.xProjDim * FP8 // 8),
             # Reserve space for BF16 psums. On the final iteration, only first half will contain valid data
-            ("iscore_out", self.seqLen * self.xProjDim * BF16 // 8),
+            ("iscore_out", iscore_out_bytes),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
@@ -243,6 +270,14 @@ class DataGenerator(DataGeneratorBase):
         # assert self.dConv * FP8 == BANK_BYTES * 8, "switchCore weight width must match 1 bank width"
         assert self.dtRank * FP8 % self.switchcore_width == 0, "dtRank must be divisible by switchCore elem/cc in"
         assert self.switchcore_width == BANKWIDTH, "switchcore_width must match bank width"
+
+        # BC bank-conflict fix: dt_BC gets padding after every bank-transpose matrix (dt included),
+        # widening the per-window stride, dt->BC offset and the R7/R2 matrix strides.
+        # See chisel-ssm docs/memory_layouts/05_xproj_format.md §5.5. bc_pad_banks == 0 reproduces the original.
+        n_window_matrices = self.xProjDim * FP8 // BANKWIDTH  # all (dt+BC) matrices per window
+        n_dt_matrices = self.dtRank * FP8 // BANKWIDTH  # dt matrices in front of BC
+        dt_bc_window_bytes = self.seqLenUnroll * self.xProjDim * FP8 // 8 + n_window_matrices * self.bc_pad_bytes
+        dt_to_BC_offset = n_dt_matrices * self.bc_matrix_stride
 
         suc_parallel_widthA = self.dState * FP8
         # suc_parallel_widthBC = self.dState * FP8
@@ -299,9 +334,9 @@ class DataGenerator(DataGeneratorBase):
                     self.dInner // self.convUnroll,  # N (irrelevant dimension)
                 ],
                 [
-                    (self.switchcore_width // 8) * self.seqLenUnroll,
+                    self.bc_matrix_stride,  # consecutive dt matrices (padded)
                     BANK_BYTES,
-                    self.seqLenUnroll * self.xProjDim * FP8 // 8,
+                    dt_bc_window_bytes,  # window stride (padded dt + BC)
                     0,
                 ],
                 self.seqLenUnroll * BANK_BYTES,  # Spatial stride
@@ -338,13 +373,17 @@ class DataGenerator(DataGeneratorBase):
                     self.dInner // self.delaySU,  # Irrelevant dimension
                 ],
                 [
-                    (2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll,
+                    # innermost loop steps over chunk-pairs; one chunk-pair spans (spatial) matrices
+                    ((2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll // self.bc_matrix_bytes)
+                    * self.bc_matrix_stride,
                     BANK_BYTES,
-                    self.seqLenUnroll * self.xProjDim * FP8 // 8,
+                    dt_bc_window_bytes,
                     0,
                 ],
-                # ! This is problematic, because it puts 2 spatial addresses at the same bank!
-                self.seqLenUnroll * BANK_BYTES,  # Spatial stride
+                # Spatial stride = one (padded) bank-transpose matrix. process_spatial_stride expands
+                # this to [matrix, 2*matrix] for R7's [2,2] spatial loop. With bc_pad_banks a multiple
+                # of 4, the 4 per-cycle banks no longer alias (was seqLenUnroll*BANK_BYTES = conflict).
+                self.bc_matrix_stride,
             ),
             "R8": (  # SUC D
                 [self.dInner * FP8 // BANKWIDTH],
@@ -414,7 +453,7 @@ class DataGenerator(DataGeneratorBase):
             ("oscore_weight", self.dModel * self.dInner * FP8 // 8),
             ("z", tensor_size),
             # ("dt_BC_dummy", dummyFillBC),
-            ("dt_BC", self.seqLen * self.xProjDim * FP8 // 8),
+            ("dt_BC", (self.seqLen // self.seqLenUnroll) * dt_bc_window_bytes),
             ("dt_weight_1", self.dInner * (self.dtRank // self.dtRankUnroll) * self.dConv * FP8 // 8),
             (
                 "dt_weight_2",
@@ -437,7 +476,7 @@ class DataGenerator(DataGeneratorBase):
             **deltas,
             "R10_start_cnt": suc_start_cnt,  # R10 is SUC input z: comes from OS core
             "R11_start_cnt": iscore_start_cnt,  # R11 is IS core input, comes from SUC output y
-            "dt_to_BC_offset": self.seqLenUnroll * self.dtRank * FP8 // 8,  # First BC value in dt_BC tensor
+            "dt_to_BC_offset": dt_to_BC_offset,  # First BC value in dt_BC tensor (after padded dt matrices)
         }
         self.phase2_scalars = scalars.copy()
 
