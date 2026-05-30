@@ -3,4 +3,5 @@
     "W": 16,
     "dModel": 192,
     "nb_tiles": 16,
+    "bc_pad_banks": 4,
 }

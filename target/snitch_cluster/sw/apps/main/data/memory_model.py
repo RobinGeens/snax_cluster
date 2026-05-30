@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(__file__))
 from memory_model_base import (
     FP8, BF16, align64, derive_mamba_params,
     MemoryReport, sequential_bytes, run_model,
+    bc_pad_iscore_out_bytes, bc_pad_dt_bc_bytes,
 )
 
 
@@ -43,7 +44,7 @@ def build_report(params: dict) -> MemoryReport:
         ("conv_bias",      dInner * FP8 // 8),
         ("conv_out",       L * dInner * FP8 // 8),
         ("iscore_weight",  dInner * xProjDim * FP8 // 8),
-        ("iscore_out",     L * xProjDim * BF16 // 8),
+        ("iscore_out",     bc_pad_iscore_out_bytes(params, L, xProjDim)),
     ]
     report.add_section("Phase 1 (sequential in TCDM)", p1_bufs)
     p1_total = sequential_bytes([s for _, s in p1_bufs])
@@ -53,7 +54,7 @@ def build_report(params: dict) -> MemoryReport:
         ("oscore_in",      L * dModel * FP8 // 8),
         ("oscore_weight",  dModel * dInner * FP8 // 8),
         ("z",              L * dInner * FP8 // 8),
-        ("dt_BC",          L * xProjDim * FP8 // 8),
+        ("dt_BC",          bc_pad_dt_bc_bytes(params, L, xProjDim)),
         ("dt_weight_1",    dInner * (dtRank // dtRankUnroll) * dConv * FP8 // 8),
         ("dt_weight_2",    dInner * (dtRank // dtRankUnroll) * (dtRankUnroll - dConv) * FP8 // 8),
         ("dt_bias",        dInner * FP8 // 8),

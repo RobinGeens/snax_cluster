@@ -47,6 +47,31 @@ def pad_to_unroll(dim: int, unroll: int = D_INNER_UNROLL) -> int:
     return math.ceil(dim / unroll) * unroll
 
 
+def bc_pad_iscore_out_bytes(params: dict, L: int, xProjDim: int) -> int:
+    """P1 IS-core output / psum buffer (BF16), including the BC bank-conflict padding inserted after
+    every bank-transpose matrix. No-op when bc_pad_banks == 0.
+    See chisel-ssm docs/memory_layouts/05_xproj_format.md §5.5."""
+    base = L * xProjDim * BF16 // 8
+    pad_banks = params.get("bc_pad_banks", 0)
+    if pad_banks == 0:
+        return base
+    matrix_bytes = SEQ_LEN_UNROLL * BANK_BYTES
+    cycle_bytes = SEQ_LEN_UNROLL * BF16 // 8
+    n_matrices = ((L // SEQ_LEN_UNROLL) * xProjDim) // (matrix_bytes // cycle_bytes)
+    return base + n_matrices * pad_banks * BANK_BYTES
+
+
+def bc_pad_dt_bc_bytes(params: dict, L: int, xProjDim: int) -> int:
+    """P2 dt_BC buffer (FP8), including the BC bank-conflict padding (§5.5). No-op when disabled.
+    In fused apps dt_BC overlaps the (larger, BF16) P1 iscore_out, so use that for the peak."""
+    base = L * xProjDim * FP8 // 8
+    pad_banks = params.get("bc_pad_banks", 0)
+    if pad_banks == 0:
+        return base
+    n_window_matrices = xProjDim * FP8 // BANKWIDTH
+    return base + (L // SEQ_LEN_UNROLL) * n_window_matrices * pad_banks * BANK_BYTES
+
+
 def derive_mamba_params(user: dict) -> dict:
     """Derive dInner, xProjDim etc. from user-specified params."""
     dModel = user["dModel"]

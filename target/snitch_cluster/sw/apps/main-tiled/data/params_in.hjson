@@ -2,5 +2,6 @@
     "seqLen": 192,
     "dModel": 384,
     "dtRank": 24,
-    "nb_tiles": 32
+    "nb_tiles": 32,
+    "bc_pad_banks": 4
 }

@@ -99,6 +99,22 @@ class DataGenerator(DataGeneratorBase):
         assert self.downsized_dModel * self.gemm_weight_width == self.dModel * (self.dInnerUnroll * FP8)
         assert self.downsized_xProjDim * self.gemm_weight_width == self.xProjDim * (self.dInnerUnroll * FP8)
 
+        # BC bank-conflict padding geometry (dt_BC / iscore_out are NOT tiled, so this matches `main`).
+        # See chisel-ssm docs/memory_layouts/05_xproj_format.md §5.5. bc_pad_banks == 0 disables it.
+        self.bc_pad_banks = self.kwargs.get("bc_pad_banks", 0)
+        self.bc_pad_bytes = self.bc_pad_banks * BANK_BYTES
+        self.bc_matrix_bytes = self.seqLenUnroll * BANK_BYTES  # one bank-transpose matrix
+        self.bc_matrix_stride = self.bc_matrix_bytes + self.bc_pad_bytes
+        # Phase1 psum write (W3/R13) split: (cycles-per-matrix, matrices) with a padded matrix stride
+        self.psum_cycle_bytes = self.seqLenUnroll * BF16 // 8
+        self.psum_cycles_per_matrix = self.bc_matrix_bytes // self.psum_cycle_bytes
+        self.n_psum_matrices = ((self.seqLen // self.seqLenUnroll) * self.xProjDim) // self.psum_cycles_per_matrix
+        self.iscore_out_bytes = self.seqLen * self.xProjDim * BF16 // 8 + self.n_psum_matrices * self.bc_pad_bytes
+        # Phase2 dt_BC read geometry
+        self.n_window_matrices = self.xProjDim * FP8 // BANKWIDTH
+        self.dt_bc_window_bytes = self.seqLenUnroll * self.xProjDim * FP8 // 8 + self.n_window_matrices * self.bc_pad_bytes
+        self.dt_to_BC_offset = (self.dtRank * FP8 // BANKWIDTH) * self.bc_matrix_stride
+
         # Tiling
         self.nb_tiles = self.kwargs["nb_tiles"]
         self.dInner_tile = self.dInner // self.nb_tiles
@@ -208,29 +224,18 @@ class DataGenerator(DataGeneratorBase):
                     self.downsized_xProjDim * self.gemm_weight_width // 8,
                 ],
             ),
+            # R13/W3 inner loop split into (cycles-per-matrix, matrices) for the BC bank pad (§5.5)
             "R13": (
-                [
-                    (self.seqLen // self.seqLenUnroll) * self.xProjDim,
-                    N_kern,
-                ],
-                [
-                    self.seqLenUnroll * BF16 // 8,
-                    0,
-                ],
+                [self.psum_cycles_per_matrix, self.n_psum_matrices, N_kern, 1],
+                [self.psum_cycle_bytes, self.bc_matrix_stride, 0, 0],
             ),
             "W1": (
                 [self.seqLen * dInner_kern * FP8 // BANKWIDTH],
                 [BANK_BYTES],
             ),
             "W3": (
-                [
-                    (self.seqLen // self.seqLenUnroll) * self.xProjDim,
-                    N_kern,
-                ],
-                [
-                    self.seqLenUnroll * BF16 // 8,
-                    0,
-                ],
+                [self.psum_cycles_per_matrix, self.n_psum_matrices, N_kern, 1],
+                [self.psum_cycle_bytes, self.bc_matrix_stride, 0, 0],
             ),
         }
 
@@ -268,7 +273,7 @@ class DataGenerator(DataGeneratorBase):
         len_conv_bias = self.dInner * FP8 // 8
         len_conv_out = self.seqLen * self.dInner * FP8 // 8
         len_iscore_weight = self.dInner * self.xProjDim * FP8 // 8
-        len_iscore_out = self.seqLen * self.xProjDim * BF16 // 8  # not tiled
+        len_iscore_out = self.iscore_out_bytes  # not tiled (BC bank pad, §5.5)
 
         nb = self.nb_tiles
         for v in (len_oscore_weight, len_conv_weight, len_conv_bias, len_conv_out, len_iscore_weight):
@@ -369,9 +374,9 @@ class DataGenerator(DataGeneratorBase):
                     dInner_kern // self.convUnroll,  # irrelevant dim (per-K-step)
                 ],
                 [
-                    (self.switchcore_width // 8) * self.seqLenUnroll,
+                    self.bc_matrix_stride,  # consecutive dt matrices (padded)
                     BANK_BYTES,
-                    self.seqLenUnroll * self.xProjDim * FP8 // 8,
+                    self.dt_bc_window_bytes,
                     0,
                 ],
                 self.seqLenUnroll * BANK_BYTES,
@@ -408,12 +413,13 @@ class DataGenerator(DataGeneratorBase):
                     dInner_kern // self.delaySU,  # irrelevant dim (per-K-step)
                 ],
                 [
-                    (2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll,
+                    ((2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll // self.bc_matrix_bytes)
+                    * self.bc_matrix_stride,
                     BANK_BYTES,
-                    self.seqLenUnroll * self.xProjDim * FP8 // 8,
+                    self.dt_bc_window_bytes,
                     0,
                 ],
-                self.seqLenUnroll * BANK_BYTES,
+                self.bc_matrix_stride,  # spatial: one padded matrix (process_spatial_stride -> [m, 2m])
             ),
             "R8": (  # SUC D
                 [dInner_kern * FP8 // BANKWIDTH],
@@ -459,7 +465,7 @@ class DataGenerator(DataGeneratorBase):
         len_oscore_in = self.seqLen * self.dModel * FP8 // 8
         len_oscore_weight = self.dModel * self.dInner * FP8 // 8
         len_z = self.seqLen * self.dInner * FP8 // 8
-        len_dt_BC = self.seqLen * self.xProjDim * FP8 // 8  # not tiled (FULL dt+BC)
+        len_dt_BC = (self.seqLen // self.seqLenUnroll) * self.dt_bc_window_bytes  # not tiled (FULL dt+BC, padded §5.5)
         len_dt_weight_1 = self.dInner * (self.dtRank // self.dtRankUnroll) * self.dConv * FP8 // 8
         len_dt_weight_2 = self.dInner * (self.dtRank // self.dtRankUnroll) * (self.dtRankUnroll - self.dConv) * FP8 // 8
         len_dt_bias = self.dInner * FP8 // 8
@@ -527,7 +533,7 @@ class DataGenerator(DataGeneratorBase):
             **tile_scalars,
             "R10_start_cnt": suc_start_cnt,
             "R11_start_cnt": iscore_start_cnt,
-            "dt_to_BC_offset": self.seqLenUnroll * self.dtRank * FP8 // 8,
+            "dt_to_BC_offset": self.dt_to_BC_offset,
         }
         self.phase2_scalars = scalars.copy()
 

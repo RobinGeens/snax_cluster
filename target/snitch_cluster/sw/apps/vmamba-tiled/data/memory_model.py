@@ -22,6 +22,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../../main/data"))
 from memory_model_base import (
     FP8, BF16, SIMD_LANES_BF16, align64,
     derive_mamba_params, MemoryReport, pingpong_bytes, sequential_bytes, run_model,
+    bc_pad_iscore_out_bytes,
 )
 
 
@@ -46,7 +47,7 @@ def build_report(params: dict) -> MemoryReport:
 
     # Shared FULL buffers (always live across P1 and P2)
     len_oscore_in = L * dModel * FP8 // 8
-    len_iscore_out_P1 = L * xProjDim * BF16 // 8
+    len_iscore_out_P1 = bc_pad_iscore_out_bytes(params, L, xProjDim)  # BC bank pad §5.5 (= P2 dt_BC)
     len_iscore_out_P2 = L * dModel * BF16 // 8
 
     shared_bufs = [

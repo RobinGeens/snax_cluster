@@ -84,7 +84,7 @@ class DataGenerator(MainTiledDataGenerator):
         len_conv_bias = self.dInner * FP8 // 8
         len_conv_out = self.seqLen * self.dInner * FP8 // 8
         len_iscore_weight = self.dInner * self.xProjDim * FP8 // 8
-        len_iscore_out = self.seqLen * self.xProjDim * BF16 // 8
+        len_iscore_out = self.iscore_out_bytes  # BC bank pad §5.5
 
         for v in (len_oscore_weight, len_conv_weight, len_conv_bias, len_conv_out, len_iscore_weight):
             assert v % nb == 0, f"Phase1 length {v} not divisible by nb_tiles {nb}"
@@ -157,11 +157,11 @@ class DataGenerator(MainTiledDataGenerator):
                 [self.downsized_dModel, self.seqLen // self.seqLenUnroll, N_kern],
                 [self.gemm_weight_width // 8, 0, self.downsized_dModel * self.gemm_weight_width // 8],
             ),
-            "R2": (
+            "R2": (  # switchCore in (dt); BC bank pad §5.5
                 [self.dtRank * FP8 // self.switchcore_width, self.seqLenUnroll,
                  self.seqLen // self.seqLenUnroll, dInner_kern // self.convUnroll],
-                [(self.switchcore_width // 8) * self.seqLenUnroll, BANK_BYTES,
-                 self.seqLenUnroll * self.xProjDim * FP8 // 8, 0],
+                [self.bc_matrix_stride, BANK_BYTES,
+                 self.dt_bc_window_bytes, 0],
                 self.seqLenUnroll * BANK_BYTES,
             ),
             "R3": (
@@ -177,12 +177,13 @@ class DataGenerator(MainTiledDataGenerator):
             ),
             "R6": ([dInner_kern * (suc_parallel_widthA // self.suc_serial_width_A)],
                    [self.suc_serial_width_A // 8]),
-            "R7": (
+            "R7": (  # SUC BC; BC bank pad §5.5
                 [(2 * self.dState * FP8) // (2 * self.suc_serial_width_BC), self.seqLenUnroll,
                  self.seqLen // self.seqLenUnroll, dInner_kern // self.delaySU],
-                [(2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll, BANK_BYTES,
-                 self.seqLenUnroll * self.xProjDim * FP8 // 8, 0],
-                self.seqLenUnroll * BANK_BYTES,
+                [((2 * self.suc_serial_width_BC // 8) * self.seqLenUnroll // self.bc_matrix_bytes)
+                 * self.bc_matrix_stride, BANK_BYTES,
+                 self.dt_bc_window_bytes, 0],
+                self.bc_matrix_stride,
             ),
             "R8": ([dInner_kern * FP8 // BANKWIDTH], [BANK_BYTES]),
             "R9": (bounds_conv_to_suc, strides_conv_to_suc),
@@ -217,7 +218,7 @@ class DataGenerator(MainTiledDataGenerator):
         len_oscore_in = self.seqLen * self.dModel * FP8 // 8
         len_oscore_weight = self.dModel * self.dInner * FP8 // 8
         len_z = tensor_size
-        len_dt_BC = self.seqLen * self.xProjDim * FP8 // 8
+        len_dt_BC = (self.seqLen // self.seqLenUnroll) * self.dt_bc_window_bytes  # BC bank pad §5.5
         len_dt_weight_1 = self.dInner * (self.dtRank // self.dtRankUnroll) * self.dConv * FP8 // 8
         len_dt_weight_2 = self.dInner * (self.dtRank // self.dtRankUnroll) * (self.dtRankUnroll - self.dConv) * FP8 // 8
         len_dt_bias = self.dInner * FP8 // 8
@@ -268,7 +269,7 @@ class DataGenerator(MainTiledDataGenerator):
             **lengths, **deltas, **tile_scalars,
             "R10_start_cnt": suc_start_cnt,
             "R11_start_cnt": iscore_start_cnt,
-            "dt_to_BC_offset": self.seqLenUnroll * self.dtRank * FP8 // 8,
+            "dt_to_BC_offset": self.dt_to_BC_offset,
         }
         self.phase2_scalars = scalars.copy()
 
