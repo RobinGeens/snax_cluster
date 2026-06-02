@@ -6,13 +6,15 @@
 
 SUBDIRS  = nop
 SUBDIRS += main
+SUBDIRS += main-tiled-oscore
+SUBDIRS += osgemm-tiled-async
 SUBDIRS += vmamba
 SUBDIRS += vmamba-tiled
 SUBDIRS += main-tiled
-SUBDIRS += fft
-SUBDIRS += rmsnorm
-SUBDIRS += fft-tiled
-SUBDIRS += einfft-tiled
+# SUBDIRS += fft
+# SUBDIRS += rmsnorm
+# SUBDIRS += fft-tiled
+# SUBDIRS += einfft-tiled
 # SUBDIRS += fft-3way
 # SUBDIRS += osgemm
 # SUBDIRS += isgemm

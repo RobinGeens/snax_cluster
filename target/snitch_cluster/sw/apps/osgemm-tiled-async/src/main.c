@@ -1,0 +1,109 @@
+// Copyright 2025 KU Leuven.
+// Not released under license. All rights reserved.
+//
+// Author: Robin Geens <robin.geens@kuleuven.be>
+//
+// Minimal demonstration of the async tiling for oscore input.
+//
+// A is L-tiled along seqLen into nb_l_tiles and held in TCDM as a ring of nb_slots adjacent slots.
+// Each dInner tile is one osCore invocation (dInner_tile = dInnerUnroll, N_tile = 1) that re-reads
+// the full A via the stride-0 wrap of R0; the DM core refills slots during compute, paced by R10.
+// The last nb_slots refills wrap-reset the ring to L-tiles 0..nb_slots-1 for the next invocation.
+//
+// TODO does this work with nb_slots=2?
+
+#include "data.h"
+#include "snax-simbacore-lib.h"
+
+int test_osgemm_async() {
+    int err = 0;
+
+    void* tcdm_base_ptr = snrt_l1_next();
+    uint8_t* ptr_a      = (uint8_t*)tcdm_base_ptr;                // A ring base = slot 0
+    uint8_t* ptr_b      = ptr_a + nb_slots * M3_length_a_l_tile;  // one B-tile (reloaded per dInner tile)
+    uint8_t* ptr_d      = ptr_b + M3_length_b_tile;               // full D (osCore writes tile slices)
+
+    snrt_cluster_hw_barrier();
+
+    // Preload the first nb_slots A L-tiles into the ring (B is loaded per dInner tile below).
+    if (snrt_is_dm_core()) {
+        for (uint32_t s = 0; s < nb_slots; s++)
+            snrt_dma_start_1d(ptr_a + s * M3_length_a_l_tile, M3_A + s * M3_oscore_in_l_offset, M3_length_a_l_tile);
+        snrt_dma_wait_all();
+    }
+    snrt_cluster_hw_barrier();
+
+    // One-time streamer + simbacore config. R0 base = ring (fixed); R1/W0 bases are updated per tile.
+    if (snrt_global_core_idx() == 0) {
+        set_osgemm_streamer_csr((uint32_t)ptr_a, M3_R0_ss, M3_R0_tb, M3_R0_ts,   //
+                                (uint32_t)ptr_b, M3_R1_ss, M3_R1_tb, M3_R1_ts,   //
+                                (uint32_t)ptr_d, M3_W0_ss, M3_W0_tb, M3_W0_ts);  //
+        set_simbacore_csr(M3_OSGEMM, dim0, dim1, M3_dim2_tile, 1, 1);
+        printf(
+            "\nStarting program: OSGeMM async (seqLen=%d dModel=%d dInner=%d nb_tiles=%d nb_l_tiles=%d nb_slots=%d "
+            "L_tile=%d)\n\n",
+            dim0, dim1, dim2, nb_tiles, nb_l_tiles, nb_slots, dim0 / nb_l_tiles);
+    }
+    snrt_cluster_hw_barrier();
+
+    const uint32_t N_visits   = nb_l_tiles;  // one full A pass per dInner-tile invocation
+    const uint32_t gauge_step = M3_oscore_in_l_tile_gauge_step;
+
+    for (uint32_t tile = 0; tile < nb_tiles; tile++) {
+        // Load this dInner tile's B (blocking) -> keeps the DM core free during the A refill.
+        if (snrt_is_dm_core()) {
+            snrt_dma_start_1d(ptr_b, M3_B + tile * M3_length_b_tile, M3_length_b_tile);
+            snrt_dma_wait_all();
+        }
+        snrt_cluster_hw_barrier();
+
+        // Kick the osCore for this tile (non-blocking, start_cnt=0). R10 resets per invocation.
+        // The refill loop below MUST poll R10 immediately after this, with no slow op in between,
+        // or the osCore runs ahead and the refills land too late (see docs/dataflow/09_async_tiling.md).
+        if (snrt_global_core_idx() == 0) {
+            write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_b);
+            write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)(ptr_d + tile * M3_length_d_tile));
+            start_simbacore_and_streamers(M3_R10_en, 0, M3_R11_en, 0);
+        }
+
+        // Async A-ring refill during compute, paced by R10 (osCore output-tile gauge).
+        for (uint32_t r = 0; r < N_visits; r++) {
+            if (snrt_global_core_idx() == 0) {
+                while (read_csr(R10_DELAY_GAUGE) < (r + 1) * gauge_step);
+            }
+            snrt_cluster_hw_barrier();
+            if (snrt_is_dm_core()) {
+                snrt_dma_start_1d(ptr_a + (r % nb_slots) * M3_length_a_l_tile,
+                                  M3_A + ((r + nb_slots) % nb_l_tiles) * M3_oscore_in_l_offset, M3_length_a_l_tile);
+            }
+        }
+        if (snrt_is_dm_core()) snrt_dma_wait_all();
+        snrt_cluster_hw_barrier();
+
+        if (snrt_global_core_idx() == 0) {
+            wait_simbacore_and_streamer();
+            asm volatile("fence" ::: "memory");
+        }
+        snrt_cluster_hw_barrier();
+    }
+
+    // Verify the full osCore output D against golden (FP8, +-1 LSB tolerance; signed-zero 0==128).
+    if (snrt_global_core_idx() == 0) {
+        const int16_t TOL   = 1;
+        uint32_t total_fail = 0;
+        for (uint32_t idx = 0; idx < M3_length_d; idx++) {
+            uint8_t o = ptr_d[idx], g = M3_D[idx];
+            int16_t d = (int16_t)o - (int16_t)g;
+            int ok    = ((o == 0 && g == 128) || (o == 128 && g == 0)) || (d >= -TOL && d <= TOL);
+            if (!ok) total_fail++;
+        }
+        err = (total_fail > 0);
+        printf("Test OSGeMM async: seqLen=%d dModel=%d dInner=%d nb_tiles=%d nb_l_tiles=%d nb_slots=%d\n", dim0, dim1,
+               dim2, nb_tiles, nb_l_tiles, nb_slots);
+        printf("%s: %u / %u D elements wrong.\n", total_fail ? "FAIL" : "PASS", total_fail, M3_length_d);
+    }
+    snrt_cluster_hw_barrier();
+    return err;
+}
+
+int main() { return test_osgemm_async(); }

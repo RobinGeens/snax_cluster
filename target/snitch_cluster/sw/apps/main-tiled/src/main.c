@@ -136,19 +136,21 @@ int test_phase1_and_2() {
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: Mamba main tiled (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, x-tiled via L3)\n\n",
                seqLen, dModel, nb_tiles, K_i);
-        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
-               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+        printf("Expected L1 TCDM usage: %u KiB\n", (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+
         start_cycles = snrt_mcycle();
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
                             (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
                             (uint32_t)ptr_conv_out_tile[0]);
         set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
     }
+
     snrt_cluster_hw_barrier();
 
     for (uint32_t i = 0; i < nb_tiles + 2; i++) {
         int buf = i % 2;
 
+        // Stage I: load next tile's data
         if (i < nb_tiles && snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_oscore_weight_P1[buf], M1_oscore_weight + i * M1_length_oscore_weight_tile,
                               M1_length_oscore_weight_tile);
@@ -160,6 +162,7 @@ int test_phase1_and_2() {
                               M1_length_iscore_weight_tile);
         }
 
+        // Stage II: compute tile
         if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
             uint32_t tile      = i - 1;
             bool is_final_tile = (tile == nb_tiles - 1);
@@ -172,6 +175,7 @@ int test_phase1_and_2() {
             if (is_final_tile) write_csr(MODE, M1_PHASE1);
             _set_streamer_start();
             _set_simbacore_start();
+            // TODO why do we do this?
             write_csr(STREAMER_START_CSR, 0);
             write_csr(SIMBACORE_START, 0);
             if (!is_final_tile) {
@@ -183,6 +187,7 @@ int test_phase1_and_2() {
                 write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P1[nbuf]);
                 write_csr(BASE_PTR_WRITER_1_LOW, (uint32_t)ptr_conv_out_tile[nbuf]);
             }
+
             while (read_csr(SIMBACORE_BUSY));
             while (read_csr(STREAMER_BUSY_CSR));
             simbacore_cycles_phase1 += read_simbacore_perf_counter();
