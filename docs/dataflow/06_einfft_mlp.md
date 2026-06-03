@@ -108,17 +108,23 @@ DMA'd into TCDM before the four OSGEMMs run. With `L=16, D=192`
 
 - The four 4-OSGEMM-per-tile loops fire with `N_t = N_full / nb_tiles`
   and the weight DMA is double-buffered against the next tile's compute.
-- The per-tile OSGEMM output lands in the contiguous slot of a FULL
-  per-branch ConvFormat scratch (= `ptr_rr + tile * L * dPerB_tile`),
-  so the assembled scratch matches the byte order the un-tiled
-  reference expects.
-- After all tiles are written, the SIMD widen / SUB / ADD-with-bias /
-  narrow chain runs **once per side per branch** with full per-branch
-  bounds — empirically the SIMD pipeline produces correct output at
-  those bounds and degrades at short-bound per-tile launches.
+- Each tile's 4 OSGEMMs write a TILE-sized ConvFormat scratch
+  (`rr/ii/ri/ir`, each `L × dPerB_tile`), and the SIMD widen / SUB /
+  ADD-with-bias / narrow chain runs **immediately for that tile** (per
+  side, at tile bounds) before the next tile's OSGEMM. Output tiles are
+  spilled to L3 as they are produced. Consequently the scratch, the BF16
+  staging, and the output buffers only ever hold ONE tile — the TCDM
+  footprint scales as `~1/nb_tiles` in those buffers, which is what lets
+  large `(L, dModel)` fit (see §6.5).
+- The earlier "SIMD degrades at short per-tile bounds" caveat applies
+  only to *tiny absolute* bounds (~12 fp8 cycles, the `L=16` default).
+  At realistic params the per-tile bound is far above that and the fuse
+  is correct; validated at `64/384/2`, `192/384/2`, and `384/384/2`
+  (the last ~648 KiB with the old full-buffer scheme — formerly OOM).
 
-This program PASSES at `nb_tiles = 1` (equivalent to the un-tiled
-`einfft` plus a one-iteration tile loop and one-tile weight ping-pong).
+This program PASSES at `nb_tiles = 1` (per-tile fuse degenerates to the
+un-tiled `einfft` chain, plus a one-iteration tile loop and one-tile
+weight ping-pong).
 
 ### `nb_tiles` constraint: `N_t >= 2`
 
@@ -197,15 +203,13 @@ per-tile compute, with each weight tile reused across two matmuls
 (`W_re` across rr + ir, `W_im` across ii + ri). This is the same axis
 [`osgemm-tiled`](01_oscore_kernels.md) picks.
 
-The tiled program in this repo applies the ConvFormat-throughout
-strategy at the OS-core level (per-tile OSGEMM writing into a FULL
-per-branch ConvFormat scratch) but defers the SIMD chain to a single
-per-branch launch at full bounds. This matches the structure that
-already passes in `einfft` but adds the per-tile weight DMA pipeline.
-It works correctly when `N_t = N_full / nb_tiles >= 2`. At the
-default-shape `dModel=192`, `dPerB=48`, `N_full=2`, that caps
-`nb_tiles` at 1; see §6.2 for the underlying HW limitation and the
-datagen assertion that enforces it.
+The tiled program applies the ConvFormat-throughout strategy at the
+OS-core level (per-tile OSGEMM writing a TILE-sized ConvFormat scratch)
+and runs the SIMD fuse per tile at tile bounds, so scratch / BF16
+staging / output stay one tile in size. It works correctly when
+`N_t = N_full / nb_tiles >= 2`. At the default-shape `dModel=192`,
+`dPerB=48`, `N_full=2`, that caps `nb_tiles` at 1; see §6.2 for the
+underlying HW limitation and the datagen assertion that enforces it.
 
 ## 6.5 What stays FULL, what's per-branch
 
@@ -216,8 +220,16 @@ datagen assertion that enforces it.
 | `b_{1,2}_{re,im}_bcast[0..3]`       | `4 · L · (D/4) · BF16`   | **FULL** pre-expanded biases (conv-walk order); loaded once at boot        |
 | `l1_re/im[0..3]`, `l2_re/im[0..3]`  | `4 · L · (D/4)` each     | **FULL**, SIMD narrow writes into them in ConvFormat per branch            |
 | `W_re_branch`, `W_im_branch`        | `(D/4)²` each            | **per-branch**, re-DMA'd at every branch iteration                         |
-| `rr / ii / ri / ir`                 | `L · (D/4)`              | **per-branch scratch**, overwritten every branch                           |
-| `bf16_a`, `bf16_b`                  | `L · (D/4) · BF16` each  | **per-branch staging** for the SIMD widen / binop chain                    |
+| `rr / ii / ri / ir`                 | `L · (D/4)`              | **per-branch scratch** (un-tiled); **per-TILE** `L · (D/4)/nb_tiles` in `einfft-tiled` |
+| `bf16_a`, `bf16_b`                  | `L · (D/4) · BF16` each  | **per-branch staging** (un-tiled); **per-TILE** in `einfft-tiled`           |
+
+In `einfft-tiled` the scratch, BF16 staging, and output buffers are
+TILE-sized (`/nb_tiles`) because the fuse runs per tile, and x / x2 /
+mini-bias / outputs are L3-staged and DMA'd per (layer, branch) rather
+than all held resident — see the app's `memory_model.py` for the exact
+resident footprint. Raising `nb_tiles` (subject to `N_t >= 2`) shrinks
+the per-tile buffers, so larger `(L, dModel)` fit; the floor is the
+FULL per-branch `x_re/x_im` (reused by every N-tile) plus mini-bias.
 
 Total live TCDM (un-tiled, `L=16, D=192`):
 ≈ 36 KiB (most of it the 16 FULL FP8 / BF16 broadcast buffers).

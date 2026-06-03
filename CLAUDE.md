@@ -119,7 +119,11 @@ Don't append anything (like the parameter, current iteration, etc.) to the `tmp-
 
 
 - `exit code = 0` at the end of the log = PASS.
-- Waveforms: `vsim.wlf`. Per-hart traces: `logs/trace_chip_*_hart_*.dasm`.
+- Per-hart traces: `logs/trace_chip_*_hart_*.dasm`.
+
+**Never produce vsims/waveforms for the user.** The user always inspects waves in their own separate vsim session and never looks at the `vsim.wlf` (or any waveform) from your runs. So: don't generate waveform output, don't rebuild/launch the vsim GUI for wave inspection, don't preserve or ask about `vsim.wlf`, and kill your sim runs freely once you have the PASS/FAIL log. Your runs exist only to produce the `tmp-<app_name>.log` PASS/FAIL result; debug from the log, the `.dasm` traces, and RTL/SW instrumentation — never from waveforms.
+
+**Do NOT wrap the sim in a short `timeout`.** vsim spends minutes in elaboration before the program even starts, and larger params (bigger dModel/dInner/seqLen) make the run several× longer. A run killed by `timeout 600` is almost always *slow, not hung* — and the captured trace then looks deceptively like a deadlock (core 0 spinning on `SIMBACORE_BUSY`, the other core parked at the HW barrier `0x7c2`) because that is also exactly what a mid-compute snapshot looks like. **Never conclude "hang" from a timed-out run.** Run with no timeout (or ≥1800 s) and confirm a true hang by watching the progress markers (e.g. `Finished ... for tile N`) stop advancing for minutes — not by the exit code or a single trace snapshot.
 
 ## 7. Changing Apps — Test Small, Debug Until Pass
 

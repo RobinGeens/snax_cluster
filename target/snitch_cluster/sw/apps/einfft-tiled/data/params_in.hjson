@@ -4,7 +4,7 @@
     //   - dModel   multiple of 4 * dInnerUnroll  (4 * 24 = 96)
     //   - dPerB    multiple of dInnerUnroll * nb_tiles
     //   - N_t = dPerB / (Nu * nb_tiles) >= 2
-    "seqLen": 192,
-    "dModel": 384,
-    "nb_tiles": 2
+    "seqLen": 656,
+    "dModel": 192,
+    "nb_tiles": 1
 }

@@ -5,22 +5,12 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# Tiled, double-buffered OS-core 2-layer EinFFT MLP.
+# Datagen for the N-tiled, per-tile-fuse OS-core 2-layer EinFFT MLP.
+# Dataflow, tiling rationale, and TCDM footprint: docs/dataflow/06_einfft_mlp.md.
 #
-# Same ConvFormat-throughout strategy as the un-tiled `einfft` (see
-# docs/dataflow/06_einfft_mlp.md). The N (= D/4 output-channel) axis
-# is tiled at the OS-core level only: weights are DMA'd one tile at a time
-# (ping-pong against compute) and the per-tile OSGEMM output drops into the
-# right slot of the FULL per-branch ConvFormat scratch. The SIMD fuse then
-# runs ONCE per side per branch over the assembled scratch — keeping the
-# SIMD launch bounds at FULL per-branch size (the un-tiled config), which
-# is what the hardware empirically handles correctly.
-#
-# This datagen therefore emits:
-#   - OSGEMM streamer config with N_t = N_full / nb_tiles (per-tile matmul).
-#   - SIMD streamer configs with n_elems = L * dPerB (per-branch / un-tiled).
-#   - Bias broadcast pre-expanded to full per-branch conv-walk order
-#     (same layout as `einfft`).
+# Emits per-tile OSGEMM streamer config (N_t = N_full / nb_tiles), per-tile
+# SIMD streamer bounds (n_elems = L * dPerB_t), and the mini-expanded bias
+# (conv-walk order) sliced per tile via length_bias_mini_tile.
 
 import pathlib
 import sys
@@ -157,8 +147,8 @@ class DataGenerator(DataGeneratorBase):
             f"OSGEMM requires N >= 2; for dPerB={dPerB} the cap is nb_tiles <= {N_full // 2}."
         )
         dPerB_t = dPerB // nb_tiles
-        n_elems_full = seqLen * dPerB                     # SIMD operates on FULL per-branch buffers
-        assert n_elems_full % 32 == 0
+        n_elems_tile = seqLen * dPerB_t                   # SIMD now operates per-tile (one N-tile at a time)
+        assert n_elems_tile % 32 == 0
 
         # ---- OSGEMM streamer config (one per-tile matmul) --------------------
         osgemm_streamers = {
@@ -176,25 +166,27 @@ class DataGenerator(DataGeneratorBase):
             ),
         }
 
-        # ---- SIMD streamer configs (FULL per-branch, NOT per-tile) ----------
-        # Empirically the SIMD widen / narrow paths under-run on short bounds
-        # (e.g. 12 fp8 cycles → wrong output), so we keep the bounds at the
-        # full per-branch size and feed the SIMD a pre-assembled FULL scratch.
-        n_fp8_cycles  = n_elems_full // 32
-        n_bf16_cycles = n_elems_full // 16
+        # ---- SIMD streamer configs (PER-TILE: one N-tile per fuse) ----------
+        # The fuse now runs once per (side, tile) at tile bounds (n_elems_tile),
+        # so the OS-core scratch / BF16 staging / output only need to hold ONE
+        # tile. The old "short bounds under-run" caveat applies only to tiny
+        # absolute bounds (~12 fp8 cycles); per-tile bounds at realistic params
+        # are far above that. See docs/dataflow/06_einfft_mlp.md §6.4.
+        n_fp8_cycles  = n_elems_tile // 32
+        n_bf16_cycles = n_elems_tile // 16
 
-        # R13 bias: 4-dim walk over mini-expanded bias (768 B/branch at dPerB=96).
+        # R13 bias: 4-dim walk over mini-expanded bias (per tile = N_t d3 blocks).
         # dim0: l1-block repeat (stride=0 → Reader repeater handles it)
         # dim1: l2 repeat (stride=0 → AGU natively stays; NOT innermost, no workaround)
         # dim2: d2 group advance
-        # dim3: d3 block advance
+        # dim3: d3 block advance (only N_t blocks belong to this tile)
         groups_per_d3 = Nu // conv_unroll       # 6
         group_bytes = 16 * BF16 // 8            # 32
         l2_count = seqLen // Mu
         dim1_bound = l2_count * groups_per_d3
         r13_bias_tb = [Mu // (16 // conv_unroll),  # 4: l1-block repeat (repeater)
                        dim1_bound,                  # l2*d2 flat walk within d3
-                       dPerB // Nu,                 # 4: d3 blocks
+                       N_t,                         # d3 blocks in ONE tile
                        1]
         r13_bias_ts = [0, group_bytes, dim1_bound * group_bytes, 0]
 
@@ -218,9 +210,10 @@ class DataGenerator(DataGeneratorBase):
         len_w_branch_tile = len_w_branch // nb_tiles
         len_bias_branch = dPerB * BF16 // 8
         len_d_tile      = seqLen * dPerB_t * FP8 // 8     # one per-tile OS-core scratch slot
-        len_d_branch    = len_out_branch                  # FULL per-branch scratch (= sum of tiles)
-        len_bf16        = n_elems_full * BF16 // 8        # FULL per-branch BF16 staging
+        len_bf16        = n_elems_tile * BF16 // 8        # per-tile BF16 staging
         len_bias_mini_branch = (dPerB // Nu) * l2_count * groups_per_d3 * 16 * BF16 // 8
+        assert len_bias_mini_branch % nb_tiles == 0
+        len_bias_mini_tile = len_bias_mini_branch // nb_tiles  # contiguous d3-major slice per tile
 
         len_x          = nBranches * len_x_branch
         len_w          = nBranches * len_w_branch
@@ -236,12 +229,12 @@ class DataGenerator(DataGeneratorBase):
             return (v + 63) & ~63
 
         per_branch_resident = (
-            _align64(len_x_branch) * 2 +                    # x_re_b + x_im_b
-            _align64(len_bias_mini_branch) * 2 * 2 +        # b_re_pp[2] + b_im_pp[2]
-            _align64(len_out_branch) * 2 * 2 +              # out_re_pp[2] + out_im_pp[2]
+            _align64(len_x_branch) * 2 +                    # x_re_b + x_im_b (FULL: reused by every N-tile)
+            _align64(len_bias_mini_branch) * 2 * 2 +        # b_re_pp[2] + b_im_pp[2] (FULL per branch)
+            _align64(len_d_tile) * 2 * 2 +                  # out_re_pp[2] + out_im_pp[2] (TILE, ping-pong)
             _align64(len_w_branch_tile) * 2 * 2 +           # W_re_pp[2] + W_im_pp[2]
-            _align64(len_out_branch) * 4 +                  # rr, ii, ri, ir (FULL per branch)
-            _align64(len_bf16) * 2                          # bf16_a, bf16_b
+            _align64(len_d_tile) * 4 +                      # rr, ii, ri, ir (TILE)
+            _align64(len_bf16) * 2                          # bf16_a, bf16_b (TILE)
         )
         total_l1_bytes = per_branch_resident
         assert total_l1_bytes <= self.TCDM_BYTES, (
@@ -295,6 +288,7 @@ class DataGenerator(DataGeneratorBase):
             "length_d_tile":             len_d_tile,
             "length_bf16":               len_bf16,
             "length_bias_mini_branch":  len_bias_mini_branch,
+            "length_bias_mini_tile":    len_bias_mini_tile,
             "SIMD_ADD_BF16_RELU":        _simd_add_bf16_relu_mode(),
         }
 

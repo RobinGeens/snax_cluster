@@ -65,11 +65,13 @@ class DataGenerator(DataGeneratorBase):
 
     def _run_memory_model(self):
         import importlib.util
+
         app_dir = os.path.dirname(os.path.abspath(__file__))
         spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         from memory_model_base import run_model_from_datagen
+
         comment = run_model_from_datagen(mod.build_report, app_dir)
         self.lines_params.append(comment)
 
@@ -144,37 +146,51 @@ class DataGenerator(DataGeneratorBase):
         assert self.dInner % (self.convUnroll * nb) == 0
 
     def get_safe_to_start_delay(self, dInner: int):
-        """Per-tile (or per-phase) safe-to-start delay for R10 and R11. Same algorithm
-        as in main/data/datagen.py but parameterised on the (possibly tiled) dInner so
-        the counters scale with the per-kernel workload.
+        """Per-kernel safe-to-start delays for the two delayed SUC readers: R10 (z-reader, feeds
+        the SUC) and R11 (y-reader, feeds the IS-core). Both gate a consumer behind a producer that
+        writes its output in a per-24xL-tile (seqLen x dInnerUnroll) scrambled order, so a tile is
+        the dependency unit. The two readers use DIFFERENT models because their consumer/producer
+        rates differ:
+
+          - R10 / SUC: the SUC consumes z SLOWER than the osCore writes it (suc_delta < 0) -> it
+            never catches up, so a small fixed delay (one osCore window) suffices. Rate model.
+          - R11 / IS-core: the IS-core consumes y FASTER than the SUC writes it -> across the
+            n = dInner/dInnerUnroll  24xL tiles of a kernel it RACES into later tiles. Since each
+            full 24xL tile must be written before the IS-core reads it, the LAST tile binds:
+                IS-core reaches tile n-1 at  R11_start + (n-1)*iscore_cycles_per_tile
+                tile n-1 fully written at    n*suc_elems_per_tile     (SUC = 1 elem/cyc -> gauge==cyc)
+                =>  R11_start = n*suc_elems_per_tile - (n-1)*iscore_cycles_per_tile
+            (n==1 collapses to one 24xL tile. NOTE: the old rate-only `iscore_delta` =
+            n*(suc-iscore)_per_tile is this MINUS one iscore_cycles_per_tile -> it lets the IS-core
+            start the last tile before that tile is fully written, which underflows for n>1.)
+
+        Returned in gauge units: R10 in osCore tiles, R11 in SUC-output elements.
         """
         MARGIN = 0.2  # 20%
-        gemm_cycles_per_tile = self.dModel
-        gemm_total_nb_tiles = (self.seqLen // self.seqLenUnroll) * (dInner // self.dInnerUnroll)
-        gemm_cycles = gemm_total_nb_tiles * gemm_cycles_per_tile
-
-        suc_cycles_per_element = 1
+        seqLen_tiles = self.seqLen // self.seqLenUnroll
+        n_24L = dInner // self.dInnerUnroll  # 24xL tiles in this kernel
+        gemm_total_nb_tiles = seqLen_tiles * n_24L
+        gemm_cycles = gemm_total_nb_tiles * self.dModel
         suc_total_nb_elements = self.seqLen * dInner
-        suc_cycles = suc_total_nb_elements * suc_cycles_per_element
 
-        gemm_window_cnt = self.seqLen // self.seqLenUnroll  # OS core tiles
-        suc_window_cnt = self.seqLen * self.dInnerUnroll  # SUC output elements
+        # R10 (SUC z-reader): slower consumer, no racing -> wait one osCore window (rate model).
+        suc_delta = (gemm_cycles - suc_total_nb_elements) / self.dModel  # [osCore tiles]
+        suc_safe_to_start = math.ceil(max(seqLen_tiles, suc_delta) * (1 + MARGIN))
 
-        suc_delta = (gemm_cycles - suc_cycles) / gemm_cycles_per_tile  # [tiles]
-        iscore_delta = (suc_cycles - gemm_cycles) / suc_cycles_per_element  # [elements]
+        # R11 (IS-core y-reader): faster consumer -> throughput mismatch across the 24xL tiles.
+        suc_elems_per_tile = self.seqLen * self.dInnerUnroll  # SUC y written per 24xL tile
+        iscore_cycles_per_tile = seqLen_tiles * self.dModel  # IS-core cycles to read one 24xL tile
+        iscore_safe_to_start = n_24L * suc_elems_per_tile - (n_24L - 1) * iscore_cycles_per_tile
 
-        suc_safe_to_start = math.ceil(max(gemm_window_cnt, suc_delta) * (1 + MARGIN))
-        iscore_safe_to_start = math.ceil(max(suc_window_cnt, iscore_delta) * (1 + MARGIN))
-
-        print(f"// DEBUG safe-to-start delays (per-tile, dInner={dInner}):")
+        print(f"// DEBUG safe-to-start delays (per-tile, dInner={dInner}, n_24L={n_24L}):")
         print(f"//      OScore cycles: {gemm_cycles}")
-        print(f"//      OScore window: {gemm_window_cnt}")
-        print(f"//      SUC cycles: {suc_cycles}")
+        print(f"//      OScore window (seqLen tiles): {seqLen_tiles}")
+        print(f"//      SUC cycles (= total y elements): {suc_total_nb_elements}")
         print(f"//      SUC delta: {suc_delta}")
-        print(f"//      SUC safe to start: {suc_safe_to_start}")
-        print(f"//      SUC window: {suc_window_cnt}")
-        print(f"//      IScore delta: {iscore_delta}")
-        print(f"//      IScore safe to start: {iscore_safe_to_start}")
+        print(f"//      R10 (SUC z) safe to start: {suc_safe_to_start}")
+        print(f"//      SUC elems per 24xL tile: {suc_elems_per_tile}")
+        print(f"//      IScore cycles per 24xL tile: {iscore_cycles_per_tile}")
+        print(f"//      R11 (IS-core y) safe to start: {iscore_safe_to_start}")
 
         return int(min(suc_safe_to_start, gemm_total_nb_tiles)), int(min(iscore_safe_to_start, suc_total_nb_elements))
 
@@ -349,7 +365,12 @@ class DataGenerator(DataGeneratorBase):
         # Strides are identical to the bulk R0 ([s0, s1, 0, 0]) so _emit_alt_bounds reuses M1_R0_ts.
         r0_lTile = {
             "R0": (
-                [self.dModel, (self.nb_slots * self.L_tile) // self.seqLenUnroll, self.nb_l_tiles // self.nb_slots, K_i],
+                [
+                    self.dModel,
+                    (self.nb_slots * self.L_tile) // self.seqLenUnroll,
+                    self.nb_l_tiles // self.nb_slots,
+                    K_i,
+                ],
                 [self.seqLenUnroll * FP8 // 8, self.dModel * self.seqLenUnroll * FP8 // 8, 0, 0],
             ),
         }
@@ -610,7 +631,12 @@ class DataGenerator(DataGeneratorBase):
         # nb_slots-slot ring as P1; strides identical to the bulk M2_R0_ts.
         r0_lTile = {
             "R0": (
-                [self.dModel, (self.nb_slots * self.L_tile) // self.seqLenUnroll, self.nb_l_tiles // self.nb_slots, N_kern],
+                [
+                    self.dModel,
+                    (self.nb_slots * self.L_tile) // self.seqLenUnroll,
+                    self.nb_l_tiles // self.nb_slots,
+                    N_kern,
+                ],
                 [self.seqLenUnroll * FP8 // 8, self.dModel * self.seqLenUnroll * FP8 // 8, 0, 0],
             ),
         }

@@ -37,13 +37,33 @@
                      M2_W0_ss, M2_W0_tb, M2_W0_ts, M2_W0_en, (uint32_t)0, 0, 0, 0, M2_W1_en, (uint32_t)(p_y),          \
                      M2_W2_ss, M2_W2_tb, M2_W2_ts, M2_W2_en, (uint32_t)(p_io), M2_W3_ss, M2_W3_tb, M2_W3_ts, M2_W3_en)
 
-static inline void oscore_in_refill_loop(uint32_t N_visits, uint32_t gauge_step, uint32_t nb_l, uint8_t* slot_base,
-                                         uint32_t nb_slots, const uint8_t* l3_oscore_in, uint32_t len_l_tile) {
-    // TODO reduce fn args and make these global constants
+// Async oscore_in ring refill from L3, paced by R10 (osCore output-tile gauge).
+// The SUC delayed readers are released from inside this loop the instant their own gauge crosses the threshold.
+// A per-reader fallback handles the case where the threshold sits at/after the loop end.
+static inline void oscore_in_refill_loop(uint8_t* slot_base, const uint8_t* l3_oscore_in,  //
+                                         uint32_t r10_release_en, uint32_t r10_start_cnt,  //
+                                         uint32_t r11_release_en, uint32_t r11_start_cnt) {
+    const uint32_t N_visits   = (M1_dInner_tile / dInnerUnroll) * nb_l_tiles;
+    const uint32_t gauge_step = M1_oscore_in_l_tile_gauge_step;
+    const uint32_t len_l_tile = M1_length_oscore_in_l_tile;
+    uint32_t r10_released     = 0;
+    uint32_t r11_released     = 0;
+
     for (uint32_t r = 0; r < N_visits; r++) {
         // Snitch0 polls until L-tile r is consumed and its slot can be refilled.
         if (snrt_global_core_idx() == 0) {
             while (read_csr(R10_DELAY_GAUGE) < (r + 1) * gauge_step);
+
+            // Release each delayed SUC reader
+            // R10 has already been polled above, so reuse the loop index as its gauge value.
+            if (r10_release_en && !r10_released && (r + 1) * gauge_step >= r10_start_cnt) {
+                write_csr(DELAYED_START_READER_10, 1);
+                r10_released = 1;
+            }
+            if (r11_release_en && !r11_released && read_csr(R11_DELAY_GAUGE) >= r11_start_cnt) {
+                write_csr(DELAYED_START_READER_11, 1);
+                r11_released = 1;
+            }
         }
 
         // Make sure Snitch1 waits for the handover
@@ -52,12 +72,26 @@ static inline void oscore_in_refill_loop(uint32_t N_visits, uint32_t gauge_step,
         // DMA refills slot (r % nb_slots) with the next L-tile for that slot
         if (snrt_is_dm_core()) {
             snrt_dma_start_1d(slot_base + (r % nb_slots) * len_l_tile,
-                              l3_oscore_in + ((r + nb_slots) % nb_l) * len_l_tile, len_l_tile);
+                              l3_oscore_in + ((r + nb_slots) % nb_l_tiles) * len_l_tile, len_l_tile);
         }
     }
 
     if (snrt_is_dm_core()) snrt_dma_wait_all();
     snrt_cluster_hw_barrier();
+
+    // Fallback: a threshold sits at/after the loop end -> release here.
+    if (snrt_global_core_idx() == 0) {
+        if (r10_release_en && !r10_released) {
+            printf("Fallback: delayed R10 threshold sits after refill loop end.\n");
+            while (read_csr(R10_DELAY_GAUGE) < r10_start_cnt);
+            write_csr(DELAYED_START_READER_10, 1);
+        }
+        if (r11_release_en && !r11_released) {
+            printf("Fallback: delayed R11 threshold sits after refill loop end.\n");
+            while (read_csr(R11_DELAY_GAUGE) < r11_start_cnt);
+            write_csr(DELAYED_START_READER_11, 1);
+        }
+    }
 }
 
 int test_phase1_and_2() {
@@ -176,12 +210,9 @@ int test_phase1_and_2() {
     uint32_t simbacore_cycles_phase1 = 0;
     uint32_t simbacore_cycles_phase2 = 0;
 
-    // K-steps per DMA tile (P1, P2 share)
+    // K-steps per DMA tile (P1, P2 share). N_visits = K_i * nb_l_tiles and gauge_step are
+    // recomputed inside oscore_in_refill_loop from the same globals.
     const uint32_t K_i = M1_dInner_tile / dInnerUnroll;
-    // B1 refill schedule per kernel call: N_visits = K_i * nb_l_tiles slot visits;
-    // gauge_step = L_tile/seqLenUnroll = osCore output tiles per L-tile of input.
-    const uint32_t N_visits   = K_i * nb_l_tiles;
-    const uint32_t gauge_step = M1_oscore_in_l_tile_gauge_step;
 
     /////////////////////////////////
     //////// Phase 1 ////////////////
@@ -237,12 +268,12 @@ int test_phase1_and_2() {
                 }
             }
 
-            // Async oscore_in refill while the kernel computes. Must run immediately after simbacore start signal
-            oscore_in_refill_loop(N_visits, gauge_step, nb_l_tiles, ptr_oscore_in_base, nb_slots, M1_oscore_in,
-                                  M1_length_oscore_in_l_tile);
+            // Async oscore_in refill while the kernel computes. Must run immediately after simbacore start signal.
+            // P1 has no delayed SUC readers (M1_R10_en == M1_R11_en == 0), so no mid-loop release.
+            oscore_in_refill_loop(ptr_oscore_in_base, M1_oscore_in, M1_R10_en, 0, M1_R11_en, 0);
 
             if (snrt_global_core_idx() == 0) {
-                printf("Finished oscore_in refill for tile %d\n", tile);
+                // printf("Finished oscore_in refill for tile %d\n", tile);
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
                 simbacore_cycles_phase1 += read_simbacore_perf_counter();
@@ -311,21 +342,13 @@ int test_phase1_and_2() {
                 write_csr(SIMBACORE_START, 0);
             }
 
-            oscore_in_refill_loop(N_visits, gauge_step, nb_l_tiles, ptr_oscore_in_base, nb_slots, M2_oscore_in,
-                                  M2_length_oscore_in_l_tile);
+            // Both SUC readers (R10 z, R11 y) are released inside the refill loop the moment their
+            // own gauge crosses M2_R1x_start_cnt.
+            oscore_in_refill_loop(ptr_oscore_in_base, M2_oscore_in, M2_R10_en, M2_R10_start_cnt, M2_R11_en,
+                                  M2_R11_start_cnt);
 
-            // TODO this is very pessimistic: the refill loop has run for longer than the required R10 delay
-
-            // Deferred SUC delayed-start. The refill loop has run the delayed start check, so R10 can be released
+            // Clear both delayed-start CSRs to rearm for the next tile.
             if (snrt_global_core_idx() == 0) {
-                if (M2_R10_en) {
-                    while (read_csr(R10_DELAY_GAUGE) < M2_R10_start_cnt);
-                    write_csr(DELAYED_START_READER_10, 1);
-                }
-                if (M2_R11_en) {
-                    while (read_csr(R11_DELAY_GAUGE) < M2_R11_start_cnt);
-                    write_csr(DELAYED_START_READER_11, 1);
-                }
                 write_csr(DELAYED_START_READER_10, 0);
                 write_csr(DELAYED_START_READER_11, 0);
             }
@@ -347,14 +370,13 @@ int test_phase1_and_2() {
                 write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y_tile[nbuf]);
             }
 
-            printf("Finished oscore_in refill for tile %d\n", tile);
+            // printf("Finished oscore_in refill for tile %d\n", tile);
 
             if (snrt_global_core_idx() == 0) {
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
                 asm volatile("fence" ::: "memory");
                 simbacore_cycles_phase2 += read_simbacore_perf_counter();
-                printf("Finished simbacore and streamers for tile %d\n", tile);
             }
         }
 

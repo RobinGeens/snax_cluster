@@ -199,7 +199,11 @@ ifdef SDF_ANNOTATE_PATH
     $(error "Error! Missing SDF_TOP")
   endif
 endif
-VSIM_FLAGS += -do "log -r /*; run -a"
+# Run-control (wired into the run scripts by the QUESTASIM macro in
+# target/common/common.mk): batch (-c) runs skip waveform logging for speed,
+# GUI runs log all signals recursively for waveform debug.
+VSIM_DO     ?= run -a
+VSIM_DO_GUI ?= log -r /*; run -a
 
 VLOG_FLAGS += -svinputport=compat
 VLOG_FLAGS += -override_timescale 1ns/1ps

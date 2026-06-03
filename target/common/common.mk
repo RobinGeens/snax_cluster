@@ -45,7 +45,10 @@ IS_CLEAN = $(filter clean%,$(MAKECMDGOALS))
 VSIM_BENDER   += -t test -t rtl -t simulation -t vsim
 VSIM_SOURCES   = $(if $(IS_CLEAN),,$(shell ${BENDER} script flist ${VSIM_BENDER} | ${SED_SRCS}))
 VSIM_BUILDDIR ?= work-vsim
-VOPT_FLAGS     = +acc
+# Batch is optimized for speed; the GUI build keeps full signal visibility
+# (+acc, no optimization) for waveform debug (see QUESTASIM macro below).
+VOPT_FLAGS     =
+VOPT_FLAGS_GUI = +acc
 
 # VCS_BUILDDIR should to be the same as the `DEFAULT : ./work-vcs`
 # in target/snitch_cluster/synopsys_sim.setup
@@ -204,12 +207,14 @@ define QUESTASIM
 	@! grep -P "Errors: [1-9]*," $(dir $<)vlog.log
 	$(VOPT) $(VOPT_FLAGS) -work $(VSIM_BUILDDIR) $1 -o $(1)_opt | tee $(dir $<)vopt.log
 	@! grep -P "Errors: [1-9]*," $(dir $<)vopt.log
+	$(VOPT) $(VOPT_FLAGS_GUI) -work $(VSIM_BUILDDIR) $1 -o $(1)_opt_gui | tee $(dir $<)vopt_gui.log
+	@! grep -P "Errors: [1-9]*," $(dir $<)vopt_gui.log
 	@mkdir -p $(dir $@)
 	@echo "#!/bin/bash" > $@
 	@echo 'binary=$$(realpath $$1)' >> $@
 	@echo 'mkdir -p $(LOGS_DIR)' >> $@
 	@echo 'echo $$binary > $(LOGS_DIR)/.rtlbinary' >> $@
-	@echo '${VSIM} +permissive ${VSIM_FLAGS} $$3 -work ${MKFILE_DIR}/${VSIM_BUILDDIR} -c \
+	@echo '${VSIM} +permissive ${VSIM_FLAGS} -do "${VSIM_DO}" $$3 -work ${MKFILE_DIR}/${VSIM_BUILDDIR} -c \
 				-ldflags "-Wl,-rpath,${FESVR}/lib -L${FESVR}/lib -lfesvr -lutil" \
 				$(1)_opt +permissive-off ++$$binary ++$$2' >> $@
 	@chmod +x $@
@@ -217,9 +222,9 @@ define QUESTASIM
 	@echo 'binary=$$(realpath $$1)' >> $@.gui
 	@echo 'mkdir -p $(LOGS_DIR)' >> $@.gui
 	@echo 'echo $$binary > $(LOGS_DIR)/.rtlbinary' >> $@.gui
-	@echo '${VSIM} +permissive ${VSIM_FLAGS} -work ${MKFILE_DIR}/${VSIM_BUILDDIR} \
+	@echo '${VSIM} +permissive ${VSIM_FLAGS} -do "${VSIM_DO_GUI}" -work ${MKFILE_DIR}/${VSIM_BUILDDIR} \
 				-ldflags "-Wl,-rpath,${FESVR}/lib -L${FESVR}/lib -lfesvr -lutil" \
-				$(1)_opt +permissive-off ++$$binary ++$$2' >> $@.gui
+				$(1)_opt_gui +permissive-off ++$$binary ++$$2' >> $@.gui
 	@chmod +x $@.gui
 endef
 
