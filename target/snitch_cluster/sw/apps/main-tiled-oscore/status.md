@@ -20,15 +20,22 @@ Two independent triggers of the same "delay before the first poll" bug:
 ### Caveat for future tuning
 The P2 fix defers the SUC release because `M2_R10_start_cnt == nb_l` (release point == refill-loop end). **If `R10_start_cnt < nb_l`** (SUC meant to start mid-z-proj), deferring would start the SUC late — you'd have to **merge** the delayed-start into the refill loop (release the moment R10 crosses `start_cnt`). There's a code comment at the P2 deferred-start to flag this.
 
-## Residual: slot count is a real lead-margin (NOT bandwidth)
-Even with correct pacing, R10 (output count) trails R0 (input read) by ~1 L-tile (streamer FIFO depth 8 + array latency), and the per-L-tile DMA refill time is **comparable to** one tile of compute. So:
-- **nb_slots=2**: paces correctly (R10 1→8) but still tears ~11% (42/125, z 2072/24576) — refill gets only ~1 tile of real lead, compute's read-pointer catches the DMA's write-pointer at the tail of each slot. **Not usable.**
-- **nb_slots=4**: ~2–3 tiles of real lead → DMA always finishes first → clean. **Use this.**
-- nb_slots=3: untested (likely the minimum; would save 1 × L_tile×dModel = 1.5 KB).
+## Residual: slot count is a DMA-latency-hiding buffer
+The pacing is *perfect*: R10=0 at kickoff, refill `r` fires at exactly R10=r+1, triggers evenly spaced one tile apart. The preloaded tiles are clean; every *refilled* tile tears. The cause is the **L3→TCDM refill DMA delivery latency, ~250 cc under compute load** (vs ~43 cc when idle).
 
-[RG] I do not agree with this assessment: 1 tile is 96cc, and the FIFO depth is only 8. This does not explain the incorrect lead time. TODO
+Governing rule (measured, not modeled): **tear iff `available_lead = nb_slots × tile_period  <  DMA_delivery_latency (~250 cc)`.** The refill must *land* ~250 cc before the streamer re-reads that slot; R10 only signals *consumption*, so the only lead you can buy is `nb_slots × tile_period`.
 
-This is a lead-margin, not a rate/bandwidth problem (the DMA has absolute TCDM priority, so it never starves; it even slows the accelerator's reads, widening the window). There is **no input-read gauge** (only R10/R11 = osCore/SUC *output*), so the refill can't be triggered earlier than `R10≥r+1` safely → the slot-count lead is how you buy margin.
+Proof matrix (osgemm-tiled-async, isolated osCore, nb_l_tiles=8; the threshold is reached identically via more slots OR bigger tiles → it's absolute lead, not a ratio, not bytes/s):
+
+| dModel | nb_slots | tile period | available lead | result |
+|---|---|---|---|---|
+| 96  | 2 | 103 cc | **206 cc** | FAIL (~30% torn) |
+| 128 | 2 | 139 cc | 278 cc | PASS |
+| 192 | 2 | 207 cc | 414 cc | PASS |
+| 288 | 2 | 311 cc | 622 cc | PASS |
+| 96  | 4 | 103 cc | 412 cc | PASS |
+
+Why not bandwidth: (a) tripling the refill payload (dModel 96→288, 1536→4608 B) made it *cleaner*, not worse; (b) DMA throughput stays in lockstep — done→done gap ≈ issue→issue gap ≈ tile period — so the pipe never falls cumulatively behind; (c) DMA has absolute TCDM priority, never starves. There is **no input-read gauge** (only R10/R11 = osCore/SUC *output*), so the refill can't be triggered earlier than `R10≥r+1` → slot count is how you buy the lead. 
 
 ## Key facts established
 - `R10_DELAY_GAUGE` = `osCoreTileCnt.io.tick := osCore.io.data.out_d.fire` (MambaCore.scala:202) — pure osCore output count. No `in_a.fire` counter exists.

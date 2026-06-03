@@ -9,8 +9,6 @@
 // Each dInner tile is one osCore invocation (dInner_tile = dInnerUnroll, N_tile = 1) that re-reads
 // the full A via the stride-0 wrap of R0; the DM core refills slots during compute, paced by R10.
 // The last nb_slots refills wrap-reset the ring to L-tiles 0..nb_slots-1 for the next invocation.
-//
-// TODO does this work with nb_slots=2?
 
 #include "data.h"
 #include "snax-simbacore-lib.h"

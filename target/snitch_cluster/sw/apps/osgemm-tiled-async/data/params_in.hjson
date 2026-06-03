@@ -1,8 +1,8 @@
 {
-    "dim0": 128,
+    "dim0": 256,
     "dim1": 96,
     "dim2": 192,
     "nb_tiles": 8,
     "nb_l_tiles": 8,
-    "nb_slots": 4
+    "nb_slots": 2
 }

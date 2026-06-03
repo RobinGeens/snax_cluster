@@ -92,6 +92,12 @@ class DataGenerator(DataGeneratorBase):
         assert nb_l_tiles >= nb_slots and nb_l_tiles % nb_slots == 0, (
             f"nb_l_tiles ({nb_l_tiles}) must be >= nb_slots ({nb_slots}) and a multiple of it"
         )
+        # Refill lead must hide the ~250 cc L3->TCDM refill latency (see main-tiled-oscore/status.md).
+        lead_cc = nb_slots * (L_tile // Mu) * dModel
+        assert lead_cc >= 384, (
+            f"async refill lead nb_slots*(L_tile/Mu)*dModel = {lead_cc} cc < 384 cc -> tiles will tear; "
+            f"raise nb_slots, dModel, or L_tile"
+        )
 
         # ------ Streamer bounds + strides ----------------------------------------------
         # R0 reads A from the nb_slots-slot ring via the stride-0 outer-loop trick:

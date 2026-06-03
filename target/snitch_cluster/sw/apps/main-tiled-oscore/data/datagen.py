@@ -122,6 +122,12 @@ class DataGenerator(DataGeneratorBase):
             f"L_tile ({self.L_tile}) must be divisible by seqLenUnroll ({self.seqLenUnroll}). "
             f"L={self.seqLen}, nb_l_tiles={nl} gives L_tile={self.L_tile}."
         )
+        # Refill lead must hide the ~250 cc L3->TCDM refill latency (see main-tiled-oscore/status.md).
+        lead_cc = ns * (self.L_tile // self.seqLenUnroll) * self.dModel
+        assert lead_cc >= 384, (
+            f"async refill lead nb_slots*(L_tile/Mu)*dModel = {lead_cc} cc < 384 cc -> tiles will tear; "
+            f"raise nb_slots, dModel, or L_tile"
+        )
 
         # Per-tile dInner must contain a whole number of dInnerUnroll lanes
         assert self.dInner % (self.dInnerUnroll * nb) == 0, (

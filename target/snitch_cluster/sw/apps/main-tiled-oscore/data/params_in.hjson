@@ -1,8 +1,8 @@
 {
     "seqLen": 128,
-    "dModel": 96,
+    "dModel": 192,
     "dtRank": 24,
     "nb_tiles": 8,
     "nb_l_tiles": 8,
-    "nb_slots": 4
+    "nb_slots": 2
 }
