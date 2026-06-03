@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## 0. NEVER Commit
+
+**Never run `git commit` or `git push` — not even when asked, not under any phrasing.**
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
@@ -37,6 +41,26 @@ When your changes create orphans:
 - Don't remove pre-existing dead code unless asked.
 
 The test: Every changed line should trace directly to the user's request.
+
+## 3b. Documentation Discipline
+
+**One fact, one home. Never repeat design info across files.**
+
+A recurring failure mode is the same tiling/design explanation copy-pasted into a
+C-app header, the datagen header, and a separate `.md` — and left to rot out of sync.
+Don't do that
+
+- **Tiling, dataflow, and high-level design choices live in the docs (`docs/dataflow/`)
+  and ONLY there.** Don't restate them in source headers or datagen.
+  If a design changes, update the doc — don't add a second account elsewhere.
+- **C apps never open with a full design dump.** A few-line summary of what the app does
+  plus a pointer to the relevant doc is enough. The same goes for `datagen.py` headers.
+- **`status.md` is for WIP only:** in-progress considerations, bug hypotheses, temporary
+  test results. When the work is finished, *always* clean it up — delete the file and
+  move any durable design knowledge into the docs. A finished app has no `status.md`.
+
+Before writing a paragraph of explanation, ask: "Does this belong in the docs, and is it
+already there?" If yes, link to it instead of re-explaining.
 
 ## 4. Goal-Driven Execution
 
@@ -121,7 +145,7 @@ Don't append anything (like the parameter, current iteration, etc.) to the `tmp-
 - `exit code = 0` at the end of the log = PASS.
 - Per-hart traces: `logs/trace_chip_*_hart_*.dasm`.
 
-**Never produce vsims/waveforms for the user.** The user always inspects waves in their own separate vsim session and never looks at the `vsim.wlf` (or any waveform) from your runs. So: don't generate waveform output, don't rebuild/launch the vsim GUI for wave inspection, don't preserve or ask about `vsim.wlf`, and kill your sim runs freely once you have the PASS/FAIL log. Your runs exist only to produce the `tmp-<app_name>.log` PASS/FAIL result; debug from the log, the `.dasm` traces, and RTL/SW instrumentation — never from waveforms.
+**Never produce vsims/waveforms for the user.** The user always inspects waves in their own separate vsim session and never looks at the `vsim.wlf` (or any waveform) from your runs.  Your runs exist only to produce the `tmp-<app_name>.log` PASS/FAIL result; debug from the log, the `.dasm` traces, and RTL/SW instrumentation — never from waveforms.
 
 **Do NOT wrap the sim in a short `timeout`.** vsim spends minutes in elaboration before the program even starts, and larger params (bigger dModel/dInner/seqLen) make the run several× longer. A run killed by `timeout 600` is almost always *slow, not hung* — and the captured trace then looks deceptively like a deadlock (core 0 spinning on `SIMBACORE_BUSY`, the other core parked at the HW barrier `0x7c2`) because that is also exactly what a mid-compute snapshot looks like. **Never conclude "hang" from a timed-out run.** Run with no timeout (or ≥1800 s) and confirm a true hang by watching the progress markers (e.g. `Finished ... for tile N`) stop advancing for minutes — not by the exit code or a single trace snapshot.
 

@@ -165,17 +165,27 @@ class DataGenerator(DataGeneratorBase):
             # Step 2: hadamard (Phase A, tiled). Operates on per-tile L_tile_a sequence positions.
             #
             "R7_2": (  # SIMD input from per-tile partition1_out tile slot.
-                # dModel tiling: L stays un-tiled, dModel outer is halved.
+                # The bank-transposed partition1 splits the l1 axis into L1/seqLenUnroll
+                # M-tiles (each seqLenUnroll rows x N_1_tile cols). Walking l1 contiguously
+                # therefore jumps one whole M-tile (seqLenUnroll*N_1_tile) at each tile
+                # boundary, so the l1 walk needs its own dim separate from d. For
+                # L1 == seqLenUnroll the M-tile dim is a no-op (bound 1) and this reduces to
+                # the old 2-dim config (d-stride N_1_tile == L when L1==L2==dModel_tile).
                 [
-                    2 * L * FP8 // (2 * suc_serial_width_BC),  # inner = un-tiled
-                    dModel_tile,  # outer = halved
+                    seqLenUnroll,  # l1 within an M-tile
+                    L1 // seqLenUnroll,  # M-tile of l1
+                    dModel_tile,  # d (dModel, tiled)
                 ],
                 [
                     BANK_BYTES,
-                    L * FP8 // 8,  # outer stride un-tiled (= 1 d row in [d][l] col-major)
+                    seqLenUnroll * N_1_tile * FP8 // 8,  # jump to next M-tile
+                    seqLenUnroll * L2 * FP8 // 8,  # next d (= M-tile size / dModel_tile;
+                    # equals the old L*FP8//8 only when L1==seqLenUnroll)
                 ],
                 [
-                    L1 * BANK_BYTES,  # spatial[0]: 2 matrices in parallel
+                    # spatial[0]: the 2 banks read in parallel are one seqLenUnroll-sized
+                    # M-tile apart, NOT L1 apart — these coincide only for L1==seqLenUnroll.
+                    seqLenUnroll * BANK_BYTES,
                     L * dModel_tile * FP8 // 8,  # spatial[1]: re/im split (= tile re region size)
                 ],
             ),

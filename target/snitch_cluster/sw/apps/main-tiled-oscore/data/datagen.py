@@ -5,20 +5,9 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# Tiled, double-buffered, pipelined version of the Mamba main program. Both
-# Phase 1 and Phase 2 are tiled along the dInner dimension. Each per-phase
-# pipeline first finishes all tiles of Phase 1, then all tiles of Phase 2.
-# Tiling strategy:
-#   Phase 1
-#     - in proj x        : tiled in dInner (osCore output)
-#     - x_proj           : tiled in dInner (IS GeMM K-dim, accumulates psum)
-#     - x_proj outputs   : NOT tiled (delta, B, C all stay in iscore_out)
-#   Phase 2
-#     - in proj z        : tiled in dInner (osCore output)
-#     - delta proj       : tiled in dInner (switchCore output)
-#     - SUC              : tiled in dInner (consumes/produces dInner-sized x,y,z)
-#     - out proj         : tiled in dInner (IS GeMM K-dim, accumulates psum)
-#     - isCore output    : NOT tiled (kept in TCDM, accumulates across tiles)
+# Datagen for main-tiled-oscore: the tiled/double-buffered/pipelined Mamba main program with the
+# os-core input (oscore_in) additionally L-tiled into an async TCDM ring.
+# Design: docs/dataflow/04_mamba_main.md (main tiling), docs/dataflow/09_async_tiling.md (oscore ring).
 
 import pathlib
 import random
@@ -177,10 +166,12 @@ class DataGenerator(DataGeneratorBase):
         suc_delta = (gemm_cycles - suc_total_nb_elements) / self.dModel  # [osCore tiles]
         suc_safe_to_start = math.ceil(max(seqLen_tiles, suc_delta) * (1 + MARGIN))
 
-        # R11 (IS-core y-reader): faster consumer -> throughput mismatch across the 24xL tiles.
+        # R11 (IS-core y-reader): faster consumer -> throughput mismatch across the 24xL tiles
         suc_elems_per_tile = self.seqLen * self.dInnerUnroll  # SUC y written per 24xL tile
         iscore_cycles_per_tile = seqLen_tiles * self.dModel  # IS-core cycles to read one 24xL tile
-        iscore_safe_to_start = n_24L * suc_elems_per_tile - (n_24L - 1) * iscore_cycles_per_tile
+        iscore_safe_to_start = math.ceil(
+            (n_24L * suc_elems_per_tile - (n_24L - 1) * iscore_cycles_per_tile) * (1 + MARGIN)
+        )
 
         print(f"// DEBUG safe-to-start delays (per-tile, dInner={dInner}, n_24L={n_24L}):")
         print(f"//      OScore cycles: {gemm_cycles}")

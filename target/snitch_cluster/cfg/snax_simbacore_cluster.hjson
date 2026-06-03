@@ -116,7 +116,7 @@ Naming convention:
         sparse_interconnect_config:  [[2, 2], [4, 4],  [5, 1], [4, 1], [4, 1], [4, 4], [4, 4], [3, 1], [4, 4]],
         snax_wide_tcdm_ports: 0,
         snax_num_rw_csr: 7, // Must match the number in Simbacore shell wrapper
-        snax_num_ro_csr: 4,
+        snax_num_ro_csr: 5,
         snax_streamer_cfg: {$ref: "#/snax_simbacore_streamer_template"}
       }
     ],

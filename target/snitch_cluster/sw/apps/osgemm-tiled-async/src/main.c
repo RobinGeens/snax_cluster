@@ -3,12 +3,9 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Minimal demonstration of the async tiling for oscore input.
-//
-// A is L-tiled along seqLen into nb_l_tiles and held in TCDM as a ring of nb_slots adjacent slots.
-// Each dInner tile is one osCore invocation (dInner_tile = dInnerUnroll, N_tile = 1) that re-reads
-// the full A via the stride-0 wrap of R0; the DM core refills slots during compute, paced by R10.
-// The last nb_slots refills wrap-reset the ring to L-tiles 0..nb_slots-1 for the next invocation.
+// osgemm-tiled-async = minimal single-osCore GEMM whose A input (oscore_in) is L-tiled into an
+// nb_slots-slot TCDM ring and refilled asynchronously from L3 during compute, paced by R10.
+// Design: docs/dataflow/09_async_tiling.md (input-side ring).
 
 #include "data.h"
 #include "snax-simbacore-lib.h"

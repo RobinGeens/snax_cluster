@@ -1,14 +1,15 @@
-# Async tiling of a shared input
+# Async tiling of a shared tensor
 
-When a streamer's input tensor is shared across many kernel calls (or across
-many K-steps inside one call), it can dominate the TCDM budget. Real tiling
-of the input is often blocked: a downstream stage carries cross-tile state,
-or the accelerator expects to see the full tensor in a single kernel.
+When a streamer's tensor is shared across many kernel calls (or across many
+K-steps inside one call), it can dominate the TCDM budget. Real tiling is often
+blocked: a downstream stage carries cross-tile state, or the accelerator expects
+to see the full tensor in a single kernel.
 
 **Async tiling** keeps the *logical* view of the full tensor but stores only a
 small **ring of `nb_slots` slots** of it in TCDM. The streamer wraps over the
-ring; the DM core refills slots in parallel with compute. The accelerator never
-sees a tiled tensor and is never restarted.
+ring; the DM core moves slots to/from L3 in parallel with compute. The
+accelerator never sees a tiled tensor and is never restarted.
+
 
 Because the accelerator cannot be stopped while this runs, the refill DMA must
 *always* complete before the streamer re-reads a slot. The dependency is
@@ -90,3 +91,26 @@ blocking gauge-wait (e.g. a dependent reader's delayed start), sequence that wai
 - `nb_slots ≥ 3` in practice (see *Sizing the ring*); `nb_slots = nb_l`
   degenerates to "whole tensor resident, no refill".
 
+## Scaling laws 
+
+We need async tiling to support larger sequence lengths (not model sizes). If L becomes larger for given Dmodel, the
+SUC will start taking longer than the GEMM cores. This relaxes our bandwidth requirements even further: we need to pace
+the DMA refill based on the SUC throughput, not the GEMM throughput.
+
+## Output-side ring (PSUM)
+
+The same mechanism applies to isCore. Instead of ringing a shared
+input, keep the full IS-core PSUM (`seqLen × dModel`) in L3 and slide the ring
+through TCDM, paced by the IS-core output-tile gauge `ISCORE_TILE_CNT` instead of
+`R10_DELAY_GAUGE`. Two differences from the input case:
+
+- **Two transfers per ring visit.** Because K (dInner) is the outer loop, every
+  L-tile's running psum is revisited each K-step, so a visit must **spill** the
+  slot to L3 *and* **reload** the next tile (the input ring refills only). The ring
+  is still balanced — per visit the DMA moves `2 × slot_size` in ≈ one tile period —
+  so the lead-margin rule from *Sizing the ring* still holds, with a tighter budget.
+- **K must be tiled one step per invocation (`K_t′ = 1`).** Only then does the
+  IS-core sweep every L-tile once, in order, within one invocation — which is what
+  lets the ring slide mid-invocation. With `K_t′ > 1` the inner K-repeat re-touches
+  all tiles each step, forcing the full psum resident. The SW loop over invocations
+  *is* the K reduction.

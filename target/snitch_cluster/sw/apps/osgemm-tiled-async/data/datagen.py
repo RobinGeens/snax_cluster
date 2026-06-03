@@ -5,14 +5,9 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# osgemm-tiled-async = a MINIMAL single osCore in-proj GEMM (MODE=OSGEMM, only R0/R1/W0)
-# whose A input (oscore_in, seqLen x dModel) is L-tiled along seqLen into an nb_slots-slot
-# TCDM ring and refilled ASYNCHRONOUSLY from L3 while the osCore computes (paced by the R10
-# output-tile gauge). This isolates the oscore_in async-refill mechanism of main-tiled-oscore
-# from the full SUC pipeline so the osCore GEMM output D can be verified directly.
-#
-# No dInner tiling here (nb_tiles=1): B and D are kept whole, so the ONLY moving part is the
-# A slot ring + refill. Keep dim2 (dInner) == dInnerUnroll so A is read exactly once (N_tile=1).
+# Datagen for osgemm-tiled-async: a minimal single-osCore GEMM whose A input (oscore_in) rings
+# asynchronously through TCDM, refilled from L3 (input-side ring; isolates the oscore_in refill
+# of main-tiled-oscore). Design: docs/dataflow/09_async_tiling.md (input-side ring).
 
 import pathlib
 import sys
@@ -89,9 +84,9 @@ class DataGenerator(DataGeneratorBase):
         L_tile = seqLen // nb_l_tiles
         assert L_tile % Mu == 0, f"L_tile ({L_tile}) must be a multiple of seqLenUnroll ({Mu})"
         assert nb_slots >= 2, f"nb_slots ({nb_slots}) must be >= 2"
-        assert nb_l_tiles >= nb_slots and nb_l_tiles % nb_slots == 0, (
-            f"nb_l_tiles ({nb_l_tiles}) must be >= nb_slots ({nb_slots}) and a multiple of it"
-        )
+        assert (
+            nb_l_tiles >= nb_slots and nb_l_tiles % nb_slots == 0
+        ), f"nb_l_tiles ({nb_l_tiles}) must be >= nb_slots ({nb_slots}) and a multiple of it"
         # Refill lead must hide the ~250 cc L3->TCDM refill latency (see main-tiled-oscore/status.md).
         lead_cc = nb_slots * (L_tile // Mu) * dModel
         assert lead_cc >= 384, (

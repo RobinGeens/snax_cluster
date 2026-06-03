@@ -3,7 +3,7 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled 2-way partitioned EinFFT. Phase A is dModel-tiled; Phase B is
+// Tiled 2-way partitioned EinFFT. Phase A is L2-tiled (full dModel per tile); Phase B is
 // K-tiled. See docs/dataflow/05_fft.md §5.2 for dataflow, tile-axis
 // rationale, TCDM overlay map, and L3 layout.
 //
@@ -66,6 +66,7 @@ int test() {
     snrt_cluster_hw_barrier();
 
     uint32_t start_cycles            = 0;
+    uint32_t phaseA_end_cycles       = 0;
     uint32_t simbacore_cycles_phaseA = 0;
     uint32_t simbacore_cycles_phaseB = 0;
     static uint32_t _dma_done = 0, _compute_done = 0;
@@ -79,6 +80,20 @@ int test() {
                M6_length_hadamard_out_tile, M6_length_hadamard_reordered_tile);
         start_cycles = snrt_mcycle();
     }
+
+    // Zero both ping-pong buffers ONCE up front. Streamers leave the fixed padding cells
+    // untouched (downstream reads them), but each tile's compute fully overwrites the data
+    // region. This way, we don't need to zero this region for each tile
+    if (snrt_is_dm_core()) {
+        for (int b = 0; b < 2; b++) {
+            snrt_dma_start_1d(ptr_partition1_out_tile[b], (void*)snrt_zero_memory_ptr(), M6_length_partition1_out_tile);
+            snrt_dma_start_1d(ptr_hadamard_out_tile[b], (void*)snrt_zero_memory_ptr(), M6_length_hadamard_out_tile);
+            snrt_dma_start_1d(ptr_had_reord_a_tile[b], (void*)snrt_zero_memory_ptr(),
+                              M6_length_hadamard_reordered_tile);
+        }
+        snrt_dma_wait_all();
+    }
+    snrt_cluster_hw_barrier();
 
     // ========================================================================
     // Phase A tile loop: partition1 + hadamard + reorder, tile along L2.
@@ -102,13 +117,14 @@ int test() {
             }
 
             if (i < nb_tiles) {
-                snrt_dma_start_1d(ptr_in_tile[buf], M6_dft_in + i * M6_length_in_tile, M6_length_in_tile);
-                snrt_dma_start_1d(ptr_partition1_out_tile[buf], (void*)snrt_zero_memory_ptr(),
-                                  M6_length_partition1_out_tile);
-                snrt_dma_start_1d(ptr_hadamard_out_tile[buf], (void*)snrt_zero_memory_ptr(),
-                                  M6_length_hadamard_out_tile);
-                snrt_dma_start_1d(ptr_had_reord_a_tile[buf], (void*)snrt_zero_memory_ptr(),
-                                  M6_length_hadamard_reordered_tile);
+                // dft_in is global K-tile-major ([K-tile0: all cols | K-tile1: ...]). Each
+                // Phase A tile is a dModel-block needing ALL K-tiles, so gather them with a
+                // 2D DMA (one chunk per K-tile) into a per-tile K-tile-major slot. For
+                // L1 == seqLenUnroll there is a single K-tile and this is a plain 1D copy.
+                uint32_t n_ktile   = L1 / 16;
+                uint32_t per_ktile = M6_length_in_tile / n_ktile;
+                snrt_dma_start_2d(ptr_in_tile[buf], M6_dft_in + i * per_ktile, per_ktile, per_ktile,
+                                  M6_length_in / n_ktile, n_ktile);
             }
 
             snrt_dma_wait_all();
@@ -194,25 +210,29 @@ int test() {
         snrt_cluster_hw_barrier();
     }
 
+    if (snrt_global_core_idx() == 0) phaseA_end_cycles = snrt_mcycle();
+
     // ========================================================================
-    // Phase B: partition 2, K-axis tiled. Serial DMA/compute.
+    // Phase B: partition 2, K-axis tiled. The partition2_out zero-init (DMA core) overlaps
+    // the weight2/simbacore CSR setup (core 0) and the tile-0 had_reord prefetch instead of
+    // running serially before them.
     // ========================================================================
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_partition2_out, (void*)snrt_zero_memory_ptr(), M6_length_partition2_out);
-        snrt_dma_wait_all();
+        snrt_dma_start_1d(ptr_had_reord_b_ktile, ptr_hadamard_reordered_l3, M6_length_hadamard_reordered_ktile);
     }
-    snrt_cluster_hw_barrier();
-
     if (snrt_global_core_idx() == 0) {
         set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,
                                 (uint32_t)ptr_had_reord_b_ktile, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,
                                 (uint32_t)ptr_partition2_out, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);
         set_simbacore_csr(M6_ISGEMM_SQ, 2 * L2, 1, M6_dInner_2_tile, 1, dModel * L1);
     }
+    if (snrt_is_dm_core()) snrt_dma_wait_all();
     snrt_cluster_hw_barrier();
 
     for (uint32_t tile = 0; tile < M6_nb_tiles_B; tile++) {
-        if (snrt_is_dm_core()) {
+        // tile 0 is already prefetched above; load tile>0 here (single-buffered).
+        if (snrt_is_dm_core() && tile > 0) {
             snrt_dma_start_1d(ptr_had_reord_b_ktile,
                               ptr_hadamard_reordered_l3 + tile * M6_length_hadamard_reordered_ktile,
                               M6_length_hadamard_reordered_ktile);
@@ -240,6 +260,9 @@ int test() {
                simbacore_cycles_phaseA);
         printf("[%d cc] Simbacore Phase B (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phaseB);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+        printf("  Phase A wall: %u cc (compute %u)  Phase B wall: %u cc (compute %u)\n",
+               phaseA_end_cycles - start_cycles, simbacore_cycles_phaseA, end_cycles - phaseA_end_cycles,
+               simbacore_cycles_phaseB);
         printf("DMA latency hiding: phaseA=%s\n", _dma_done < _compute_done ? "ok" : "STALL");
 
         err += check_result_sample(ptr_hadamard_reordered_l3, M6_hadamard_reordered, M6_test_samples_expected,
@@ -247,7 +270,7 @@ int test() {
         err += check_result_sample(ptr_partition2_out, M6_partition2_expected, M6_test_samples_expected,
                                    nb_test_samples, "partition2_out (TCDM)");
 
-        printf("Test FFT tiled (Phase A dModel-tiled, Phase B K-tiled): (%d x %d), nb_tiles=%d/%d\n", seqLen, dModel,
+        printf("Test FFT tiled (Phase A L2-tiled, Phase B K-tiled): (%d x %d), nb_tiles=%d/%d\n", seqLen, dModel,
                nb_tiles, M6_nb_tiles_B);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 2 * nb_test_samples);
     }

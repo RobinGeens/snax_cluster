@@ -28,6 +28,7 @@
 #define SIMBACORE_PERFORMANCE_COUNTER (SIMBACORE_CSR_ADDR_BASE + 8)
 #define R10_DELAY_GAUGE (SIMBACORE_CSR_ADDR_BASE + 9)   // Number of tiles that have been streamed out of osCore
 #define R11_DELAY_GAUGE (SIMBACORE_CSR_ADDR_BASE + 10)  // Number of elements that have been streamed out of SUC
+#define ISCORE_TILE_CNT (SIMBACORE_CSR_ADDR_BASE + 11)  // Number of tiles that have been streamed out of isCore
 
 void set_streamer_csr(uint32_t R0_ptr, int32_t* R0_ss, int32_t* R0_tb, int32_t* R0_ts, bool R0_en,       //
                       uint32_t R1_ptr, int32_t* R1_ss, int32_t* R1_tb, int32_t* R1_ts, bool R1_en,       //
