@@ -52,6 +52,7 @@ wlft*
 
 # Generated files
 test_run_dir
+batch_run_out
 target/streams/
 target/scala*
 scripts_generated/

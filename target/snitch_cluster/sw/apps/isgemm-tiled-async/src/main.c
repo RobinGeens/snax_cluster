@@ -58,7 +58,8 @@ int test_isgemm_tiled_async() {
 
     const uint32_t gauge_step = M4_iscore_out_l_tile_gauge_step;
 
-    uint32_t start_cycles = 0;
+    uint32_t start_cycles           = 0;
+    uint32_t simbacore_cycles_total = 0;
     if (snrt_global_core_idx() == 0) start_cycles = snrt_mcycle();
 
     // K reduction = SW-outer loop over the nb_k_tiles single-K-step invocations.
@@ -106,6 +107,7 @@ int test_isgemm_tiled_async() {
 
         if (snrt_global_core_idx() == 0) {
             wait_simbacore_and_streamer();
+            simbacore_cycles_total += read_simbacore_perf_counter();
             asm volatile("fence" ::: "memory");
         }
         snrt_cluster_hw_barrier();
@@ -114,6 +116,7 @@ int test_isgemm_tiled_async() {
     // ---- Verify the full accumulated BF16 psum (now in L3) against golden D_no_requant.
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
+        printf("[%u cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
         printf("[%u cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
         err += check_result_sample_u16((uint16_t*)ptr_psum_l3, M4_D_no_requant, M4_test_samples_D_no_requant,
                                        nb_test_samples, "psum (no-requant)");

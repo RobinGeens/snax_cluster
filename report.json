@@ -1,0 +1,89 @@
+{
+  "jobs": {
+    "main-tiled-oscore__nb_slots2": {
+      "app": "main-tiled-oscore",
+      "tag": "nb_slots2",
+      "params": {
+        "seqLen": 192,
+        "dModel": 384,
+        "dtRank": 24,
+        "nb_tiles": 8,
+        "nb_l_tiles": 8,
+        "nb_slots": 2
+      },
+      "seqLen": 192,
+      "dModel": 384,
+      "n_tiles": 8,
+      "batch_run": "20260604_100318",
+      "log": "batch_run_out/20260604_100318/main-tiled-oscore__nb_slots2.log",
+      "state": "build_failed",
+      "errors": null,
+      "simbacore": null,
+      "total": null,
+      "updated": "2026-06-04 10:04:46"
+    },
+    "main-tiled-oscore__nb_slots4": {
+      "app": "main-tiled-oscore",
+      "tag": "nb_slots4",
+      "params": {
+        "seqLen": 192,
+        "dModel": 384,
+        "dtRank": 24,
+        "nb_tiles": 8,
+        "nb_l_tiles": 8,
+        "nb_slots": 4
+      },
+      "seqLen": 192,
+      "dModel": 384,
+      "n_tiles": 8,
+      "batch_run": "20260604_100318",
+      "log": "batch_run_out/20260604_100318/main-tiled-oscore__nb_slots4.log",
+      "state": "build_failed",
+      "errors": null,
+      "simbacore": null,
+      "total": null,
+      "updated": "2026-06-04 10:04:46"
+    },
+    "fft-tiled__default": {
+      "app": "fft-tiled",
+      "tag": "default",
+      "params": {
+        "seqLen": 512,
+        "dModel": 96,
+        "L1": 32,
+        "L2": 16,
+        "nb_tiles": 4,
+        "nb_tiles_B": 2
+      },
+      "seqLen": 512,
+      "dModel": 96,
+      "n_tiles": 4,
+      "batch_run": "20260604_100318",
+      "log": "batch_run_out/20260604_100318/fft-tiled__default.log",
+      "state": "done",
+      "errors": "0",
+      "simbacore": "25427",
+      "total": "46035",
+      "updated": "2026-06-04 10:04:46"
+    },
+    "batchnorm__default": {
+      "app": "batchnorm",
+      "tag": "default",
+      "params": {
+        "seqLen": 192,
+        "channels": 384
+      },
+      "seqLen": 192,
+      "dModel": null,
+      "n_tiles": null,
+      "batch_run": "20260604_100318",
+      "log": "batch_run_out/20260604_100318/batchnorm__default.log",
+      "state": "done",
+      "errors": "0",
+      "simbacore": "2",
+      "total": "14929",
+      "updated": "2026-06-04 10:04:46"
+    }
+  },
+  "updated": "2026-06-04 10:04:46"
+}

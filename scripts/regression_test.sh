@@ -89,18 +89,28 @@ pushd "${WORK_DIR}/${TARGET_DIR}" >/dev/null
 
 TIMEOUT_TESTS=()
 
-for name in "${TESTS[@]}"; do
-  elf_rel="sw/apps/${name}/build/${name}.elf"
-  test_log="${RUN_DIR}/${name}.log"
+# --- Run all tests in parallel, each in an isolated scratch CWD ---
+VSIM_ABS="$(pwd)/${VSIM_BIN}"
+SCRATCH_ROOT="${TMPDIR_ROOT}/scratch"
+mkdir -p "${SCRATCH_ROOT}"
+JOBS="${REGRESSION_JOBS:-10}"
+[ "${JOBS}" -le 0 ] && JOBS="${#TESTS[@]}"
 
-  # Run test
+# Run one test, then parse its log and append its summary row immediately.
+run_one() {
+  local name="$1"
+  local elf_abs="$(pwd)/sw/apps/${name}/build/${name}.elf"
+  local test_log="${RUN_DIR}/${name}.log"
+  local scratch="${SCRATCH_ROOT}/${name}"
+  mkdir -p "${scratch}"
   # Must not fail under set -e: timeout exits 124 when the limit is hit.
-  rc=0
-  timeout -k 60 14400 "${VSIM_BIN}" "${elf_rel}" > "${test_log}" 2>&1 || rc=$?
+  local rc=0
+  ( cd "${scratch}" && timeout -k 60 14400 "${VSIM_ABS}" "${elf_abs}" ) > "${test_log}" 2>&1 || rc=$?
+  rm -rf "${scratch}"
 
   # Parse error count from this test's log (124 = timeout exit code)
-  errors=""
-  timed_out=$(( rc == 124 ))
+  local errors="" parsed_errors
+  local timed_out=$(( rc == 124 ))
   parsed_errors="$(sed -n 's/.*Finished with exit code[[:space:]]\+\([0-9]\+\).*/\1/p' "${test_log}" | tail -n1)"
   if [ -z "${parsed_errors}" ]; then
     # Fallback pattern present in some logs: "Errors: N"
@@ -116,22 +126,24 @@ for name in "${TESTS[@]}"; do
   fi
 
   # Parse cycle counts from this test's log
-  simbacore_cycles=""
-  total_cycles=""
-  parsed_simbacore="$(sed -n 's/.*Simbacore elapsed time:[[:space:]]\+\([0-9]\+\)[[:space:]]\+cycles.*/\1/p' "${test_log}" | tail -n1)"
-  parsed_total="$(sed -n 's/.*Snitch elapsed time:[[:space:]]\+\([0-9]\+\)[[:space:]]\+cycles.*/\1/p' "${test_log}" | tail -n1)"
-  if [ -n "${parsed_simbacore}" ]; then
-    simbacore_cycles="${parsed_simbacore}"
-  fi
-  if [ -n "${parsed_total}" ]; then
-    total_cycles="${parsed_total}"
-  fi
+  local simbacore_cycles total_cycles
+  simbacore_cycles="$(sed -n 's/.*Simbacore elapsed time:[[:space:]]\+\([0-9]\+\)[[:space:]]\+cycles.*/\1/p' "${test_log}" | tail -n1)"
+  total_cycles="$(sed -n 's/.*Snitch elapsed time:[[:space:]]\+\([0-9]\+\)[[:space:]]\+cycles.*/\1/p' "${test_log}" | tail -n1)"
 
-  # Format output as table row
-  simbacore_display="${simbacore_cycles:-N/A}"
-  total_display="${total_cycles:-N/A}"
-  printf "%-30s %10s %18s %18s\n" "${name}" "${errors}" "${simbacore_display}" "${total_display}" >> "${SUMMARY_FILE}"
+  # Append table row as soon as this test finishes (single-line append is atomic)
+  printf "%-30s %10s %18s %18s\n" "${name}" "${errors}" "${simbacore_cycles:-N/A}" "${total_cycles:-N/A}" >> "${SUMMARY_FILE}"
+}
+
+running=0
+for name in "${TESTS[@]}"; do
+  run_one "${name}" &
+  running=$((running + 1))
+  if [ "${running}" -ge "${JOBS}" ]; then
+    wait -n
+    running=$((running - 1))
+  fi
 done
+wait
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "${SUMMARY_FILE}"
 

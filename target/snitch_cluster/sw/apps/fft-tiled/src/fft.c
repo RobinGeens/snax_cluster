@@ -256,6 +256,8 @@ int test() {
     // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles,
+               simbacore_cycles_phaseA + simbacore_cycles_phaseB);
         printf("[%d cc] Simbacore Phase A (sum over tiles, 3 steps each): %u cycles\n", end_cycles,
                simbacore_cycles_phaseA);
         printf("[%d cc] Simbacore Phase B (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phaseB);

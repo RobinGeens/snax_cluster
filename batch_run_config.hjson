@@ -1,0 +1,29 @@
+{
+    // Max number of vsim runs allowed to execute at the same time  
+    max_parallel: 10
+
+    // Per-run wall-clock cap in seconds. 0 = no timeout.
+    timeout: 10800
+
+    runs: [
+        {
+            app: main-tiled-oscore
+            params: [
+                { nb_slots: 2 }
+                { nb_slots: 4 }
+            ]
+        }
+        {
+            app: fft-tiled
+            params: [
+                {}
+            ]
+        }
+        {
+            app: batchnorm
+            params: [
+                {}
+            ]
+        }
+    ]
+}
