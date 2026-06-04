@@ -1,0 +1,4 @@
+{
+    seqLen: 192,
+    channels: 384,
+}

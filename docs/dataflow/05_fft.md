@@ -126,6 +126,17 @@ unconstrained by Phase C's K-axis count, so `nb_tiles_A` can be raised to
 shrink Phase A's TCDM footprint even when `K_3` is too small to subdivide
 further (`K_3 = 2` for the default `L3 = 16` config).
 
+Phase A runs the 3-stage DMA/compute pipeline (`load(i) ‖ compute(i-1) ‖
+spill(i-2)`) with inlined start/wait and CSR preloading; see
+[08_performance_optimization.md](08_performance_optimization.md). Its slots are
+therefore **double-buffered (ping-pong)**, which doubles Phase A's TCDM
+footprint. Because the footprint scales as `~1/nb_tiles_A`, the smallest tile
+counts no longer fit: at `nb_tiles_A = 1` each tile is the full `dModel` and the
+ping-pong region is ~576 KiB > TCDM. **Use `nb_tiles_A ≥ 2`.** For the default
+`L=4096, dModel=8` config, the valid set is `nb_tiles_A ∈ {2, 4, 8}` (all within
+the same FP8 quantization noise as un-tiled `fft-3way`); `4` is the default,
+balancing footprint against per-tile pipeline overhead.
+
 | Tensor                                          | Phase | Lifecycle                                                  |
 | ----------------------------------------------- | ----- | ---------------------------------------------------------- |
 | `weight1`, `weight2`, `weight3`                 | all   | **shared** — preloaded once                                |
