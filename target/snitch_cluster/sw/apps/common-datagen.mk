@@ -54,7 +54,8 @@ cache-seed:
 # Step 1: ensure sbt golden data exists (from cache or fresh run).
 # Step 2: always run Python datagen to produce data.h (fast, encodes nb_tiles).
 $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
-	@CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
+	@set -e; \
+	CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
 	CACHED="$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.tar"; \
 	if [ -f "$$CACHED" ]; then \
 		echo "[DATAGEN CACHE] Hit ($(APP_NAME)) — restoring sbt output"; \
@@ -64,6 +65,10 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 		echo "[DATAGEN CACHE] Miss ($(APP_NAME)) — running sbt"; \
 		echo "  Scala $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
 		cd $(CHISEL_SSM) && sbt "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
+		if [ ! -f "$(DATA_CFG)" ]; then \
+			echo "[DATAGEN CACHE] ERROR: sbt produced no $(DATA_CFG) for $(APP_NAME) — check params_in.hjson" >&2; \
+			exit 1; \
+		fi; \
 		mkdir -p "$(DATAGEN_CACHE_DIR)"; \
 		tar cf "$$CACHED" -C "$(SBT_GEN_DIR)" .; \
 		echo "[DATAGEN CACHE] Stored $(APP_NAME) → $$CACHE_KEY"; \

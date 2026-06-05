@@ -102,55 +102,50 @@ All buffers fit in TCDM at once; no L3 spill.
 | `hadamard{1,2}_out`                    | CMul outputs (intermediates)          |
 | `hadamard{1,2}_packed`                 | reorder outputs (intermediates)       |
 
-## `fft-3way-tiled` (3-way, tiled)
+## `fft-3way-tiled` (3-way, **outer dModel-tile**)
 
-Three different tiling regimes, one per phase, because each phase's tiling
-constraint differs:
+`dModel` is the independent batch axis of every partition (`N_i = dModel·…`,
+weights/twiddles broadcast over `d`). So instead of tiling each phase
+differently, the **whole un-tiled `fft-3way` kernel is run once per dModel-slice**
+of `dM = dModel/nb_tiles_A` channels. Every intermediate buffer shrinks to
+`1/nb_tiles_A` and the 5-step pipeline runs entirely in TCDM per slice — no
+inter-phase L3 spill. This replaced the earlier per-phase regime (Phase A
+dModel-tiled, B un-tiled, C K-tiled), whose *full* Phase-B/C buffers
+(`partition{2,3}_out` are full BF16 activations = `~32 KiB · dModel`) blew past
+the 512 KiB TCDM for any realistic `dModel` (e.g. 3072 KiB at `dModel=96`).
 
-- **Phase A** (partition 1 + hadamard 1 + reorder 1): **dModel-tiled**.
-  Partition 1 has `K_1 = 1`, so N-axis tiling is safe — there is no
-  requant-on-last-K hazard. The per-tile reorder output is spilled to L3.
-  Tile count = `nb_tiles_A` (must divide `dModel`).
-- **Phase B** (partition 2 + hadamard 2 + reorder 2): **un-tiled**.
-  K-tiling partition 2 would interleave a transposed-output final tile with
-  no-requant non-final tiles whose write orders are incompatible, corrupting
-  the FULL psum. So Phase B runs in one go; the partition 1 output is DMA'd
-  back from L3 first, and the Phase B output is spilled to L3 to free TCDM
-  for Phase C.
-- **Phase C** (partition 3): **K-tiled**. Canonical accumulating-tiled
-  pattern. The final partition is in plain (non-transposed) mode, so all
-  tiles write in the same order — coherent psum. Tile count = `nb_tiles_C`
-  (must divide `K_3 = 2*L3_padded/dInnerUnroll`; small by construction).
+Per outer slice (`nb_tiles_A` = number of slices, must divide `dModel`):
 
-The two tile counts are independent: Phase A's dModel-axis tile count is
-unconstrained by Phase C's K-axis count, so `nb_tiles_A` can be raised to
-shrink Phase A's TCDM footprint even when `K_3` is too small to subdivide
-further (`K_3 = 2` for the default `L3 = 16` config).
+1. DMA the slice's `dM` input channels in (`dft_in` is d-major, so a slice is one
+   contiguous chunk).
+2. Run the 5-step kernel (partition1 → hadamard1 → reorder1 → partition2 →
+   hadamard2 → reorder2 → partition3) on `dM`-sized buffers — descriptors are the
+   un-tiled `fft-3way` descriptors with `dModel → dM`.
+3. **Scatter** `partition3_out` into its d-slice of the full L3 output. The output
+   is flattened `K_M_N` (`d` outer in the column axis, `Mu = seqLenUnroll`), so a
+   d-slice is `M_3 = 2·L3/seqLenUnroll` strided row-blocks, **not** one contiguous
+   chunk — a 2-D DMA (`repeat = M_3`, `dst_stride = full_block`,
+   `src_stride = slice_block`) places it correctly.
 
-Phase A runs the 3-stage DMA/compute pipeline (`load(i) ‖ compute(i-1) ‖
-spill(i-2)`) with inlined start/wait and CSR preloading; see
-[08_performance_optimization.md](08_performance_optimization.md). Its slots are
-therefore **double-buffered (ping-pong)**, which doubles Phase A's TCDM
-footprint. Because the footprint scales as `~1/nb_tiles_A`, the smallest tile
-counts no longer fit: at `nb_tiles_A = 1` each tile is the full `dModel` and the
-ping-pong region is ~576 KiB > TCDM. **Use `nb_tiles_A ≥ 2`.** For the default
-`L=4096, dModel=8` config, the valid set is `nb_tiles_A ∈ {2, 4, 8}` (all within
-the same FP8 quantization noise as un-tiled `fft-3way`); `4` is the default,
-balancing footprint against per-tile pipeline overhead.
+The full output is assembled in L3 and verified there (scalar reads).
 
-| Tensor                                          | Phase | Lifecycle                                                  |
-| ----------------------------------------------- | ----- | ---------------------------------------------------------- |
-| `weight1`, `weight2`, `weight3`                 | all   | **shared** — preloaded once                                |
-| `twiddles1`, `twiddles2`                        | all   | **shared** — depend only on `(l1, l2, l3)`, not `d`        |
-| `in_tile`, `partition1_out_tile`, `hadamard1_out_tile`, `hadamard1_packed_a_tile` | A | **tiled** — per-tile dModel-slice |
-| `hadamard1_packed_l3`                           | A→B   | **L3 spill** — assembled across Phase A tiles              |
-| `hadamard1_packed_full`, `partition2_out`, `hadamard2_out`, `hadamard2_packed` | B | **FULL** — un-tiled in Phase B (with TCDM overlay) |
-| `hadamard2_packed_l3`                           | B→C   | **L3 spill** — Phase B output, freed before Phase C        |
-| `hadamard2_packed_b_ktile`                      | C     | **tiled** — per-K-tile B slot                              |
-| `partition3_out`                                | C     | **FULL accumulator** — psum across K-tiles, final FFT output|
+**TCDM footprint / `nb_tiles_A`.** The slice runs through a **2-slot ping-pong**
+(slotA/slotB, each = the largest per-slice buffer `partition_out` BF16); peak ≈
+`always_live + 2·align64(2·L·dM·2)`. At `L=4096` this fits TCDM for `dM ≤ 12`, so
+**`nb_tiles_A ≥ ceil(dModel/12)`** (e.g. `dModel=96 → nb_tiles_A=8, dM=12`,
+~396 KiB). `nb_tiles_A=1` (no slicing) is exact but only fits small `dModel`.
 
-**Verification.** Only the final output (`partition3_out`) is byte-checked.
-The intermediate `partition2_out` differs at byte positions the downstream
-streamer doesn't read (a side-effect of the L3 round-trip), but the live
-positions match and the final output is correct to the same FP8 quantization
-noise level as the un-tiled `fft-3way`.
+| Tensor | Lifetime | Notes |
+| --- | --- | --- |
+| `weight1/2/3`, `twiddles1/2` | all slices | **shared** — preloaded once, broadcast over `d` |
+| `in`, `partition1_out`, `hadamard1_out/_packed`, `partition2_out`, `hadamard2_out/_packed`, `partition3_out` | per slice | `dM`-sized, ping-pong'd through 2 slots |
+| `output` (full `partition3_out`) | L3 | assembled by the per-slice 2-D scatter |
+
+**Verification / precision caveat.** Only the final `partition3_out` is
+byte-checked (±1-LSB). `nb_tiles_A=1` matches the un-tiled `fft-3way` noise, but
+**slicing the batch axis amplifies FP8 quantization noise**: each slice
+requantizes with a coarser per-`dM` scale, so near-zero outputs flip sign / round
+differently. Smaller `dM` ⇒ more such positions (`dModel=8` `dM=4` → 12/25 strict
+fails; `dModel=96` `dM=12` → 20/25). The *magnitudes* stay small (sign-flips on
+~0.25–0.5 values), but the strict per-byte check is unforgiving — evaluate
+end-to-end accuracy on the real workload, and prefer the largest `dM` that fits.

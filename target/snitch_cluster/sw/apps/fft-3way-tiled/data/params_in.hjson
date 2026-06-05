@@ -1,13 +1,8 @@
 {
-    // nb_tiles_A must divide dModel; nb_tiles_C must divide K_3 (= 2 for L3=16).
-    // Valid nb_tiles_A is {2,4,8} for this config — see docs/dataflow/05_fft.md
-    // §fft-3way-tiled for the tile-axis rationale and the nb_tiles_A>=2 footprint
-    // constraint.
-    seqLen: 4096,
-    dModel: 8,
-    L1: 16,
-    L2: 16,
-    L3: 16,
-    nb_tiles_A: 4,
-    nb_tiles_C: 2
+  seqLen: 4096
+  dModel: 96
+  L1: 16
+  L2: 16
+  L3: 16
+  nb_tiles_A: 8
 }

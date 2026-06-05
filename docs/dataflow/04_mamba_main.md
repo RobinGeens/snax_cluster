@@ -196,9 +196,17 @@ B3. **P2** Do the OS-gemm in a separate program. How much we loose depends on ho
 
 ### Combined strategy
 
-- Split P1 in L (A3+B2)
+Preferred:
+- Split P1 in L: we gain nothing from keeping P1 monolithic for L>>D  (A3+B2) 
 - Exclude IS-gemm from P2, so SUC writes to L3 directly, and we can compute the out proj on os/is-gemm (A4)
 - Async-tile the OS-core input (B1)
+
+Fallback:
+- Isolate OS-gemm in P2
+
+Infeasible:
+- Async IS-gemm and OS-gemm in P2: DMA cannot sustain this -> loose overlap benefit
+
 
 ## `main-tiled-A2`
 

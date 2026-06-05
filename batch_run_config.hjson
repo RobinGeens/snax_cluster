@@ -180,12 +180,11 @@
             params: [
                 {
                     seqLen: 4096,
-                    dModel: 96,
+                    dModel: 96, // x4
                     L1: 16,
                     L2: 16,
                     L3: 16,
-                    nb_tiles_A: 4,
-                    nb_tiles_C: 2
+                    nb_tiles_A: 8
                 }
             ]
             // {

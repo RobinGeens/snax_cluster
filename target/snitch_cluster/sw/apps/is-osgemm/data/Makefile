@@ -33,7 +33,8 @@ DATAGEN_CACHE_DIR := $(CLUSTER_DIR)/.datagen_cache/$(APP_NAME)
 CACHE_ARGS := seqLen=$(SEQ_LEN) dModel=$(D_MODEL) dInner=$(D_INNER)
 
 $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
-	@CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
+	@set -e; \
+	CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
 	CACHED="$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.tar"; \
 	if [ -f "$$CACHED" ]; then \
 		echo "[DATAGEN CACHE] Hit ($(APP_NAME))"; \
@@ -43,6 +44,10 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 		echo "[DATAGEN CACHE] Miss ($(APP_NAME)) - running sbt"; \
 		cd $(CHISEL_SSM) && sbt "test:runMain datagen.DataGeneratorOSGEMM dim0=$(SEQ_LEN) dim1=$(D_MODEL) dim2=$(D_INNER) name=$(APP_NAME)"; \
 		cd $(CHISEL_SSM) && sbt "test:runMain datagen.DataGeneratorISGEMM dim0=$(SEQ_LEN) dim1=$(D_INNER) dim2=$(D_MODEL) name=$(APP_NAME)"; \
+		if [ ! -f "$(DATA_CFG)" ]; then \
+			echo "[DATAGEN CACHE] ERROR: sbt produced no $(DATA_CFG) for $(APP_NAME) — check params_in.hjson" >&2; \
+			exit 1; \
+		fi; \
 		mkdir -p "$(DATAGEN_CACHE_DIR)"; \
 		tar cf "$$CACHED" -C "$(SBT_GEN_DIR)" .; \
 	fi

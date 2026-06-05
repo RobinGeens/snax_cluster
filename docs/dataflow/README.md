@@ -24,77 +24,74 @@ for the exact streamer/CSR programming see the program sources.
 ## App index
 
 Every program under [`sw/apps/`](../../target/snitch_cluster/sw/apps/), grouped
-by family. **Build** is whether the app is currently enabled in
-[`sw/apps/Makefile`](../../target/snitch_cluster/sw/apps/Makefile) `SUBDIRS`
-(**on**) or commented-out / unregistered (**off**); this changes often and says
-nothing about correctness. **Detail** links to the page that describes the
-dataflow. One-liners here are pointers only — the linked page is the single home
-for each app's design.
+by family. **Detail** links to the page that describes the dataflow. One-liners
+here are pointers only — the linked page is the single home for each app's
+design.
 
 ### GEMM building blocks
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `osgemm` | off | Single-shot OS-core `D = A·B` (ConvFormat output) | [1](01_oscore_kernels.md) |
-| `osgemm-tiled` | off | OS GEMM, output **N-axis** tiled | [1](01_oscore_kernels.md) |
-| `osgemm-tiled-async` | off | OS GEMM with the `A` input L-tiled into an async TCDM ring (input-side ring, paced by `R10`) | [9](09_async_tiling.md) |
-| `isgemm` | off | Single-shot IS-core `D = C + A·B` (psum read-back) | [2](02_iscore_kernels.md) |
-| `isgemm-tiled` | off | IS GEMM, **K-axis** accumulating tiles | [2](02_iscore_kernels.md) |
-| `isgemm-tiled-async` | **on** | IS GEMM with the PSUM streamed through an async output-side ring (paced by `ISCORE_TILE_CNT`) | [9](09_async_tiling.md) |
-| `is-osgemm` | off | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel | [9](09_async_tiling.md) |
-| `is-osgemm-tiled` | off | Same, dInner-tiled and double-buffered | [9](09_async_tiling.md) |
-| `is-osgemm-tiled-async` | **on** | Both async rings live at once (A-input refill + PSUM spill/reload), double-paced | [9](09_async_tiling.md) |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `osgemm` | Single-shot OS-core `D = A·B` (ConvFormat output) | [1](01_oscore_kernels.md) |
+| `osgemm-tiled` | OS GEMM, output **N-axis** tiled | [1](01_oscore_kernels.md) |
+| `osgemm-tiled-async` | OS GEMM with the `A` input L-tiled into an async TCDM ring (input-side ring, paced by `R10`) | [9](09_async_tiling.md) |
+| `isgemm` | Single-shot IS-core `D = C + A·B` (psum read-back) | [2](02_iscore_kernels.md) |
+| `isgemm-tiled` | IS GEMM, **K-axis** accumulating tiles | [2](02_iscore_kernels.md) |
+| `isgemm-tiled-async` | IS GEMM with the PSUM streamed through an async output-side ring (paced by `ISCORE_TILE_CNT`) | [9](09_async_tiling.md) |
+| `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel | [9](09_async_tiling.md) |
+| `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | [9](09_async_tiling.md) |
+| `is-osgemm-tiled-async` | Both async rings live at once (A-input refill + PSUM spill/reload), double-paced | [9](09_async_tiling.md) |
 
 ### SIMD / normalization
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `simd` | off | Coverage test of every BF16 / FP8 SIMD op | [3](03_simd_kernels.md) |
-| `rmsnorm` | off | RMSNorm fused into 6 SIMD launches | [3](03_simd_kernels.md) |
-| `batchnorm` | **on** | Folded BatchNorm + ReLU (`ReLU(x·scale + shift)`) in 2 SIMD passes; SegFormer ConvModule tail | [3](03_simd_kernels.md) |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `simd` | Coverage test of every BF16 / FP8 SIMD op | [3](03_simd_kernels.md) |
+| `rmsnorm` | RMSNorm fused into 6 SIMD launches | [3](03_simd_kernels.md) |
+| `batchnorm` | Folded BatchNorm + ReLU (`ReLU(x·scale + shift)`) in 2 SIMD passes; SegFormer ConvModule tail | [3](03_simd_kernels.md) |
 
 ### Mamba main
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `main` | **on** | Mamba block, Phase 1 → Phase 2, un-tiled | [4](04_mamba_main.md) |
-| `main-full` | off | `main` with full-size params | [4](04_mamba_main.md) |
-| `main-tiled` | **on** | Both phases dInner-tiled (`x`/`z`/`y` staged via L3) | [4](04_mamba_main.md) |
-| `main-tiled-oscore` | **on** | `main-tiled` + async L-tiling of `oscore_in` (input ring, `R10`) | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
-| `main-tiled-iscore` | off (WIP) | `main-tiled` + async L-tiling of the IS-core output psum (output ring, `ISCORE_TILE_CNT`) | [9](09_async_tiling.md) |
-| `suc-only` | off | Stand-alone SU-core probe / `BC` bank-conflict demo | [4](04_mamba_main.md) |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `main` | Mamba block, Phase 1 → Phase 2, un-tiled | [4](04_mamba_main.md) |
+| `main-full` | `main` with full-size params | [4](04_mamba_main.md) |
+| `main-tiled` | Both phases dInner-tiled (`x`/`z`/`y` staged via L3) | [4](04_mamba_main.md) |
+| `main-tiled-oscore` | `main-tiled` + async L-tiling of `oscore_in` (input ring, `R10`) | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
+| `main-tiled-iscore` | `main-tiled` + async L-tiling of the IS-core output psum (output ring, `ISCORE_TILE_CNT`) (WIP) | [9](09_async_tiling.md) |
+| `suc-only` | Stand-alone SU-core probe / `BC` bank-conflict demo | [4](04_mamba_main.md) |
 
 ### FFT
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `fft` | off | 2-way EinFFT partitioned DFT | [5](05_fft.md) |
-| `fft-tiled` | **on** | 2-way DFT, Phase A dModel-tiled + Phase B K-tiled | [5](05_fft.md) |
-| `fft-3way` | off | 3-way partitioned DFT | [5](05_fft.md) |
-| `fft-3way-tiled` | **on** | 3-way DFT, per-phase tiling (dModel / un-tiled / K) | [5](05_fft.md) |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `fft` | 2-way EinFFT partitioned DFT | [5](05_fft.md) |
+| `fft-tiled` | 2-way DFT, Phase A dModel-tiled + Phase B K-tiled | [5](05_fft.md) |
+| `fft-3way` | 3-way partitioned DFT | [5](05_fft.md) |
+| `fft-3way-tiled` | 3-way DFT, per-phase tiling (dModel / un-tiled / K) | [5](05_fft.md) |
 
 ### EinFFT MLP
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `einfft` | off | Un-tiled 2-layer EinFFT MLP (OS-core matmuls + SIMD fuse) | [6](06_einfft_mlp.md) |
-| `einfft-tiled` | **on** | Same, OS-core **N-axis** tiled (per-tile SIMD fuse) | [6](06_einfft_mlp.md) |
-| `einfft-tiled-is-osgemm` | **on** | Splits the 4 matmuls by complex side across OS + IS cores (`IS_OSGEMM`) | [6](06_einfft_mlp.md#69-dual-core-variant-einfft-tiled-is-osgemm) |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `einfft` | Un-tiled 2-layer EinFFT MLP (OS-core matmuls + SIMD fuse) | [6](06_einfft_mlp.md) |
+| `einfft-tiled` | Same, OS-core **N-axis** tiled (per-tile SIMD fuse) | [6](06_einfft_mlp.md) |
+| `einfft-tiled-is-osgemm` | Splits the 4 matmuls by complex side across OS + IS cores (`IS_OSGEMM`) | [6](06_einfft_mlp.md#69-dual-core-variant-einfft-tiled-is-osgemm) |
 
 ### VMamba SS2D
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `vmamba` | off | Full SS2D forward (K=4 cross-scan → per-dir P1/P2 → cross-merge → RMSNorm) | [7](07_vmamba.md) |
-| `vmamba-tiled` | off | dInner-tiled SS2D (single P1 → P2 pass) | [7](07_vmamba.md) |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `vmamba` | Full SS2D forward (K=4 cross-scan → per-dir P1/P2 → cross-merge → RMSNorm) | [7](07_vmamba.md) |
+| `vmamba-tiled` | dInner-tiled SS2D (single P1 → P2 pass) | [7](07_vmamba.md) |
 
 ### Microbenchmarks / diagnostics
 
-| App | Build | What it does | Detail |
-| --- | :---: | --- | :---: |
-| `nop` | **on** | 1024 `nop`s — boot / baseline sanity test | — |
-| `core-burner` | off | Runs a hardcoded mode that drives only the compute cores in isolation (activity probe) | — |
-| `streamer-burner` | off | Runs a hardcoded mode that drives only the streamers in isolation (activity probe) | — |
+| App | What it does | Detail |
+| --- | --- | :---: |
+| `nop` | 1024 `nop`s — boot / baseline sanity test | — |
+| `core-burner` | Runs a hardcoded mode that drives only the compute cores in isolation (activity probe) | — |
+| `streamer-burner` | Runs a hardcoded mode that drives only the streamers in isolation (activity probe) | — |
 
 ## Cardinal rules
 

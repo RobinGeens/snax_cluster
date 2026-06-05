@@ -136,6 +136,35 @@ through TCDM, paced by the IS-core output-tile gauge `ISCORE_TILE_CNT` instead o
   all tiles each step, forcing the full psum resident. The SW loop over invocations
   *is* the K reduction.
 
+### Requant tiles need a commit-side gauge
+
+`ISCORE_TILE_CNT` must reflect what has actually been written to TCDM, not what the
+array has produced. By default the counter (`isCoreOutCnt`) ticks on
+`isCore.io.data.out_d.fire` — the array output, which is *upstream* of the
+requant → BankTransposer → ZeroRepeater → W3 commit chain. On a `NO_REQUANT` tile
+that chain is a bypass, so the array tick and the W3 commit are in lockstep and any
+gauge works. But on a **requanting** tile (`en_isCoreRequant=1`, e.g. the final tile
+of P1 and P2), the array runs ahead of the committed write by the requant /
+transpose / zero-fill pipeline latency. A spill paced on the array gauge then copies
+the slot's un-committed tail to L3 and the output is wrong — failures land sharply at
+the trailing M-tiles of each slot (the part the array has "produced" but W3 has not
+yet written).
+
+Fix: tick the SW-visible gauge on the committed output `io.isCore.out_d.fire` instead.
+In chisel-ssm a second counter `isCoreCommitCnt` drives `io.isCoreTileCnt` (the CSR),
+while the array `isCoreOutCnt` still feeds the internal `isCoreOutIsFinal`. The total
+count is unchanged (`nOutputs`), so `gauge_step` is the same — only the timing moves to
+the real commit. The standalone `isgemm-tiled-async` prototype never hit this because it
+runs `NO_REQUANT` throughout.
+
+Even with the commit gauge, the eviction case (`nb_slots < nb_l`) needs **slack** on the
+requant tile: the spill of a slot must finish before W3 wraps the ring back onto that
+slot, and the BankTransposer (P1's transposing final tile) makes W3 *bursty*, which
+tightens that window. More slots and/or a larger `dModel` both add slack — a larger
+`dModel` because the slower osCore/conv stretches the isCore output in wall-clock, giving
+the spill more time. A non-transposing requant output (P2, `en_isCoreTranspose=0`) has a
+steadier W3 and should need less slack.
+
 ## Both rings at once (dual-core, double-pacing)
 
 `IS_OSGEMM` runs the OS-core and IS-core concurrently in one kernel, so both rings

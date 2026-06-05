@@ -1,5 +1,5 @@
 {
-  seqLen: 48
-  dModel: 512
-  nb_tiles: 2
+  seqLen: 384
+  dModel: 192
+  nb_tiles: 8
 }
