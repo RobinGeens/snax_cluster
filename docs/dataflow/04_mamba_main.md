@@ -132,14 +132,16 @@ DMA-tile size against kernel-launch overhead.
   (chisel-ssm change) + IS-core-only kernel calls. Frees the `L*dModel*2`
   buffer.
 
-## `suc-only`
 
-Stand-alone SU-core run, used to probe the SU-core in isolation. The OS-core
-output `z` is preloaded from the golden reference instead of being produced
-upstream; the IS-core stage is disabled. Used to demonstrate the bank-conflict throughput hit it `BC`.
-The regular (correct) memory layout gives bank conflicts it `BC` because the spatial stride of BC is 16 banks, so
-every two elements come from the same bank. In this app, we overwrite the stride with an incorrect one, just to verify
-utilization.
+## Phase / core isolation apps
+
+- **`P1-tiled-D`** — P1 alone, dInner-tiled and double-buffered. IS-core out psum is fully resident
+- **`P2-tiled-D`** — P2 2 alone, dInner-tiled and double-buffered. IS-core out psum is fully resident
+- **`suc-only`** Only SUC, used to demonstrate the bank-conflict hit it `BC`. The regular (unpadded) memory layout gives
+  bank conflicts in `BC` because the spatial stride of BC is 16 banks, so every two elements come from the same bank. 
+  In this app, we overwrite the stride with an incorrect one, just to verify utilization.
+- **`SUC-tiled`** Only SUC, dInner-tiled. Uses a correct bank-padded `BC` stride.
+
 
 ## Enabling large seqLen
 

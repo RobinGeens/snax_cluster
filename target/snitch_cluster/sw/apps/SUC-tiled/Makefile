@@ -6,8 +6,7 @@
 
 APP = SUC-tiled
 
-# Reuse main-tiled's generated data (M2_* SUC subset + golden inputs/outputs).
-INCDIRS = ../main-tiled/data \
+INCDIRS = data \
           ../../snax/simbacore/include \
           ../main/src
 
@@ -21,7 +20,7 @@ RISCV_LDFLAGS += $(SIMBACORE_LIB_OBJ)
 SRCS = src/main.c
 
 include ../common.mk
-include ../main-tiled/data/Makefile
+include ./data/Makefile
 
 $(ELF): $(SIMBACORE_LIB_OBJ)
 

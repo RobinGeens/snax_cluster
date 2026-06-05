@@ -68,8 +68,79 @@
                     dtRank: 24
                     nb_tiles: 16
                     nb_l_tiles: 12
-                    nb_slots: 2
+                    nb_slots: 4
                     bc_pad_banks: 4
+                }
+            ]
+        }
+        {
+            app: P1-tiled-D
+            params: [
+                // Sizes A
+                {
+                    seqLen: 784 // x4
+                    dModel: 96
+                    dtRank: 24
+                    nb_tiles: 6
+                }
+                // Sizes B
+                {
+                    seqLen: 784
+                    dModel: 192
+                    dtRank: 24
+                    nb_tiles: 16
+                    bc_pad_banks: 4
+                }
+                // Sizes C
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 4
+                }
+                // Sizes D
+                {
+                    seqLen: 48
+                    dModel: 512
+                    dtRank: 24
+                    nb_tiles: 32
+                }
+            ]
+        }
+        {
+            app: P2-tiled-D
+            params: [
+                // Sizes B
+                // {
+                //     seqLen: 784
+                //     dModel: 192
+                //     dtRank: 24
+                //     nb_tiles: 16
+                //     bc_pad_banks: 4
+                // }
+                // Sizes C
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 4
+                }
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 0
+                }
+                // Sizes D
+                {
+                    seqLen: 48
+                    dModel: 512
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 0
                 }
             ]
         }

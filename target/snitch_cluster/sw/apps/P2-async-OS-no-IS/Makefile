@@ -6,8 +6,7 @@
 
 APP = P2-async-OS-no-IS
 
-# Reuse main-tiled-oscore's generated data (M2_* + async oscore_in ring scalars/bounds + M33 mode).
-INCDIRS = ../main-tiled-oscore/data \
+INCDIRS = data \
           ../../snax/simbacore/include \
           ../main/src
 
@@ -21,7 +20,7 @@ RISCV_LDFLAGS += $(SIMBACORE_LIB_OBJ)
 SRCS = src/main.c
 
 include ../common.mk
-include ../main-tiled-oscore/data/Makefile
+include ./data/Makefile
 
 $(ELF): $(SIMBACORE_LIB_OBJ)
 

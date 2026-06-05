@@ -6,8 +6,7 @@
 
 APP = P1-tiled-D
 
-# Reuse main-tiled's generated data (M1_* Phase-1 tiled constants).
-INCDIRS = ../main-tiled/data \
+INCDIRS = data \
           ../../snax/simbacore/include \
           ../main/src
 
@@ -21,7 +20,7 @@ RISCV_LDFLAGS += $(SIMBACORE_LIB_OBJ)
 SRCS = src/main.c
 
 include ../common.mk
-include ../main-tiled/data/Makefile
+include ./data/Makefile
 
 $(ELF): $(SIMBACORE_LIB_OBJ)
 
