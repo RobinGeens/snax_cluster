@@ -1,8 +1,8 @@
 {
-  seqLen: 256
-  dModel: 384
-  L1: 16
-  L2: 16
-  nb_tiles: 4
-  nb_tiles_B: 2
+    seqLen: 512,
+    dModel: 96,
+    L1: 32,
+    L2: 16,
+    nb_tiles: 4,
+    nb_tiles_B: 2
 }

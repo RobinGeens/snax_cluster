@@ -58,6 +58,17 @@ add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bi
 add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_isCore_out_d_ready
 add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/mambaCore/io_isCore_out_d_bits
 add wave -noupdate -expand -group {simbacore IO} -expand -group {IS core} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/io_isCore_in_b_valid
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/rsp_o.w_ready
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/rsp_o.r_valid
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/rsp_o.b_valid
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/rsp_o.aw_ready
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} -divider <NULL>
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/rsp_o.ar_ready
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/req_i.w_valid
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/req_i.r_ready
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/req_i.b_ready
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/req_i.aw_valid
+add wave -noupdate -expand -label sim:/tb_bin/i_dut/i_dma/Group1 -group {Region: sim:/tb_bin/i_dut/i_dma} /tb_bin/i_dut/i_dma/req_i.ar_valid
 add wave -noupdate -divider {New Divider}
 add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_start
 add wave -noupdate /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_streamer_wrapper/i_snax_simbacore_streamer_top/reader_13/io_busy
@@ -240,7 +251,7 @@ add wave -noupdate -label sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core
 add wave -noupdate -label sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/Group1 -group {Region: sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/io_out1_ready
 add wave -noupdate -label sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/Group1 -group {Region: sim:/tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler} /tb_bin/i_dut/i_snax_simbacore_cluster/i_snax_core_0_acc_0_snax_simbacore/i_snax_simbacore_shell_wrapper/inst_SimbaCore/coupler/io_out2_ready
 TreeUpdate [SetDefaultTree]
-WaveRestoreCursors {{Cursor 1} {131260059 ps} 0}
+WaveRestoreCursors {{Cursor 1} {136684002 ps} 0}
 quietly wave cursor active 1
 configure wave -namecolwidth 334
 configure wave -valuecolwidth 251
@@ -256,4 +267,4 @@ configure wave -griddelta 40
 configure wave -timeline 0
 configure wave -timelineunits ps
 update
-WaveRestoreZoom {113449053 ps} {156134051 ps}
+WaveRestoreZoom {1629060398 ps} {1939242319 ps}

@@ -1,8 +1,8 @@
 {
-  seqLen: 4096
-  dModel: 96
-  L1: 16
-  L2: 16
-  L3: 16
-  nb_tiles_A: 8
+    seqLen: 4096
+    dModel: 96
+    L1: 16
+    L2: 16
+    L3: 16
+    nb_tiles_A: 8
 }

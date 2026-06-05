@@ -42,7 +42,7 @@
       "total": "651046",
       "l1_kib": "354",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "main-tiled__bc_pad_banks0_dModel384_dtRank24_nb_tiles32_seqLen192": {
       "app": "main-tiled",
@@ -66,7 +66,7 @@
       "total": "758648",
       "l1_kib": "340",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "main-tiled__bc_pad_banks0_dModel512_dtRank24_nb_tiles32_seqLen48": {
       "app": "main-tiled",
@@ -84,13 +84,13 @@
       "batch_run": "20260605_114018",
       "commit": "916f8eda",
       "log": "batch_run_out/20260605_114018/main-tiled__bc_pad_banks0_dModel512_dtRank24_nb_tiles32_seqLen48.log",
-      "state": "running",
-      "errors": null,
-      "simbacore": null,
-      "total": null,
+      "state": "done",
+      "errors": "27",
+      "simbacore": "730775",
+      "total": "758648",
       "l1_kib": "165",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "main-tiled-oscore__dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_seqLen192": {
       "app": "main-tiled-oscore",
@@ -109,13 +109,13 @@
       "batch_run": "20260605_114018",
       "commit": "916f8eda",
       "log": "batch_run_out/20260605_114018/main-tiled-oscore__dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_seqLen192.log",
-      "state": "running",
-      "errors": null,
+      "state": "timeout",
+      "errors": "0",
       "simbacore": "612151",
       "total": "644798",
       "l1_kib": "407",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "main-tiled-oscore__bc_pad_banks4_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_seqLen192": {
       "app": "main-tiled-oscore",
@@ -135,13 +135,13 @@
       "batch_run": "20260605_114018",
       "commit": "916f8eda",
       "log": "batch_run_out/20260605_114018/main-tiled-oscore__bc_pad_banks4_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_seqLen192.log",
-      "state": "running",
-      "errors": null,
+      "state": "timeout",
+      "errors": "0",
       "simbacore": "612289",
       "total": "645001",
       "l1_kib": "407",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled__dModel96_seqLen784": {
       "app": "einfft-tiled",
@@ -163,7 +163,7 @@
       "total": null,
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled__dModel192_nb_tiles2_seqLen392": {
       "app": "einfft-tiled",
@@ -185,7 +185,7 @@
       "total": "287239",
       "l1_kib": "187",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled__dModel384_nb_tiles2_seqLen192": {
       "app": "einfft-tiled",
@@ -207,7 +207,7 @@
       "total": "287239",
       "l1_kib": "198",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled__dModel512_nb_tiles2_seqLen48": {
       "app": "einfft-tiled",
@@ -223,13 +223,13 @@
       "batch_run": "20260605_114018",
       "commit": "916f8eda",
       "log": "batch_run_out/20260605_114018/einfft-tiled__dModel512_nb_tiles2_seqLen48.log",
-      "state": "building",
-      "errors": null,
-      "simbacore": null,
-      "total": null,
+      "state": "done",
+      "errors": "0",
+      "simbacore": "152826",
+      "total": "287239",
       "l1_kib": "91",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled-is-osgemm__dModel192_seqLen196": {
       "app": "einfft-tiled-is-osgemm",
@@ -250,7 +250,7 @@
       "total": "206591",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled-is-osgemm__dModel384_seqLen192": {
       "app": "einfft-tiled-is-osgemm",
@@ -271,7 +271,7 @@
       "total": "206591",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "einfft-tiled-is-osgemm__dModel512_seqLen48": {
       "app": "einfft-tiled-is-osgemm",
@@ -286,13 +286,13 @@
       "batch_run": "20260605_114018",
       "commit": "916f8eda",
       "log": "batch_run_out/20260605_114018/einfft-tiled-is-osgemm__dModel512_seqLen48.log",
-      "state": "running",
-      "errors": null,
-      "simbacore": null,
-      "total": null,
+      "state": "done",
+      "errors": "0",
+      "simbacore": "106256",
+      "total": "206591",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "fft-tiled__L132_L232_dModel192_nb_tiles4_nb_tiles_B2_seqLen1024": {
       "app": "fft-tiled",
@@ -336,13 +336,13 @@
       "batch_run": "20260605_114018",
       "commit": "916f8eda",
       "log": "batch_run_out/20260605_114018/fft-tiled__L132_L232_dModel96_nb_tiles4_nb_tiles_B2_seqLen1024.log",
-      "state": "running",
-      "errors": null,
+      "state": "timeout",
+      "errors": "0",
       "simbacore": null,
       "total": null,
       "l1_kib": "491",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "fft-tiled__L116_L216_dModel384_nb_tiles4_nb_tiles_B2_seqLen256": {
       "app": "fft-tiled",
@@ -367,7 +367,7 @@
       "total": "76870",
       "l1_kib": "482",
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     },
     "fft-3way-tiled__L116_L216_L316_dModel96_nb_tiles_A4_nb_tiles_C2_seqLen4096": {
       "app": "fft-3way-tiled",
@@ -393,8 +393,8 @@
       "total": null,
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-05 12:38:04"
+      "updated": "2026-06-05 14:50:20"
     }
   },
-  "updated": "2026-06-05 12:38:04"
+  "updated": "2026-06-05 14:50:20"
 }
