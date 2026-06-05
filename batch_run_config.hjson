@@ -1,29 +1,200 @@
 {
-    // Max number of vsim runs allowed to execute at the same time  
-    max_parallel: 10
-
+    // Max number of vsim runs allowed to execute at the same time
+    max_parallel: 5
     // Per-run wall-clock cap in seconds. 0 = no timeout.
     timeout: 10800
 
     runs: [
         {
+            app: main-tiled
+            params: [
+                // Sizes B
+                // {
+                //     seqLen: 784
+                //     dModel: 192
+                //     dtRank: 24
+                //     nb_tiles: 16
+                //     bc_pad_banks: 4
+                // }
+                // Sizes C
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 4
+                }
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 0
+                }
+                // Sizes D
+                {
+                    seqLen: 48
+                    dModel: 512
+                    dtRank: 24
+                    nb_tiles: 32
+                    bc_pad_banks: 0
+                }
+            ]
+        }
+        {
             app: main-tiled-oscore
             params: [
-                { nb_slots: 2 }
-                { nb_slots: 4 }
+                // Sizes B
+                // { // OOM
+                //     seqLen: 800
+                //     dModel: 192
+                //     dtRank: 24
+                //     nb_tiles: 8
+                //     nb_l_tiles: 50
+                //     nb_slots: 2
+                // }
+                // Sizes C
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 16
+                    nb_l_tiles: 12
+                    nb_slots: 2
+                }
+                {
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 16
+                    nb_l_tiles: 12
+                    nb_slots: 2
+                    bc_pad_banks: 4
+                }
+            ]
+        }
+        {
+            app: einfft-tiled
+            params: [
+                // Sizes A
+                {
+                    seqLen: 784 // x4
+                    dModel: 96
+                }
+                // Sizes B
+                {
+                    seqLen: 392
+                    dModel: 192
+                    nb_tiles: 2
+                }
+                // Sizes C
+                {
+                    seqLen: 192
+                    dModel: 384
+                    nb_tiles: 2
+                }
+                // {
+                //     seqLen: 192
+                //     dModel: 384
+                //     nb_tiles: 4
+                // }
+                // Sizes D
+                {
+                    seqLen: 48
+                    dModel: 512
+                    nb_tiles: 2
+                }
+            ]
+        }
+        {
+            app: einfft-tiled-is-osgemm
+            params: [
+                // Sizes A
+                // {
+                //     seqLen: 3136
+                //     dModel: 96
+                // }
+                // {
+                //     seqLen: 784 // x4
+                //     dModel: 96 // ! Must be >= 192
+                // }
+                // Sizes B
+                // { // OOM
+                //     seqLen: 784
+                //     dModel: 192
+                // }
+                // { // OOM
+                //     seqLen: 392 // x2
+                //     dModel: 192
+                // }
+                {
+                    seqLen: 196 // x4
+                    dModel: 192
+                }
+                // Sizes C
+                {
+                    seqLen: 192
+                    dModel: 384
+                }
+                // Sizes D
+                {
+                    seqLen: 48
+                    dModel: 512
+                }
             ]
         }
         {
             app: fft-tiled
             params: [
-                {}
+                // Sizes B
+                // { // OOM
+                //     seqLen: 1024,
+                //     dModel: 192,
+                //     L1: 32,
+                //     L2: 32,
+                //     nb_tiles: 4,
+                //     nb_tiles_B: 2
+                // }
+                {
+                    seqLen: 1024,
+                    dModel: 96, // x2
+                    L1: 32,
+                    L2: 32,
+                    nb_tiles: 4,
+                    nb_tiles_B: 2
+                }
+                // Sizes C
+                {
+                    seqLen: 256,
+                    dModel: 384,
+                    L1: 16,
+                    L2: 16,
+                    nb_tiles: 4,
+                    nb_tiles_B: 2
+                }
+
             ]
         }
         {
-            app: batchnorm
+            app: fft-3way-tiled
             params: [
-                {}
+                {
+                    seqLen: 4096,
+                    dModel: 96,
+                    L1: 16,
+                    L2: 16,
+                    L3: 16,
+                    nb_tiles_A: 4,
+                    nb_tiles_C: 2
+                }
             ]
+            // {
+            //     app: batchnorm
+            //     params: [
+            //         {}
+            //     ]
+            // }
+
         }
     ]
 }

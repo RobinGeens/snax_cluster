@@ -1,0 +1,7 @@
+{
+    "seqLen": 64,   // M for both cores. Multiple of seqLenUnroll=16; tiled into the async rings.
+    "dModel": 384,  // K for oscore, N for iscore. Must satisfy dModel*3 % 4 == 0 (weight downsizer).
+    "dInner": 48,   // N for oscore, K for iscore. SW-outer loop = dInner/dInnerUnroll invocations.
+    "nb_l_tiles": 4, // seqLen async-ring tiles (shared by both cores). Divides seqLen/Mu, multiple of nb_slots.
+    "nb_slots": 2   // ring depth (TCDM slots) for both rings.
+}

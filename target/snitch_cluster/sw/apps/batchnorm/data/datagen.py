@@ -80,6 +80,13 @@ class DataGenerator(DataGeneratorBase):
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
+        # Single sequential pass (no tiling): x, scale, shift, out are all resident,
+        # so peak L1 = end of the last buffer.
+        peak = max(deltas[f"addr_{name}"] + lengths[f"length_{name}"] for name, _ in specs)
+        self.lines_params.append(
+            f"// L1 TCDM peak: {peak / 1024:.2f} KiB (x + scale + shift + out, all resident)\n"
+            f"#define L1_TCDM_PEAK_BYTES {peak}u")
+
 
 if __name__ == "__main__":
     datagen_cli_main(DataGenerator)

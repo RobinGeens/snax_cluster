@@ -9,7 +9,8 @@
 > [5. FFT family](05_fft.md) ·
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
-> **8. Performance optimization (this page)**
+> **8. Performance optimization (this page)** ·
+> [9. Async tiling](09_async_tiling.md)
 
 SW-level techniques for reducing Snitch elapsed time (wall-clock cycles) in
 tiled programs that pipeline DMA transfers with SimbaCore kernel invocations.

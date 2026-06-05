@@ -1,4 +1,16 @@
-# Async tiling of a shared tensor
+# 9. Async tiling of a shared tensor
+
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md) ·
+> **9. Async tiling (this page)**
 
 When a streamer's tensor is shared across many kernel calls (or across many
 K-steps inside one call), it can dominate the TCDM budget. Real tiling is often
@@ -66,9 +78,18 @@ real slack is `nb_slots` tile-reads *minus* that output-vs-input lag.
 Because the per-tile DMA time is comparable to one tile of compute (not far
 smaller), **`nb_slots = 2` leaves almost no margin and tears** (the read pointer
 catches the in-flight refill for the tail of a slot). A few slots of lead
-(typically ≥ 3–4) are needed so the DMA reliably wins the race. There is no
-input-read gauge, so the refill cannot be triggered earlier than the output
-gauge allows — the slot count is the only knob for margin.
+(typically ≥ 3–4) are needed so the DMA reliably wins the race.
+
+The margin is best read as an *absolute time budget*, not a slot count: a slot is
+re-read after `nb_slots · (L_tile / Mu) · dModel` cycles of compute, and the
+refill (≈ fixed `~250 cc` L3→TCDM latency + the byte movement) must fit inside it.
+So `nb_slots`, `L_tile` and `dModel` trade off freely — at a large enough `dModel`,
+even `nb_slots = 2` has enough cycles to hide the latency (verified: a config that
+tore at `dModel = 192` passes unchanged at `dModel = 384`). `nb_slots` is just the
+cheapest knob when `dModel`/`L_tile` are fixed by the workload. There is no
+input-read gauge, so the refill still cannot be triggered *earlier* than the output
+gauge allows. This only holds while the DMA is faster than compute per byte;
+otherwise no slot count closes the gap.
 
 ## Critical sequencing requirement
 
@@ -114,3 +135,31 @@ through TCDM, paced by the IS-core output-tile gauge `ISCORE_TILE_CNT` instead o
   lets the ring slide mid-invocation. With `K_t′ > 1` the inner K-repeat re-touches
   all tiles each step, forcing the full psum resident. The SW loop over invocations
   *is* the K reduction.
+
+## Both rings at once (dual-core, double-pacing)
+
+`IS_OSGEMM` runs the OS-core and IS-core concurrently in one kernel, so both rings
+can be live together: the OS-core A **input** ring (refill, gauge `R10_DELAY_GAUGE`)
+and the IS-core PSUM **output** ring (spill+reload, gauge `ISCORE_TILE_CNT`), both
+sweeping the same `seqLen` L-tiling and serviced by the one DM core. (Implemented in
+`is-osgemm-tiled-async`. `K_t′ = 1` forces `nb_inv = dInner / dInnerUnroll`, with the
+OS-core producing one `dInnerUnroll` N-slice per invocation; mode stays `NO_REQUANT`
+so the OS-core requantizes its FP8 D while the IS-core PSUM rides the ring as BF16.)
+
+The two cores generally run at different speeds, so the refill loop needs **two
+independent cursors, each advanced by its own gauge** — *double-pacing*. Each pass:
+poll both gauges, refill whichever ring(s) have a consumed slot (one, the other, or
+both), advance only those cursors. Do **not** drive both rings from one shared cursor
+gated on both gauges ("pace-on-slower"): that makes the *faster* core's refill wait
+on the slower core, so the faster core wraps onto a slot that is still un-refilled and
+tears. (Measured: pace-on-slower tears the OS-core input ring while the IS-core
+passes; switching to double-pacing fixes it.)
+
+Double-pacing removes the gauge-coupling tax but exposes a second one: a **single DM
+core/DMA engine serves both rings**, so the faster core's bursty refills can queue
+ahead of the slower core's transfers and delay them — pure DMA-bandwidth contention,
+not gauge timing. The *lead-margin* rule above absorbs it; in practice the combined
+case needs one more slot than each ring would alone (e.g. `nb_slots = 3` where an
+isolated ring passes at 2), or equivalently a larger `dModel`. Diagnosis rule of
+thumb: **input ring tears → gauge coupling (decouple the cursors); output ring tears
+while input passes → DMA contention (deepen `nb_slots`).**

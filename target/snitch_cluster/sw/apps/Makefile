@@ -9,6 +9,7 @@ SUBDIRS += main
 SUBDIRS += main-tiled-oscore
 # SUBDIRS += osgemm-tiled-async
 SUBDIRS += isgemm-tiled-async
+SUBDIRS += is-osgemm-tiled-async
 SUBDIRS += fft-tiled
 SUBDIRS += einfft-tiled
 SUBDIRS += einfft-tiled-is-osgemm

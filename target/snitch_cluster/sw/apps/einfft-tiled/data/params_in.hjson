@@ -1,10 +1,5 @@
 {
-    // Constraints:
-    //   - seqLen   multiple of seqLenUnroll  (16)
-    //   - dModel   multiple of 4 * dInnerUnroll  (4 * 24 = 96)
-    //   - dPerB    multiple of dInnerUnroll * nb_tiles
-    //   - N_t = dPerB / (Nu * nb_tiles) >= 2
-    "seqLen": 192,
-    "dModel": 384,
-    "nb_tiles": 2
+  seqLen: 48
+  dModel: 512
+  nb_tiles: 2
 }

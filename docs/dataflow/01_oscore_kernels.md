@@ -9,7 +9,8 @@
 > [5. FFT family](05_fft.md) ·
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
-> [8. Performance optimization](08_performance_optimization.md)
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md)
 
 > Byte layouts of A, B, D: [memory_layouts/02](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md).
 

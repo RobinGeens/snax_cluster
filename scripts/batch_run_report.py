@@ -7,10 +7,10 @@ There is ONE report file, accumulated over time across batch runs, at the repo r
 
 Each batch run writes its own logs/elfs to <root>/batch_run_out/<timestamp>/, and
 merges its results into the single report. A row records which batch run (timestamp)
-the stored number came from. The merge is self-cleaning PER APP: a batch run wipes
-every existing row for the apps it runs and writes only that batch run's jobs, so
-reruns replace stale/contaminated/orphan rows. Apps the batch run doesn't touch are
-kept, so results still accumulate across batch runs by app.
+the stored number came from. The merge is self-cleaning PER JOB (app__tag): a batch
+run overwrites only the rows for the exact jobs it ran and keeps every other row, so
+configs you removed/commented out persist (flagged stale + sorted down). Rows
+accumulate across batch runs; prune report.json by hand to drop dead configs.
 
 Usage (run from the repo root, or pass the dir holding report.json):
     python3 scripts/batch_run_report.py                 # live-watch the report
@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -30,6 +31,8 @@ RE_ERRORS = re.compile(r"Finished with exit code\s+(\d+)")
 RE_ERRORS_ALT = re.compile(r"Errors:\s+(\d+)")
 RE_SIMBACORE = re.compile(r"Simbacore elapsed time:\s+(\d+)\s+cycles")
 RE_TOTAL = re.compile(r"Snitch elapsed time:\s+(\d+)\s+cycles")
+RE_L1 = re.compile(r"Expected L1 TCDM usage:\s+\d+\s+B\s+\((\d+)\s+KiB\)")
+RE_L1_OOM = re.compile(r"L1 TCDM OOM")
 
 REPORT_JSON = "report.json"
 REPORT_MD = "report.md"
@@ -37,14 +40,24 @@ REPORT_MD = "report.md"
 # Status -> emoji. All chosen to render as double-width glyphs so the raw-text
 # table stays aligned in a terminal (markdown viewers ignore the padding).
 EMOJI = {
-    "PASS": "✅", "FAIL": "❌", "RUNNING": "🟢", "BUILDING": "🔨",
-    "BUILD_FAIL": "🧱", "TIMEOUT": "🕒", "QUEUED": "🟡", "NO_RESULT": "❔",
+    "PASS": "✅", "ERRORS": "❌", "OOM": "🔴", "RUNNING": "🟢",
+    "BUILDING": "🔨", "BUILD_FAIL": "🧱", "TIMEOUT": "🕒", "QUEUED": "🟡",
+    "NO_RESULT": "❔",
 }
-_WIDE = set(EMOJI.values())
+# Appended to the Batch-run cell of any row NOT from the most recent batch run
+# (stale, regardless of status). Distinct from TIMEOUT's 🕒 and the commit ⚠️.
+STALE_MARK = "⏰"
+_WIDE = set(EMOJI.values()) | {"🔴", STALE_MARK}
+
+# Markdown link [text](url): when rendered, only `text` occupies columns, so the
+# table's width math must ignore the (often long) url part.
+_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 
 
 def _dw(s):
-    """Display width: the emoji above occupy two columns but len() counts one."""
+    """Display width: emoji occupy two columns but len() counts one; a markdown
+    link counts only its visible text (the url is hidden in a rendered view)."""
+    s = _LINK_RE.sub(r"\1", s)
     return len(s) + sum(1 for c in s if c in _WIDE)
 
 
@@ -54,21 +67,38 @@ def _pad(s, width, right=False):
 
 
 def parse_log(path):
-    """Return (errors, simbacore, total) strings from a run log, or Nones."""
+    """Return (errors, simbacore, total, l1_bytes) strings from a run log, or Nones."""
     if not path or not os.path.exists(path):
-        return None, None, None
+        return None, None, None, None
     try:
         with open(path, errors="replace") as f:
             text = f.read()
     except OSError:
-        return None, None, None
+        return None, None, None, None
     m = RE_ERRORS.findall(text) or RE_ERRORS_ALT.findall(text)
     sc = RE_SIMBACORE.findall(text)
     tot = RE_TOTAL.findall(text)
-    return (m[-1] if m else None), (sc[-1] if sc else None), (tot[-1] if tot else None)
+    l1 = RE_L1.findall(text)
+    return ((m[-1] if m else None), (sc[-1] if sc else None),
+            (tot[-1] if tot else None), (l1[-1] if l1 else None))
 
 
-def _display_status(state, errors):
+def parse_build_log_l1(path):
+    """Recover the memory model's predicted L1 peak (KiB) and OOM flag from a
+    build log -- the only record of it when an OOM aborts the build before the
+    sim runs. Returns (l1_kib, oom)."""
+    if not path or not os.path.exists(path):
+        return None, False
+    try:
+        with open(path, errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None, False
+    l1 = RE_L1.findall(text)
+    return (l1[-1] if l1 else None), bool(RE_L1_OOM.search(text))
+
+
+def _display_status(state, errors, oom=False):
     if state == "queued":
         return "QUEUED"
     if state == "building":
@@ -82,7 +112,11 @@ def _display_status(state, errors):
     if state == "done":
         if errors is None:
             return "NO_RESULT"
-        return "PASS" if errors == "0" else "FAIL"
+        if errors == "0":
+            return "PASS"
+        # Nonzero error count: an OOM-predicted run gets the clearer OOM label;
+        # otherwise ERRORS (a small count may be quantization noise, not a true fail).
+        return "OOM" if oom else "ERRORS"
     return state.upper()
 
 
@@ -111,36 +145,47 @@ def merge_run_into_report(report_dir, rundir):
     report_dir holds report.json/report.md (e.g. the repo root); rundir is the
     batch run's own timestamped log folder.
 
-    Self-cleaning, per app: every existing row for an app this batch run runs is
-    dropped first, then replaced with only this batch run's jobs for that app. So a
-    rerun wipes that app's stale/contaminated/orphan rows (any param combo, any
-    leftover queued/building state). Apps the batch run does NOT touch are kept, so
-    results still accumulate across batch runs by app (see the Batch run column)."""
+    Self-cleaning, per JOB (app__tag): this run overwrites only the rows for the
+    exact jobs it ran; every other row is kept. So configs you removed or commented
+    out keep their last result instead of being wiped when a sibling config of the
+    same app reruns -- they're just flagged stale (⏰) and sorted to the bottom.
+    Rows accumulate across runs; prune report.json by hand to drop dead configs."""
     stamp = os.path.basename(os.path.normpath(rundir))
     status = _read_json(os.path.join(rundir, "status.json"))
     if status is None:
         return
+    commit = status.get("commit")
 
     report_path = os.path.join(report_dir, REPORT_JSON)
     report = _read_json(report_path) or {"jobs": {}}
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     cur = status.get("jobs", {})
-    run_apps = {job["app"] for job in cur.values()}
-    report["jobs"] = {jid: e for jid, e in report.get("jobs", {}).items()
-                      if e.get("app") not in run_apps}
+    # Self-cleaning is PER JOB, not per app: this run overwrites only the exact jobs
+    # (app__tag) it ran; every other row is kept. So a config you removed or commented
+    # out persists with its last result (flagged stale + sorted to the bottom) instead
+    # of being wiped just because a sibling config of the same app reran.
+    report.setdefault("jobs", {})
 
     for jid, job in cur.items():
         log_abs = os.path.join(rundir, job["log"])
-        errors, sc, tot = parse_log(log_abs)
+        errors, sc, tot, l1 = parse_log(log_abs)
+        # When OOM aborts the build there is no sim log line; recover the predicted
+        # peak (and OOM flag) from the build log the memory model wrote into.
+        build_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".build.log")
+        build_l1, oom = parse_build_log_l1(build_log)
+        if l1 is None:
+            l1 = build_l1
         report["jobs"][jid] = {
             "app": job["app"], "tag": job.get("tag", ""),
             "params": job.get("params", {}),
             "seqLen": job.get("seqLen"), "dModel": job.get("dModel"),
             "n_tiles": job.get("n_tiles"),
-            "batch_run": stamp, "log": os.path.relpath(log_abs, report_dir),
+            "batch_run": stamp, "commit": commit,
+            "log": os.path.relpath(log_abs, report_dir),
             "state": job.get("state", "?"),
             "errors": errors, "simbacore": sc, "total": tot,
+            "l1_kib": l1, "l1_oom": oom,
             "updated": now,
         }
     report["updated"] = now
@@ -159,7 +204,7 @@ def _fmt_other(params):
     items = [(k, v) for k, v in (params or {}).items() if k not in SPECIAL_KEYS]
     if not items:
         return "—"
-    return ", ".join(f"`{k}={v}`" for k, v in items)
+    return ", ".join(f"{k}={v}" for k, v in items)
 
 
 def _fmt_col(v):
@@ -168,6 +213,28 @@ def _fmt_col(v):
 
 def _fmt_num(s):
     return f"{int(s):,}" if s and s.isdigit() else (s or "—")
+
+
+def _fmt_l1(s, oom=False):
+    """L1 TCDM peak (KiB, as the app printed it) -> a `<KiB> KiB` cell, or em-dash.
+    Appends an OOM marker when the predicted peak exceeds the TCDM budget."""
+    if not (s and str(s).isdigit()):
+        return "—"
+    return f"{int(s):,} KiB" + (" 🔴OOM" if oom else "")
+
+
+def _log_link(report_dir, log_rel):
+    """Clickable link to a job's most useful log: the sim log if it exists, else
+    the build log (e.g. a build failure never produced a sim log). Paths are
+    relative to report_dir so the link resolves from report.md living there."""
+    if not log_rel:
+        return "—"
+    build_rel = os.path.splitext(log_rel)[0] + ".build.log"
+    if os.path.exists(os.path.join(report_dir, log_rel)):
+        return f"[log]({log_rel})"
+    if os.path.exists(os.path.join(report_dir, build_rel)):
+        return f"[build]({build_rel})"
+    return "—"
 
 
 def _md_table(headers, aligns, rows):
@@ -187,33 +254,71 @@ def _md_table(headers, aligns, rows):
     return "\n".join(out)
 
 
+def current_commit(report_dir):
+    """Short HEAD of the repo the report lives in, to flag rows built off old commits."""
+    try:
+        out = subprocess.check_output(["git", "-C", report_dir, "rev-parse", "--short", "HEAD"])
+        return out.decode().strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
 def render_report(report_dir):
     """Render the accumulated report as Markdown from report_dir/report.json."""
     report = _read_json(os.path.join(report_dir, REPORT_JSON))
     if report is None or not report.get("jobs"):
         return f"_No batch-run report yet in {report_dir}._\n"
 
+    head = current_commit(report_dir)
     jobs = report["jobs"]
+    # The most recent batch_run stamp = the run currently in progress (or, when
+    # viewing standalone, the last one). Rows from earlier runs are accumulated
+    # leftovers, not what we ran now -- mark their PASS distinctly.
+    stamps = [e.get("batch_run") for e in jobs.values() if e.get("batch_run")]
+    latest_run = max(stamps) if stamps else None
     counts = {}
     rows = []
     for e in jobs.values():
-        disp = _display_status(e.get("state", "?"), e.get("errors"))
+        disp = _display_status(e.get("state", "?"), e.get("errors"), e.get("l1_oom"))
         counts[disp] = counts.get(disp, 0) + 1
         status = f"{EMOJI.get(disp, '')} {disp}".strip()
-        rows.append((e["app"], _fmt_col(e.get("seqLen")), _fmt_col(e.get("dModel")),
-                     _fmt_col(e.get("n_tiles")), _fmt_other(e.get("params")),
-                     e.get("batch_run", "?"), status, e.get("errors") or "—",
-                     _fmt_num(e.get("simbacore")), _fmt_num(e.get("total"))))
-    rows.sort(key=lambda r: (r[0], r[4]))
+        commit = e.get("commit")
+        # Flag rows whose run predates the current HEAD -- their numbers may be stale.
+        if not commit:
+            commit_cell = "—"
+        elif head and commit != head:
+            commit_cell = f"{commit} ⚠️"
+        else:
+            commit_cell = commit
+        # Stale = not from the most recent batch run (any status): clock the batch-run
+        # cell and sort these to the bottom.
+        stale = bool(latest_run) and e.get("batch_run") != latest_run
+        batch_cell = e.get("batch_run", "?")
+        if stale:
+            batch_cell = f"{batch_cell} {STALE_MARK}"
+        row = (e["app"], _fmt_col(e.get("seqLen")), _fmt_col(e.get("dModel")),
+               _fmt_col(e.get("n_tiles")), _fmt_other(e.get("params")),
+               batch_cell, commit_cell, status, e.get("errors") or "—",
+               _fmt_num(e.get("simbacore")), _fmt_num(e.get("total")),
+               _fmt_l1(e.get("l1_kib"), e.get("l1_oom")),
+               _log_link(report_dir, e.get("log")))
+        rows.append((stale, row))
+    # Fresh rows first (stale at the bottom); within each group by app then params.
+    rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][4]))
+    rows = [r for _, r in rows]
 
     tally = " · ".join(f"{EMOJI.get(k, '')} {v} {k}" for k, v in sorted(counts.items()))
     headers = ["App", "seqLen", "dModel", "n_tiles", "Params", "Batch run",
-               "Status", "Errors", "SimbaCore", "Total"]
+               "Commit", "Status", "Errors", "SimbaCore", "Total", "L1 TCDM", "Log"]
     aligns = ["left", "right", "right", "right", "left", "left",
-              "left", "right", "right", "right"]
+              "left", "left", "right", "right", "right", "right", "left"]
+    head_note = f" · HEAD `{head}`" if head else ""
     return (
         "# SNAX batch-run report\n\n"
-        f"_Updated {report.get('updated', '?')} · {len(jobs)} jobs · {tally}_\n\n"
+        f"_Updated {report.get('updated', '?')} · {len(jobs)} jobs{head_note} · {tally}_\n\n"
+        "_⚠️ = run predates current HEAD (numbers may be stale)._\n\n"
+        "_⏰ next to the batch run = result from an earlier batch run (stale; sorted to the bottom)._\n\n"
+        "_❌ ERRORS = nonzero mismatch count (small values may be quantization noise, not a true fail) · 🔴 OOM = exceeded L1 TCDM budget._\n\n"
         + _md_table(headers, aligns, rows) + "\n"
     )
 

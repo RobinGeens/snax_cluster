@@ -17,10 +17,10 @@ Scheduling:
   * Different apps' lanes run concurrently => different programs in parallel.
 
 Results are merged into ONE persistent report at the repo root (<root>/report.md
-+ report.json). The merge is self-cleaning per app: rerunning an app wipes its
-old rows and writes only this batch run's jobs, so stale/contaminated rows are
-replaced; apps not in this batch run are kept (accumulation by app). A Batch run
-column records which timestamped batch run each number came from. View it
++ report.json). The merge is self-cleaning per JOB (app__tag): rerunning a config
+overwrites only its own row and keeps every other, so configs you removed/commented
+out persist (flagged stale + sorted to the bottom). A Batch run column records which
+timestamped batch run each number came from. View it
 separately with:
     python3 scripts/batch_run_report.py            # run from the repo root
 
@@ -51,6 +51,15 @@ VSIM_BIN = "bin/snitch_cluster.vsim"
 def repo_root():
     out = subprocess.check_output(["git", "rev-parse", "--show-toplevel"])
     return out.decode().strip()
+
+
+def git_commit(root):
+    """Short HEAD hash of the repo a run is built from, for staleness tracking."""
+    try:
+        out = subprocess.check_output(["git", "-C", root, "rev-parse", "--short", "HEAD"])
+        return out.decode().strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
 
 
 def slug(value):
@@ -125,6 +134,7 @@ class BatchRun:
             "config_path": self.config_path,
             "started": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             "max_parallel": self.max_parallel,
+            "commit": git_commit(self.root),
             "complete": False,
             "jobs": {},
         }

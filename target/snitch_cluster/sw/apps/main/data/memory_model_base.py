@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 # ── Utilities ─────────────────────────────────────────────────────────────
 
+
 def align64(v: int) -> int:
     return (v + 63) & ~63
 
@@ -93,6 +94,7 @@ def read_params_in(hjson_path: str) -> dict:
 
 
 # ── Report builder ────────────────────────────────────────────────────────
+
 
 class MemoryReport:
     def __init__(self, app_name: str, params: dict):
@@ -201,9 +203,8 @@ def run_model_from_datagen(model_fn, app_dir: str):
     report = model_fn(params)
     report_path = os.path.join(app_dir, "memory_report.txt")
     report.write(report_path)
-    report.check_oom()
     peak = report.overall_peak()
-    return (
-        f"// L1 TCDM peak: {peak / 1024:.2f} KiB — see memory_report.txt\n"
-        f"#define L1_TCDM_PEAK_BYTES {peak}u"
-    )
+    oom_tag = " *** L1 TCDM OOM ***" if peak > TCDM_BYTES else ""
+    print(f"Expected L1 TCDM usage: {peak} B ({peak // 1024} KiB){oom_tag}", file=sys.stderr)
+    report.check_oom()
+    return f"// L1 TCDM peak: {peak / 1024:.2f} KiB — see memory_report.txt\n" f"#define L1_TCDM_PEAK_BYTES {peak}u"

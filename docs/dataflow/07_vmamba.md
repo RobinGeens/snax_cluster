@@ -9,7 +9,8 @@
 > [5. FFT family](05_fft.md) ·
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > **7. VMamba SS2D (this page)** ·
-> [8. Performance optimization](08_performance_optimization.md)
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md)
 
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),

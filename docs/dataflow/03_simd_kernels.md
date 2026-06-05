@@ -9,7 +9,8 @@
 > [5. FFT family](05_fft.md) ·
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
-> [8. Performance optimization](08_performance_optimization.md)
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md)
 
 > SIMD lane / block layouts: [memory_layouts/10](../../../chisel-ssm/docs/memory_layouts/10_simd.md).
 
@@ -54,3 +55,26 @@ The "broadcast a one-lane constant" pattern in steps 2 and 4 and the "slide
 one operand over D while the other walks the matrix" pattern in steps 5 and
 6 are both expressed by configuring the streamer's per-port temporal
 strides, not by software loops.
+
+## `batchnorm`
+
+Stand-alone folded BatchNorm + ReLU: `out = ReLU(x · scale + shift)` with a
+per-channel `scale` and `shift`. This is the SegFormer ConvModule tail that
+follows the 1×1 conv (which is just an OS-core GeMM — the `osgemm` app); the
+two are separate apps, not a fused kernel.
+
+Two BF16 SIMD passes, same shape as the RMSNorm steps 5–6 "slide one operand
+over the channel axis while the other walks the matrix" pattern:
+
+1. `Mul`: `out ← x · scale` (per-channel multiply)
+2. `Add` + ReLU (`SIMD_ADD_BF16_RELU`): `out ← ReLU(out + shift)`, in place
+
+| Tensor      | Role                                  | Lifecycle                                      |
+| ----------- | ------------------------------------- | ---------------------------------------------- |
+| `x`         | input activations (`seqLen × channels`)| DMA'd in                                       |
+| `scale`     | per-channel multiplier                | DMA'd in once; slides over the channel axis    |
+| `shift`     | per-channel offset                    | DMA'd in once; slides over the channel axis    |
+| `out`       | output                                | written by pass 1, updated in place by pass 2  |
+
+The per-channel `scale`/`shift` broadcast is the streamer temporal-stride
+trick from RMSNorm, not a software loop.

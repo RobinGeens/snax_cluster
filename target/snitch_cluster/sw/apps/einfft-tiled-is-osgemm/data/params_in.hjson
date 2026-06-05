@@ -1,9 +1,4 @@
 {
-    // Constraints:
-    //   - seqLen multiple of seqLenUnroll (16), and >= 2*seqLenUnroll
-    //   - dModel multiple of 4 * dInnerUnroll (4 * 24 = 96)
-    //   - dPerB = dModel/4 multiple of dInnerUnroll (24), and N = dPerB/Nu >= 2
-    //     => dModel >= 192. No N-tiling: the dual-core shares the dInner CSR.
-    "seqLen": 192,
-    "dModel": 384
+  seqLen: 48
+  dModel: 512
 }

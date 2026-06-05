@@ -36,6 +36,8 @@ int test() {
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: BatchNorm + ReLU (%u x %u)\n\n", seqLen, channels);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         uint32_t start_cycles = snrt_mcycle();
 
         // Pass 1: out = x * scale   (per-channel multiply)

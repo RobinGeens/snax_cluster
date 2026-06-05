@@ -9,7 +9,8 @@
 > [5. FFT family](05_fft.md) ·
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
-> [8. Performance optimization](08_performance_optimization.md)
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md)
 
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),
@@ -144,6 +145,8 @@ utilization.
 
 `main-tiled` cannot be expanded to large seqLen because it assumes `iscore_out_P1` (size `L*xProjDim`), `iscore_out_P2` (size `L*dModel`) and `oscore_in` (size `L*dModel`) remain in TCDM.
 
+### IS-core psum sizes
+
 To mitigate the IS-core output sizes, we have 3 options:
 
 A1. **Split SSM in L:** Split P1 and P2 in half over seqLen. However, this is completely impossible because it requires the
@@ -168,15 +171,34 @@ We assume the address reordering is done by the DMA engine or off-chip.
 A third complication is that we need to support async tiling in some way. We cannot simply re-launch Simbacore, because we
 cannot control the IS-core and other cores independently, and all streamers are fired as one. See docs/dataflow/09_async_tiling.md.
 
-A3. **Split P1 in L:**Tile the whole P1 in seqLen. This simply means we do the full P1 kernel call for every seqLen tile. The downside
+A3. **P1** Split whole phase in L. This simply means we do the full P1 kernel call for every seqLen tile. The downside
    is that we lose the weight-reuse on the projection weight matrices, and we need to load in the full weight
-   matrices for every seqLen tile. This costs extra energy, but the latency should be manageable by overlapping it
-   with compute. The same bank-transpose complication applies here.
+   matrices for every seqLen tile, costing extra energy. However, the weight matrices are significantly smaller that the input tensor, so this is still cheaper than the alternative. The same bank-transpose complication applies here.
 Not implemented yet.
 
-To mitigate the OS-core input size:
+A4. Do IS-gemm in a separate program. 
+**P2**: We would tile the SUC outputs directly to L3. This way, we loose the SUC/IS-core 
+overlap. However, the overlap is diminishing anyways, because 1) we have a safe-to-start delay, which can be 50% of the
+compute time for small dInner tiles; and 2) for smaller dModel, the IS-core computation is negligible compared to the SUC
+computation. What we win is that we can compute the output projection on OS-core and IS-core in parallel.
+**P1**: For xProj, we would lose more because here all cores are nicely coupled. However, the xProj IS-core tiles are smaller,
+yet we will have to pace the transfers at the OS-core side (slower), so we have more compute available. The ration 
+DMA/compute time becomes xProjDim/dModel. Not a problem if we split in L (A3).
 
-B1. **Async tiling on oscore_in:** Tile the OS-core input tensor in seqLen.
+### OS-core input sizes
+
+B1. Tile the OS-core input tensor in seqLen.
+
+B2. **P1** split whole phase in L.
+
+B3. **P2** Do the OS-gemm in a separate program. How much we loose depends on how much we can let OS-core and SUC overlap.
+
+
+### Combined strategy
+
+- Split P1 in L (A3+B2)
+- Exclude IS-gemm from P2, so SUC writes to L3 directly, and we can compute the out proj on os/is-gemm (A4)
+- Async-tile the OS-core input (B1)
 
 ## `main-tiled-A2`
 
