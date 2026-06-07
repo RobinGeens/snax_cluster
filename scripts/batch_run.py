@@ -306,18 +306,42 @@ class BatchRun:
         by the vsim semaphore. Its result is supplementary -- it never changes
         the job state (the vsim/RTL run still drives Status); the report just
         scrapes this log for the Model error/SimbaCore/Total columns. Skipped
-        silently if the model binary was never built."""
+        silently if the model binary was never built.
+
+        Also asks memsim for a `--timeline` CSV and renders it to a per-engine
+        activity + TCDM-bandwidth timeline plot (`<jid>.timeline.png`)."""
         if not os.path.exists(os.path.join(self.cluster, MEMSIM_BIN)):
             return
         log = os.path.join(self.rundir, jid + ".memsim.log")
+        csv = os.path.join(self.rundir, jid + ".timeline.csv")
         with open(log, "w") as f:
-            p = self._spawn([MEMSIM_BIN, elf], f)
+            p = self._spawn([MEMSIM_BIN, elf, "--timeline", csv], f)
             try:
                 p.wait(timeout=(self.timeout or None))
             except subprocess.TimeoutExpired:
                 self._killpg(p, signal.SIGTERM)
                 p.wait()
                 f.write("\n[batch_run] MEMSIM TIMEOUT\n")
+            finally:
+                self._reap(p)
+        self.make_timeline_plot(jid, csv)
+
+    def make_timeline_plot(self, jid, csv):
+        """Render the timeline CSV to `<jid>.timeline.png` via sim/plot_timeline.py.
+        Best-effort (needs matplotlib): a missing CSV (e.g. memsim timed out) or any
+        plotter failure is non-fatal and never changes the job state, exactly like the
+        supplementary memsim log."""
+        plotter = os.path.join(self.cluster, "sim", "plot_timeline.py")
+        if not os.path.exists(csv) or not os.path.exists(plotter):
+            return
+        png = os.path.splitext(csv)[0] + ".png"           # <jid>.timeline.png
+        with open(os.path.join(self.rundir, jid + ".plot.log"), "w") as f:
+            p = self._spawn([sys.executable, plotter, "--csv", csv, "-o", png], f)
+            try:
+                p.wait(timeout=(self.timeout or 120))
+            except subprocess.TimeoutExpired:
+                self._killpg(p, signal.SIGTERM)
+                p.wait()
             finally:
                 self._reap(p)
 

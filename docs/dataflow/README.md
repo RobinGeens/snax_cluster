@@ -58,10 +58,11 @@ design.
 | `main-full` | `main` with full-size params | [4](04_mamba_main.md) |
 | `main-tiled` | Both P dInner-tiled (`x`/`z`/`y` staged via L3) | [4](04_mamba_main.md) |
 | `main-tiled-oscore` | `main-tiled` + async L-tiling of `oscore_in` (input ring) | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
-| `main-tiled-iscore` | `main-tiled` + async L-tiling of the IS-core output psum (output ring) (WIP) | [9](09_async_tiling.md) |
+| `main-tiled-iscore` | `main-tiled` + async L-tiling of the IS-core output psum of P1 (P2 is still in full) | [9](09_async_tiling.md) |
 | `P1-tiled-D` | P1 alone, dInner-tiled | [4](04_mamba_main.md) |
 | `P2-tiled-D` | P2 alone, dInner-tiled | [4](04_mamba_main.md) |
-| `SUC-tiled` | SU-core alone, dInner-tiled | [4](04_mamba_main.md) |
+| `SUC-tiled` | SUC only, dInner-tiled | [4](04_mamba_main.md) |
+| `suc-async` | SUC only, async tiling on BC | [4](04_mamba_main.md) |
 | `P2-async-OS-no-IS` | P2 minus the IS-core; `oscore_in` async input ring | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
 | `suc-only` | Stand-alone SUC probe / `BC` bank-conflict demo | [4](04_mamba_main.md) |
 

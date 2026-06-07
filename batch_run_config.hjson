@@ -81,7 +81,7 @@
                     seqLen: 784 // x4
                     dModel: 96
                     dtRank: 24
-                    nb_tiles: 6
+                    nb_tiles: 8
                 }
                 // Sizes B
                 {
@@ -90,20 +90,20 @@
                     dtRank: 24
                     nb_tiles: 8
                 }
-                // Sizes C
-                {
-                    seqLen: 192
-                    dModel: 384
-                    dtRank: 24
-                    nb_tiles: 16
-                }
-                // Sizes D
-                {
-                    seqLen: 48
-                    dModel: 504
-                    dtRank: 24
-                    nb_tiles: 21
-                }
+                // // Sizes C
+                // {
+                //     seqLen: 192
+                //     dModel: 384
+                //     dtRank: 24
+                //     nb_tiles: 16
+                // }
+                // // Sizes D
+                // {
+                //     seqLen: 48
+                //     dModel: 504
+                //     dtRank: 24
+                //     nb_tiles: 21
+                // }
             ]
         }
         {
@@ -137,7 +137,7 @@
                     seqLen: 48
                     dModel: 504
                     dtRank: 24
-                    nb_tiles: 32
+                    nb_tiles: 21
                     bc_pad_banks: 0
                 }
             ]
@@ -161,7 +161,7 @@
                     dModel: 192
                     dInner: 384
                     dtRank: 24
-                    nb_tiles: 6
+                    nb_tiles: 8
                     bc_pad_banks: 4
                 }
             ]
@@ -199,7 +199,7 @@
                 // Sizes A
                 {
                     seqLen: 784 // x4
-                    dModel: 96
+                    dModel: 96 // ! Currently requires >= 192
                     nb_tiles: 1
                 }
                 // Sizes B

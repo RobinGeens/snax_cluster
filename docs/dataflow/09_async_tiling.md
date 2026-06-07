@@ -178,3 +178,37 @@ case needs one more slot than each ring would alone (e.g. `nb_slots = 3` where a
 isolated ring passes at 2), or equivalently a larger `dModel`. Diagnosis rule of
 thumb: **input ring tears → gauge coupling (decouple the cursors); output ring tears
 while input passes → DMA contention (deepen `nb_slots`).**
+
+### Overlapping the osCore and SUC (P2-async)
+
+`P2-async-OS-no-IS` runs the fused `M33` (osCore → switchCore → SUC) with **two input
+rings live at once** — `oscore_in` (gauge `R10_DELAY_GAUGE`) and `BC` (gauge
+`R11_DELAY_GAUGE`, the SUC output count) — from one double-paced loop (`refill_loop`),
+so the osCore and SUC *pipeline*: the SUC's z-reader is released at the safe-to-start
+threshold `M2_R10_start_cnt` and trails the osCore.
+
+How much they overlap is set entirely by that threshold. The SUC reads z in a scrambled
+per-`(seqLenUnroll × dInnerUnroll)` tile order, so it must trail the osCore by ~1 such
+**window**: `safe_to_start = ceil(seqLen_tiles · 1.2)`, clamped to
+`gemm_total = seqLen_tiles · n_24L` (`get_safe_to_start_delay`), where
+`n_24L = dInner_tile / dInnerUnroll`. Therefore:
+
+- **`n_24L == 1`** → the clamp = the full osCore window → the SUC can only start once the
+  osCore is done → **no overlap** (the loop degenerates cleanly to sequential). This is
+  the regime a large-`seqLen` config is forced into when the 512 KiB budget caps
+  `dInner_tile` at `dInnerUnroll` (e.g. `seqLen=3136, dModel=96 → nb_tiles=8`).
+- **`n_24L ≥ 2`** → the SUC overlaps the later windows; overlap fraction ≈
+  `(n_24L − 1.2) / n_24L` (n_24L=2 ≈ 40 %, 4 ≈ 70 %, 8 ≈ 85 %).
+
+The *value* of that overlap scales with the osCore's share of the tile,
+`osCore / SUC ≈ dModel / (384 · bc)` (L-independent; `bc ≈ 1.756` for the real 2-bank
+conflict): `dModel=96` → osCore ~12.5 % of the tile (overlap buys ≤ ~4 %); `dModel=384`
+→ ~36 % (~1.4×); balanced 50/50 near `dModel ≈ 674` (~2×). So overlap is worth pursuing
+only when `dModel` is large **and** `dInner_tile` is large enough for `n_24L ≥ 2` — the
+two pull against the footprint budget, so it is a moderate-`seqLen` feature.
+
+The osCore array back-pressures cleanly, so a BC-refill DMA that transiently grounds the
+osCore W0 (z-write) superbank only stalls it, never drops z — `oscore_in` refill already
+overlaps W0 with clean z. The only real care is the standard double-pacing rule above:
+the two-barrier handshake (publish `do_os/do_bc`, then "safe to recompute") plus enough
+`oscore_in` slots to absorb the handshake latency.

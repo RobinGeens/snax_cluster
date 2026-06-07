@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Plot a per-engine activity timeline from the memsim cycle-accurate model.
+
+Usage:
+  plot_timeline.py <app.elf> [-o out.png]      # run memsim, then plot
+  plot_timeline.py --csv timeline.csv [-o out.png]
+
+Draws one row per hardware engine (OSCORE, ISCORE, SUC, switchCore, DMA) with the
+cycle count on the x-axis, shading each cycle window the engine is active — so you can
+see *when* and *how long* each module runs on the schedule.
+
+Each row is annotated with its average hardware utilization: of the cycles the module
+was active, how much real work it did. Utilization = ideal / actual, where `ideal` is
+the shortest possible cycle count for that block's compute (its MAC-group count at peak,
+conflict- and drain-free) and `actual` is the time the block actually took. A conflict-
+free array is ~100%; the SUC's bank conflict pulls it down (~57% at bc_pad=0); a GEMM's
+output drain and the DMA first-beat latency also drop it below 100%.
+
+The windows + ideal counts come from `memsim --timeline <csv>` (see src/world.cpp); the
+timing model itself is documented in docs/dataflow/10_memsim.md.
+"""
+import argparse
+import csv
+import os
+import subprocess
+import sys
+import tempfile
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+# Row order + colour, top to bottom.
+ENGINES = [
+    ("OSCORE", "#1f77b4"),
+    ("ISCORE", "#ff7f0e"),
+    ("SUC", "#2ca02c"),
+    ("SWITCHCORE", "#9467bd"),
+    ("DMA", "#7f7f7f"),
+]
+
+# TCDM peak = 32 banks x 1 narrow (8-byte) access per cycle. The bandwidth line below the
+# engine rows shows the combined streamer + DMA word demand as a fraction of this.
+TCDM_PEAK_WORDS_PER_CYC = 32
+
+
+def memsim_bin():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.environ.get("MEMSIM_BIN", os.path.join(here, "..", "bin", "snitch_cluster.memsim"))
+
+
+def run_memsim(elf, csv_path):
+    bin_ = memsim_bin()
+    if not os.path.exists(bin_):
+        sys.exit(f"memsim binary not found: {bin_} (build with `make -C sim`)")
+    r = subprocess.run([bin_, elf, "--timeline", csv_path], capture_output=True, text=True)
+    if not os.path.exists(csv_path):
+        sys.stderr.write(r.stderr)
+        sys.exit(f"memsim did not produce a timeline (exit {r.returncode})")
+
+
+def load_segments(csv_path):
+    # per engine: list of (start, end, ideal); plus TCDM traffic: list of (start, end, words)
+    segs = {name: [] for name, _ in ENGINES}
+    tcdm = []
+    with open(csv_path) as f:
+        for row in csv.DictReader(f):
+            eng = row["engine"]
+            rec = (int(row["start"]), int(row["end"]), int(row["ideal"]))
+            if eng == "TCDM":
+                tcdm.append(rec)
+            elif eng in segs:
+                segs[eng].append(rec)
+    return segs, tcdm
+
+
+def bandwidth_curve(tcdm_segs, peak):
+    """Piecewise-constant TCDM bandwidth % over time.
+
+    Each segment spreads its `words` uniformly over [start,end] (rate = words/(end-start));
+    overlapping segments (e.g. DMA during compute) sum. Returns (xs, ys, avg_pct) where
+    (xs,ys) are step-line points in % and avg_pct is total words / total span / peak.
+    """
+    if not tcdm_segs:
+        return [], [], 0.0
+    bounds = sorted({s for s, _, _ in tcdm_segs} | {e for _, e, _ in tcdm_segs})
+    xs, ys = [], []
+    for a, b in zip(bounds, bounds[1:]):
+        if b <= a:
+            continue
+        rate = sum(w / (e - s) for s, e, w in tcdm_segs if s <= a and e >= b)
+        pct = 100.0 * rate / peak
+        xs += [a, b]
+        ys += [pct, pct]
+    span = bounds[-1] - bounds[0] or 1
+    avg = 100.0 * sum(w for _, _, w in tcdm_segs) / span / peak
+    return xs, ys, avg
+
+
+def summarize(intervals):
+    """Merge overlapping bars (for drawing) and total actual/ideal cycles (for utilization).
+
+    Returns (merged_bars, active_cycles, ideal_cycles). Each block keeps its own ideal floor,
+    so utilization = ideal_cycles / active_cycles is the average over the engine's active time.
+    """
+    if not intervals:
+        return [], 0, 0
+    active = sum(e - s for s, e, _ in intervals)   # blocks per engine are disjoint in time
+    ideal = sum(i for _, _, i in intervals)
+    bars = [list(iv[:2]) for iv in sorted(intervals)]
+    out = [bars[0]]
+    for s, e in bars[1:]:
+        if s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out, active, ideal
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("elf", nargs="?", help="app .elf to run through memsim")
+    ap.add_argument("--csv", help="use an existing timeline CSV instead of running memsim")
+    ap.add_argument("-o", "--out", help="output PNG (default: <elf|csv>_timeline.png)")
+    args = ap.parse_args()
+
+    if args.csv:
+        csv_path = args.csv
+        label = os.path.basename(csv_path)
+        out = args.out or os.path.splitext(csv_path)[0] + "_timeline.png"
+    elif args.elf:
+        label = os.path.basename(args.elf)
+        tmp = tempfile.NamedTemporaryFile(suffix=".csv", delete=False)
+        csv_path = tmp.name
+        tmp.close()
+        run_memsim(args.elf, csv_path)
+        out = args.out or os.path.splitext(args.elf)[0] + "_timeline.png"
+    else:
+        ap.error("provide an .elf or --csv")
+
+    segs, tcdm = load_segments(csv_path)
+    summ = {name: summarize(segs[name]) for name, _ in ENGINES}
+
+    starts = [s for name, _ in ENGINES for s, _, _ in segs[name]] + [s for s, _, _ in tcdm]
+    ends = [e for name, _ in ENGINES for _, e, _ in segs[name]] + [e for _, e, _ in tcdm]
+    if not starts:
+        sys.exit("timeline is empty (no engine activity recorded)")
+    t0, t1 = min(starts), max(ends)
+    span = t1 - t0 or 1
+
+    # The TCDM bandwidth gets its own row below DMA: a 0-100% line drawn inside a band of
+    # height BW_H, with reference gridlines at 0/50/100%.
+    BW_BASE, BW_H = -1.8, 1.0
+    fig, ax = plt.subplots(figsize=(13, 3.6))
+    yticks, ylabels = [], []
+    for i, (name, color) in enumerate(ENGINES):
+        y = len(ENGINES) - 1 - i  # OSCORE on top
+        bars, active, ideal = summ[name]
+        ax.broken_barh([(s, e - s) for s, e in bars], (y - 0.4, 0.8),
+                       facecolors=color, edgecolor="none")
+        if active:
+            util = 100.0 * ideal / active
+            ax.text(t1 + 0.01 * span, y, f"util {util:5.1f}%  (active {active} cc)",
+                    va="center", ha="left", fontsize=9, family="monospace")
+        else:
+            ax.text(t1 + 0.01 * span, y, "    —   (inactive)",
+                    va="center", ha="left", fontsize=9, family="monospace", color="0.5")
+        yticks.append(y)
+        ylabels.append(name)
+
+    # TCDM bandwidth line.
+    xs, ys, bw_avg = bandwidth_curve(tcdm, TCDM_PEAK_WORDS_PER_CYC)
+    for frac in (0.0, 0.5, 1.0):                       # 0/50/100% reference lines + ticks
+        yref = BW_BASE + frac * BW_H
+        ax.plot([t0, t1], [yref, yref], color="0.8", lw=0.6, zorder=1)
+        ax.text(t0 - 0.008 * span, yref, f"{int(frac * 100)}%", va="center", ha="right",
+                fontsize=7, color="0.55", zorder=4)
+    if xs:
+        yline = [BW_BASE + min(p, 100.0) / 100.0 * BW_H for p in ys]
+        ax.plot(xs, yline, color="#d62728", lw=1.1, zorder=3, solid_joinstyle="miter")
+    ax.text(t1 + 0.01 * span, BW_BASE + 0.5 * BW_H, f"avg {bw_avg:5.1f}%",
+            va="center", ha="left", fontsize=9, family="monospace", color="#d62728")
+    yticks.append(BW_BASE + 0.5 * BW_H)
+    ylabels.append("TCDM BW")
+
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ylabels)
+    ax.set_ylim(BW_BASE - 0.25, len(ENGINES) - 0.3)
+    ax.set_xlim(t0 - 0.05 * span, t1 + 0.30 * span)   # left margin for the TCDM BW % ticks
+    ax.set_xlabel("cycle (cc)")
+    ax.set_title(f"memsim engine activity timeline — {label}\n"
+                 f"total runtime {span} cc   (engine util = ideal compute / active cycles; "
+                 f"TCDM BW = words/cyc / 32 banks)", fontsize=10)
+    ax.grid(axis="x", linestyle=":", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out, dpi=130)
+    print(f"wrote {out}")
+    for name, _ in ENGINES:
+        _, active, ideal = summ[name]
+        if active:
+            print(f"  {name:11s} util {100.0 * ideal / active:5.1f}%  "
+                  f"(active {active} cc, ideal {ideal} cc)")
+        else:
+            print(f"  {name:11s}   —   (inactive)")
+    print(f"  {'TCDM BW':11s} avg  {bw_avg:5.1f}%  of {TCDM_PEAK_WORDS_PER_CYC} words/cyc peak")
+
+
+if __name__ == "__main__":
+    main()

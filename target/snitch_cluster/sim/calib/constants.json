@@ -1,0 +1,19 @@
+{
+  "_source": "/esat/micas-lapserv11/users/rgeens/snax_cluster/target/snitch_cluster/logs/trace_chip_00_dma_00001.log",
+  "beat_bytes": 64,
+  "l3_l3": {
+    "n": 1,
+    "first_beat_lat_cc": 1163,
+    "median_gap_minus_beats": 1163,
+    "max_gap_minus_beats": 1163
+  },
+  "l3_tcdm": {
+    "n": 111,
+    "first_beat_lat_cc": 19,
+    "median_gap_minus_beats": 32,
+    "max_gap_minus_beats": 225
+  },
+  "dma_first_beat_latency_cc": 19,
+  "dma_tcdm_first_beat_latency_cc": 10,
+  "dma_cost_per_beat_cc": 1.0
+}

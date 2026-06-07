@@ -210,6 +210,10 @@ def merge_run_into_report(report_dir, rundir):
         l1, oom = parse_build_log_l1(build_log)
         if l1 is None:
             l1 = sim_l1
+        # memsim's per-engine activity + TCDM-bandwidth timeline plot, rendered alongside
+        # the memsim log (sibling of the sim log). Absent for older runs / when memsim or
+        # matplotlib was unavailable -> stored as None (cell shows em-dash).
+        plot_abs = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".timeline.png")
         report["jobs"][jid] = {
             "app": job["app"], "tag": job.get("tag", ""),
             "params": job.get("params", {}),
@@ -217,6 +221,7 @@ def merge_run_into_report(report_dir, rundir):
             "n_tiles": job.get("n_tiles"),
             "batch_run": stamp, "commit": commit,
             "log": os.path.relpath(log_abs, report_dir),
+            "timeline": os.path.relpath(plot_abs, report_dir) if os.path.exists(plot_abs) else None,
             "state": job.get("state", "?"),
             "errors": errors, "simbacore": sc, "total": tot,
             "model_errors": m_errors, "model_simbacore": m_sc, "model_total": m_tot,
@@ -269,6 +274,14 @@ def _log_link(report_dir, log_rel):
         return f"[log]({log_rel})"
     if os.path.exists(os.path.join(report_dir, build_rel)):
         return f"[build]({build_rel})"
+    return "—"
+
+
+def _plot_link(report_dir, plot_rel):
+    """Clickable link to a job's memsim timeline figure, or em-dash if absent. Path is
+    relative to report_dir so the link resolves from report.md living there."""
+    if plot_rel and os.path.exists(os.path.join(report_dir, plot_rel)):
+        return f"[plot]({plot_rel})"
     return "—"
 
 
@@ -338,7 +351,8 @@ def render_report(report_dir):
                e.get("model_errors") or "—",
                _fmt_num(e.get("model_simbacore")), _fmt_num(e.get("model_total")),
                _fmt_l1(e.get("l1_kib"), e.get("l1_oom")),
-               _log_link(report_dir, e.get("log")))
+               _log_link(report_dir, e.get("log")),
+               _plot_link(report_dir, e.get("timeline")))
         rows.append((stale, row))
     # Fresh rows first (stale at the bottom); within each group by app then params.
     rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][4]))
@@ -347,10 +361,10 @@ def render_report(report_dir):
     tally = " · ".join(f"{EMOJI.get(k, '')} {v} {k}" for k, v in sorted(counts.items()))
     headers = ["App", "seqLen", "dModel", "n_tiles", "Params", "Batch run",
                "Commit", "Status", "Errors", "SimbaCore", "Total",
-               "Model Err", "Model SimbaCore", "Model Total", "L1 TCDM", "Log"]
+               "Model Err", "Model SimbaCore", "Model Total", "L1 TCDM", "Log", "Plot"]
     aligns = ["left", "right", "right", "right", "left", "left",
               "left", "left", "right", "right", "right",
-              "right", "right", "right", "right", "left"]
+              "right", "right", "right", "right", "left", "left"]
     head_note = f" · HEAD `{head}`" if head else ""
     return (
         "# SNAX batch-run report\n\n"
