@@ -88,23 +88,21 @@
                     seqLen: 784
                     dModel: 192
                     dtRank: 24
-                    nb_tiles: 16
-                    bc_pad_banks: 4
+                    nb_tiles: 8
                 }
                 // Sizes C
                 {
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
-                    nb_tiles: 32
-                    bc_pad_banks: 4
+                    nb_tiles: 16
                 }
                 // Sizes D
                 {
                     seqLen: 48
-                    dModel: 512
+                    dModel: 504
                     dtRank: 24
-                    nb_tiles: 32
+                    nb_tiles: 21
                 }
             ]
         }
@@ -137,11 +135,62 @@
                 // Sizes D
                 {
                     seqLen: 48
-                    dModel: 512
+                    dModel: 504
                     dtRank: 24
                     nb_tiles: 32
                     bc_pad_banks: 0
                 }
+            ]
+        }
+        {
+            // SUC P2 out proj
+            app: is-osgemm-tiled
+            params: [
+                // Sizes A
+                {
+                    seqLen: 1568 // kernel does 2x this L
+                    dModel: 96
+                    dInner: 192
+                    dtRank: 24
+                    nb_tiles: 2
+                    bc_pad_banks: 4
+                }
+                // Sizes B
+                {
+                    seqLen: 384
+                    dModel: 192
+                    dInner: 384
+                    dtRank: 24
+                    nb_tiles: 6
+                    bc_pad_banks: 4
+                }
+            ]
+        }
+        {
+            // SUC P2, all but out proj
+            app: P2-async-OS-no-IS
+            params: [
+                // Sizes A
+                {
+                    seqLen: 3136
+                    dModel: 96
+                    dtRank: 24
+                    nb_tiles: 4
+                    nb_l_tiles: 4
+                    nb_slots: 2
+                }
+                // Sizes B
+                {
+                    seqLen: 768
+                    dModel: 192
+                    dtRank: 24
+                    nb_tiles: 12
+                    nb_l_tiles: 4
+                    nb_slots: 2
+
+                }
+
+
             ]
         }
         {
@@ -151,6 +200,7 @@
                 {
                     seqLen: 784 // x4
                     dModel: 96
+                    nb_tiles: 1
                 }
                 // Sizes B
                 {

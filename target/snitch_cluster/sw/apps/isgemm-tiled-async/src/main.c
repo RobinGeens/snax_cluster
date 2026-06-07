@@ -3,10 +3,7 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// isgemm-tiled-async = isolated ISGeMM with the PSUM output streamed through an nb_slots-slot
-// TCDM ring, paced by the isCore output-tile gauge (ISCORE_TILE_CNT). Output-side analog of
-// osgemm-tiled-async (which rings the A INPUT).
-// Design: docs/dataflow/09_async_tiling.md ("Output-side variant").
+// IS-GEMM with async tiling on the psum output.
 
 #include "data.h"
 #include "snax-simbacore-lib.h"

@@ -22,6 +22,7 @@ SUBDIRS += main-tiled
 SUBDIRS += P1-tiled-D
 SUBDIRS += P2-tiled-D
 SUBDIRS += SUC-tiled
+SUBDIRS += suc-async
 SUBDIRS += P2-async-OS-no-IS
 SUBDIRS += batchnorm
 SUBDIRS += fft-3way-tiled

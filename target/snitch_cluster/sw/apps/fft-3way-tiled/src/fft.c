@@ -160,15 +160,15 @@ int test() {
         snrt_cluster_hw_barrier();
 
         // Store this slice's partition3_out into its d-slice of the full L3 output.
-        // The output is flattened K_M_N (row-major tiles, Mu = seqLenUnroll), with d
-        // the outer column factor: each of the M_3 = 2*L3/seqLenUnroll tile-rows holds
-        // ALL channels, so a d-slice is M_3 strided blocks, not one contiguous chunk.
+        // partition3_out's final type is FP8, which the IS-core zero-pads to the BF16
+        // psum footprint, so only the first half of slotB holds real data. That real
+        // data is M6_out_nblk = M_3 row-blocks with d the outer column factor; slice s
+        // owns out_block_slice bytes (dM channels) within each full out_block_full
+        // row-block. See docs/dataflow/05_fft.md §5.4.
         if (snrt_is_dm_core()) {
-            uint32_t nblk        = (2 * L3) / seqLenUnroll;
-            uint32_t slice_block = M6_length_partition3_out_slice / nblk;
-            uint32_t full_block  = M6_length_partition3_out / nblk;
-            snrt_dma_start_2d(ptr_output_l3 + s * slice_block, ptr_slotB, slice_block,
-                              /*dst_stride=*/full_block, /*src_stride=*/slice_block, /*repeat=*/nblk);
+            snrt_dma_start_2d(ptr_output_l3 + s * M6_out_block_slice, ptr_slotB, M6_out_block_slice,
+                              /*dst_stride=*/M6_out_block_full, /*src_stride=*/M6_out_block_slice,
+                              /*repeat=*/M6_out_nblk);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();

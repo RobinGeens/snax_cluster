@@ -3,19 +3,10 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// SUC-tiled = the SU-core (selective scan) of Phase 2 in isolation, dInner-tiled.
-// osCore and IS-core are disabled (M27_SUC_ONLY); the osCore output z is preloaded from the golden
-// reference instead of being produced upstream. dt+BC stays FULL in TCDM; the per-dInner-tile inputs
-// (dt_weight_1/2, dt_bias, A, D, x, z) are double-buffered ping-pong and the output y is staged
-// through L3. Unlike suc-only this uses the CORRECT (bank-padded) BC stride and verifies y.
-// Dataflow: docs/dataflow/04_mamba_main.md (SU-core of main-tiled Phase 2). Reuses main-tiled data.
-
+// SUC only, tiled over dInner.
 #include "helper.c"
 #include "snax-simbacore-lib.h"
 
-// SUC streamer config: switchCore (R2..R5) + SU-core (R6..R11) + y writer (W2). osCore (R0/R1/W0)
-// and IS-core (R12/R13/W3) disabled. R7 uses the correct M2_R7_ss (bank-padded), not suc-only's
-// deliberately-wrong stride.
 static inline void set_streamer_suc_tile(uint32_t ptr_dt_in, uint32_t ptr_dt_weight_1, uint32_t ptr_dt_bias,
                                          uint32_t ptr_dt_weight_2, uint32_t ptr_A, uint32_t ptr_BC, uint32_t ptr_D,
                                          uint32_t ptr_x, uint32_t ptr_z, uint32_t ptr_y) {
@@ -109,9 +100,9 @@ int test_suc_tiled() {
     }
     snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles        = 0;
+    uint32_t start_cycles         = 0;
     uint32_t simbacore_cycles_suc = 0;
-    const uint32_t K_i = M2_dInner_tile / dInnerUnroll;
+    const uint32_t K_i            = M2_dInner_tile / dInnerUnroll;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: SUC-tiled (L=%d, dModel=%d, dInner=%d, nb_tiles=%d, K_i=%u, z from golden)\n\n",
@@ -182,7 +173,7 @@ int test_suc_tiled() {
     // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
-        printf("[%d cc] Simbacore SUC (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_suc);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_suc);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_y_l3, M2_suc_expected, M2_test_samples_y,  //

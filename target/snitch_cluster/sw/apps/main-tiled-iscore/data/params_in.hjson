@@ -1,27 +1,9 @@
 {
-    // main-tiled-iscore = main-tiled with the Phase-1 isCore output streamed through an async refill
-    // ring (Phase 2 unchanged, iscore_out_P2 full). Needs the chisel-ssm W3-commit gauge.
-    // See docs/dataflow/09_async_tiling.md.
-    //
-    // Constraints: nb_tiles = dInner/dInnerUnroll = dModel/12 (forced, N_kern=1); L_tile = seqLen/nb_l_tiles
-    // must be a multiple of 16; n_psum_matrices = (seqLen/16)*xProjDim/4 must be divisible by nb_l_tiles;
-    // nb_l_tiles % nb_slots == 0 and nb_slots <= nb_l_tiles. xProjDim is independent of dModel.
-    // TCDM is 512 KiB, so the full app fits comfortably; nb_slots only affects the P1 refill ring.
-    //
-    // P1 refill ring tested (seqLen/dModel, nb_l/nb_slots -> P1 iscore_out errors out of 25):
-    //   128/192   4/4  full          pass
-    //   128/192   4/2  evict (1/2)   9 wrong
-    //   128/192   8/4  evict (1/2)   1 wrong
-    //   128/384   8/4  evict (1/2)   pass   (larger dModel adds slack)
-    //   256/192  16/8  evict (1/2)   pass   (more, smaller slots)
-    //
-    // Rule of thumb: full residency (nb_slots == nb_l_tiles) always passes. Eviction needs slack on the
-    // requant final tile - more slots and/or a larger dModel both help.
     "seqLen": 128,
     "dModel": 192,
     "dtRank": 24,
     "nb_tiles": 16,
     "bc_pad_banks": 4,
-    "nb_l_tiles": 4,
-    "nb_slots": 4
+    "nb_l_tiles": 8,
+    "nb_slots": 2
 }

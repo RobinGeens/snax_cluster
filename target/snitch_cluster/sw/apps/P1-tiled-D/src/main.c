@@ -134,7 +134,7 @@ int test_phase1_tiled() {
     // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
-        printf("[%d cc] Simbacore Phase1 (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phase1);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_phase1);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_conv_out_l3, M1_conv_out, M1_test_samples_conv_out,  //

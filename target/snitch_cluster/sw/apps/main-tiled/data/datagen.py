@@ -4,21 +4,6 @@
 # Not released under license. All rights reserved.
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
-#
-# Tiled, double-buffered, pipelined version of the Mamba main program. Both
-# Phase 1 and Phase 2 are tiled along the dInner dimension. Each per-phase
-# pipeline first finishes all tiles of Phase 1, then all tiles of Phase 2.
-# Tiling strategy:
-#   Phase 1
-#     - in proj x        : tiled in dInner (osCore output)
-#     - x_proj           : tiled in dInner (IS GeMM K-dim, accumulates psum)
-#     - x_proj outputs   : NOT tiled (delta, B, C all stay in iscore_out)
-#   Phase 2
-#     - in proj z        : tiled in dInner (osCore output)
-#     - delta proj       : tiled in dInner (switchCore output)
-#     - SUC              : tiled in dInner (consumes/produces dInner-sized x,y,z)
-#     - out proj         : tiled in dInner (IS GeMM K-dim, accumulates psum)
-#     - isCore output    : NOT tiled (kept in TCDM, accumulates across tiles)
 
 import pathlib
 import random
@@ -50,7 +35,7 @@ class DataGenerator(DataGeneratorBase):
         self.phase1_scalars: dict[str, int] = {}
         self.phase2_scalars: dict[str, int] = {}
         # Not all parameters are propagated to scala, so read them from the local params hjson file
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():
@@ -65,11 +50,13 @@ class DataGenerator(DataGeneratorBase):
 
     def _run_memory_model(self):
         import importlib.util
+
         app_dir = os.path.dirname(os.path.abspath(__file__))
         spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         from memory_model_base import run_model_from_datagen
+
         comment = run_model_from_datagen(mod.build_report, app_dir)
         self.lines_params.append(comment)
 
@@ -112,7 +99,9 @@ class DataGenerator(DataGeneratorBase):
         self.iscore_out_bytes = self.seqLen * self.xProjDim * BF16 // 8 + self.n_psum_matrices * self.bc_pad_bytes
         # Phase2 dt_BC read geometry
         self.n_window_matrices = self.xProjDim * FP8 // BANKWIDTH
-        self.dt_bc_window_bytes = self.seqLenUnroll * self.xProjDim * FP8 // 8 + self.n_window_matrices * self.bc_pad_bytes
+        self.dt_bc_window_bytes = (
+            self.seqLenUnroll * self.xProjDim * FP8 // 8 + self.n_window_matrices * self.bc_pad_bytes
+        )
         self.dt_to_BC_offset = (self.dtRank * FP8 // BANKWIDTH) * self.bc_matrix_stride
 
         # Tiling

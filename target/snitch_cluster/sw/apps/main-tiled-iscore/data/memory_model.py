@@ -49,15 +49,24 @@ def build_report(params: dict) -> MemoryReport:
         "xProjDim": xProjDim, "nb_tiles": nb,
     })
 
-    # Shared FULL buffers
+    # Shared FULL buffers.
+    # The P1 isCore psum (BF16) is NO LONGER full-resident: every P1 tile is NO_REQUANT, so the psum rides
+    # an nb_slots-slot async ring to L3 (full copy in L3). What stays resident is dt_in -- P2's transposed
+    # FP8 dt+BC (half the BF16 psum), loaded off-chip after P1 -- and the P1 ring OVERLAYS dt_in's region
+    # (disjoint phases), so this buffer is just max(dt_in, ring).
+    nb_l = params["nb_l_tiles"]
+    nb_slots = params["nb_slots"]
+    len_psum_full = bc_pad_iscore_out_bytes(params, L, xProjDim)  # BF16 psum (full), lives in L3
+    len_dt_in = len_psum_full // 2                                # FP8 transposed dt+BC (P2 input)
+    len_p1_ring = nb_slots * (len_psum_full // nb_l)              # resident ring (P1)
+    len_dt_in_region = max(len_dt_in, len_p1_ring)               # ring overlays dt_in
     len_oscore_in = L * dModel * FP8 // 8
-    len_iscore_out_P1 = bc_pad_iscore_out_bytes(params, L, xProjDim)  # BC bank pad §5.5 (= P2 dt_BC)
     len_iscore_out_P2 = L * dModel * BF16 // 8
 
     shared_bufs = [
-        ("oscore_in",                     len_oscore_in),
-        ("iscore_out_P1 (= dt_in)",      len_iscore_out_P1),
-        ("iscore_out_P2",                 len_iscore_out_P2),
+        ("oscore_in",                          len_oscore_in),
+        ("dt_in / P1 ring (overlay)",          len_dt_in_region),
+        ("iscore_out_P2",                      len_iscore_out_P2),
     ]
     report.add_section("Shared FULL (always live)", shared_bufs)
     shared_bytes = sequential_bytes([s for _, s in shared_bufs])
@@ -107,9 +116,10 @@ def build_report(params: dict) -> MemoryReport:
 
     # L3 staging
     l3_bufs = [
-        ("conv_out (L3)",  len_conv_out),
-        ("z (L3)",         len_z),
-        ("y (L3)",         len_y),
+        ("conv_out (L3)",          len_conv_out),
+        ("z (L3)",                 len_z),
+        ("y (L3)",                 len_y),
+        ("iscore_out_P1 psum (L3)", len_psum_full),  # full BF16 psum; ring spills/reloads here
     ]
     report.add_section("L3 staging (not counted in TCDM)", l3_bufs)
 

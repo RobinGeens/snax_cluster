@@ -3,25 +3,16 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// main-tiled-iscore = main-tiled with the Phase-1 isCore OUTPUT psum streamed through an async refill
-// ring. The full P1 psum (dt+BC) lives in L3; only an nb_slots-slot ring is resident in TCDM, spilled
-// and reloaded paced by ISCORE_TILE_CNT, then reassembled into the full dt_in for Phase 2. Phase 2 is
-// unchanged from main-tiled (iscore_out_P2 stays full). Design and the commit-gauge requirement:
-// docs/dataflow/09_async_tiling.md (output-side ring) and docs/dataflow/04_mamba_main.md.
+// Async tiling on IS-core output in P1. P2 is unchanged. The P1 output is not transposed or quantized to FP8.
+// This was too difficult to implement because the output counter counts elements, not tiles.
+// NOTE This requires a IS-core output tile counter CSR. This is added in RTL, but was not taped out.
 //
-// HW dependency: needs the W3-commit gauge in chisel-ssm (ISCORE_TILE_CNT ticks on the committed
-// io.isCore.out_d.fire, not the pre-requant array output). Precondition: N_kern=1 (nb_tiles =
-// dInner/dInnerUnroll) so the isCore sweeps the L-tiles once per kernel.
-//
-// What stays FULL in TCDM: oscore_in, dt_in (= reassembled P1 output), iscore_out_P2.
-// What is tiled: conv_out (= P2 x) and z, y via L3; iscore_out_P1 via the async ring.
+// What stays full in TCDM: oscore_in, dt_in (loaded from L3), iscore_out_P2.
+// What is tiled: conv_out (= P2 x) and z, y via L3; iscore_out_P1 via the async ring (nb_slots slots).
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"
 
-// Async isCore-output psum ring (P1). The psum lives FULL in L3; only an nb_slots-slot ring is resident
-// in TCDM. Core 0 paces on ISCORE_TILE_CNT (which ticks on the committed W3 output); the DM core spills
-// the just-computed L-tile to L3 and reloads the L-tile nb_slots ahead. Never read SNAX CSRs on the DM core.
 static inline void iscore_out_ring_loop(uint8_t* ring_base, uint8_t* l3_psum, uint32_t gauge_step, uint32_t len) {
     for (uint32_t r = 0; r < nb_l_tiles; r++) {
         if (snrt_global_core_idx() == 0)
@@ -66,17 +57,19 @@ int test_phase1_and_2() {
     void* tcdm_base_ptr = snrt_l1_next();
 
     uint8_t* ptr_oscore_in = (uint8_t*)tcdm_base_ptr;
-    // dt_in = the FULL reassembled P1 isCore output (dt + BC), read by P2's switchCore/SUC.
-    uint8_t* ptr_dt_in          = ptr_oscore_in + M1_length_oscore_in;
-    uint8_t* ptr_BC             = ptr_dt_in + M2_dt_to_BC_offset;
-    uint16_t* ptr_iscore_out_P2 = (uint16_t*)(ptr_dt_in + M1_length_iscore_out);
-    // P1 isCore-output ring: nb_slots slots, full backing in L3. Placed after the (P2-only) iscore_out_P2.
-    uint8_t* ptr_iscore_out_P1_ring   = (uint8_t*)ptr_iscore_out_P2 + M2_length_iscore_out;
+    // Golden reference, from L3
+    uint8_t* ptr_dt_in = ptr_oscore_in + M1_length_oscore_in;
+    uint8_t* ptr_BC    = ptr_dt_in + M2_dt_to_BC_offset;
+    // P1 ring overlays dt_in's region
+    uint8_t* ptr_iscore_out_P1_ring   = ptr_dt_in;
     uint32_t iscore_out_P1_ring_bytes = nb_slots * M1_length_iscore_out_l_tile;
+    uint32_t dt_in_region_bytes =
+        M2_length_dt_BC > iscore_out_P1_ring_bytes ? M2_length_dt_BC : iscore_out_P1_ring_bytes;
+    uint16_t* ptr_iscore_out_P2 = (uint16_t*)(ptr_dt_in + dt_in_region_bytes);
 
 #define _ALIGN64(p) ((uint8_t*)(((uintptr_t)(p) + 63u) & ~(uintptr_t)63u))
 
-    uint8_t* pingpong_base_ptr = _ALIGN64(ptr_iscore_out_P1_ring + iscore_out_P1_ring_bytes);
+    uint8_t* pingpong_base_ptr = _ALIGN64((uint8_t*)ptr_iscore_out_P2 + M2_length_iscore_out);
 
     // ---- Phase 1 ping-pong slots. Last entry (conv_out_tile) is the W1 destination.
     uint8_t* ptr_oscore_weight_P1[2] = {
@@ -172,12 +165,14 @@ int test_phase1_and_2() {
     /////////////////////////////////
 
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: Mamba main tiled iscore (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, nb_l=%d, "
-               "nb_slots=%d)\n\n",
-               seqLen, dModel, nb_tiles, K_i, nb_l_tiles, nb_slots);
+        printf(
+            "\nStarting program: Mamba main tiled iscore (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, nb_l=%d, "
+            "nb_slots=%d)\n\n",
+            seqLen, dModel, nb_tiles, K_i, nb_l_tiles, nb_slots);
         printf("Expected L1 TCDM usage: %u KiB\n", (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
 
         start_cycles = snrt_mcycle();
+        // Note: no requant, no transpose.
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
                             (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0],
                             (uint32_t)ptr_iscore_out_P1_ring, (uint32_t)ptr_conv_out_tile[0]);
@@ -189,30 +184,22 @@ int test_phase1_and_2() {
     for (uint32_t i = 0; i < nb_tiles + 2; i++) {
         int buf = i % 2;
 
-        // Compute tile i-1. BOTH cores enter: core 0 drives the kernel, the DM core does the
-        // iscore_out_P1 ring spill/reload during the isCore phase. osCore+conv run first, so
-        // ISCORE_TILE_CNT stays 0 until the isCore phase, where the ring loop naturally activates.
+        // Compute tile i-
         if (i >= 1 && i <= nb_tiles) {
             uint32_t tile      = i - 1;
             bool is_final_tile = (tile == nb_tiles - 1);
 
             if (snrt_global_core_idx() == 0) {
-                // Final tile: same streamer config, only MODE changes. The BankTransposer is gated on
-                // isCoreOutIsFinal, so it only fires on the last K-step; intermediate K-steps use the
-                // same padded-matrix ring layout for both R13 and W3.
-                if (is_final_tile) write_csr(MODE, M1_PHASE1);
                 _set_streamer_start();
                 _set_simbacore_start();
                 write_csr(STREAMER_START_CSR, 0);
                 write_csr(SIMBACORE_START, 0);
             }
 
-            // Async iscore_out_P1 ring spill/reload during the isCore phase (both cores).
             iscore_out_ring_loop(ptr_iscore_out_P1_ring, ptr_iscore_out_P1_l3, M1_iscore_out_l_tile_gauge_step,
                                  M1_length_iscore_out_l_tile);
 
             if (snrt_global_core_idx() == 0) {
-                // Preload next tile's base ptrs (NOT R13/W3: the ring base is fixed).
                 if (!is_final_tile) {
                     uint32_t next_tile = tile + 1;
                     int nbuf           = next_tile % 2;
@@ -230,7 +217,7 @@ int test_phase1_and_2() {
             }
         }
 
-        // Prefetch next tile's inputs AFTER compute, so the ring loop owns the DMA engine during the
+        // Prefetch next tile's inputs after compute, so the ring loop owns the DMA engine during the
         // isCore phase (a prefetch issued before would queue ahead of the ring reloads and starve them).
         if (i < nb_tiles && snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_oscore_weight_P1[buf], M1_oscore_weight + i * M1_length_oscore_weight_tile,
@@ -258,16 +245,14 @@ int test_phase1_and_2() {
         snrt_cluster_hw_barrier();
     }
 
-    if (snrt_global_core_idx() == 0) printf("[%u cc] P1 done, reassembling dt_in + P2 bias preload\n", snrt_mcycle());
+    if (snrt_global_core_idx() == 0) printf("[%u cc] P1 done\n", snrt_mcycle());
 
-    // Reassemble the FULL P1 isCore output (dt + BC) from L3 into the resident TCDM dt_in buffer that P2's
-    // switchCore/SUC read, then seed the FULL P2 psum with the isCore bias.
+    // Preload dt and BC golden reference from L3
     if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_dt_in, ptr_iscore_out_P1_l3, M1_length_iscore_out);
+        snrt_dma_start_1d(ptr_dt_in, M1_iscore_out, M2_length_dt_BC);
         snrt_dma_start_1d((uint8_t*)ptr_iscore_out_P2, M2_iscore_bias, M2_length_iscore_out);
         snrt_dma_wait_all();
     }
-
     snrt_cluster_hw_barrier();
 
     /////////////////////////////////
@@ -365,12 +350,12 @@ int test_phase1_and_2() {
         printf("DMA latency hiding: P1=%s, P2=%s\n", _p1_dma_done < _p1_compute_done ? "ok" : "STALL",
                _p2_dma_done < _p2_compute_done ? "ok" : "STALL");
 
-        // P1 outputs first: isolates a bad x (conv_out) or bad dt+BC (iscore_out_P1, via the ring) from
-        // a P2/SUC bug. The P1 ring spilled the full psum to L3, reassembled into dt_in; check dt_in.
+        // P1 conv_out (= P2 x)
         err += check_result_sample(ptr_conv_out_l3, M1_conv_out, M1_test_samples_conv_out,  //
                                    nb_test_samples, "P1 conv_out (= P2 x, from L3)");
-        err += check_result_sample(ptr_dt_in, M1_iscore_out, M1_test_samples_iscore_out, nb_test_samples,
-                                   "P1 iscore_out (= P2 dt+BC, via P1 ring)");
+        // P1 isCore psum (raw BF16, un-transposed)
+        err += check_result_sample_u16((uint16_t*)ptr_iscore_out_P1_l3, M1_iscore_out_bf16_untransposed,
+                                       M1_test_samples_iscore_out, nb_test_samples, "P1 psum (BF16)");
 
         err += check_result_sample(ptr_z_l3, M2_oscore_expected, M2_test_samples_z,  //
                                    nb_test_samples, "z (osCore out)");
@@ -381,7 +366,7 @@ int test_phase1_and_2() {
 
         printf("Test Phase1+Phase2 tiled-iscore: seqLen=%d, dModel=%d, dInner=%d, nb_tiles=%d, nb_l=%d, nb_slots=%d\n",
                seqLen, dModel, dInner, nb_tiles, nb_l_tiles, nb_slots);
-        // Checks: conv_out, iscore_out_P1, z, y, iscore_out_P2 = 5 * nb_test_samples.
+        // Sample checks: conv_out, P1 psum, z, y, iscore_out_P2 = 5 * nb_test_samples.
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, 5 * nb_test_samples);
     }
 

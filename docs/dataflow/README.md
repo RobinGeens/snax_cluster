@@ -38,8 +38,8 @@ design.
 | `isgemm` | Single-shot IS-core `D = C + A·B` (psum read-back) | [2](02_iscore_kernels.md) |
 | `isgemm-tiled` | IS GEMM, **K-axis** accumulating tiles | [2](02_iscore_kernels.md) |
 | `isgemm-tiled-async` | IS GEMM with the PSUM streamed through an async output-side ring (paced by `ISCORE_TILE_CNT`) | [9](09_async_tiling.md) |
-| `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel | [9](09_async_tiling.md) |
-| `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | [9](09_async_tiling.md) |
+| `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel | ??? |
+| `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | ??? |
 | `is-osgemm-tiled-async` | Both async rings live at once (A-input refill + PSUM spill/reload), double-paced | [9](09_async_tiling.md) |
 
 ### SIMD / normalization

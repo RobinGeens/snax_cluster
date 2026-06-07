@@ -12,8 +12,10 @@ DATAGEN_DEPS ?= $(CURR_DIR)/../../main/data/datagen_base.py
 DATAGEN_DEPS += $(CURR_DIR)/../../main/data/datagen_cli.py
 DATA_H     ?= $(DATA_DIR)/data.h
 
-# Read desired workload parameters from a local params file (input)
-WORKLOAD_PARAMS := $(CURR_DIR)/params_in.hjson
+# Read desired workload parameters from a local params file (input).
+# The PARAMS_IN env var overrides the path (batch_run points it at a generated
+# temp file so it never edits the tracked params_in.hjson in place).
+WORKLOAD_PARAMS := $(or $(PARAMS_IN),$(CURR_DIR)/params_in.hjson)
 
 .PHONY: clean-data clean
 

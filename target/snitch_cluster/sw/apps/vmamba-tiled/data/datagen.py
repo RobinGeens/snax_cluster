@@ -42,7 +42,7 @@ class DataGenerator(MainTiledDataGenerator):
         DataGeneratorBase.__init__(self, self.APP_NAME, **kwargs)
         self.phase1_scalars: dict[str, int] = {}
         self.phase2_scalars: dict[str, int] = {}
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():

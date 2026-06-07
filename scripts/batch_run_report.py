@@ -33,6 +33,11 @@ RE_SIMBACORE = re.compile(r"Simbacore elapsed time:\s+(\d+)\s+cycles")
 RE_TOTAL = re.compile(r"Snitch elapsed time:\s+(\d+)\s+cycles")
 RE_L1 = re.compile(r"Expected L1 TCDM usage:\s+\d+\s+B\s+\((\d+)\s+KiB\)")
 RE_L1_OOM = re.compile(r"L1 TCDM OOM")
+# memsim's golden-free AGU audit prints its LOCATED layout-error count to stderr
+# (folded into the .memsim.log). This is more informative than the binary exit code
+# for the Model Err column: it is the actual number of streamer/AGU layout faults the
+# model located (bounds + producer->consumer), not just pass/fail.
+RE_MODEL_AGU = re.compile(r"AGU layout audit:\s+(\d+)\s+located error")
 
 REPORT_JSON = "report.json"
 REPORT_MD = "report.md"
@@ -83,10 +88,25 @@ def parse_log(path):
             (tot[-1] if tot else None), (l1[-1] if l1 else None))
 
 
+def parse_model_agu_errors(path):
+    """The memsim AGU audit's located layout-error count from a .memsim.log, or None
+    if the line is absent (e.g. a vsim-only log, or --timing-only)."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = RE_MODEL_AGU.findall(text)
+    return m[-1] if m else None
+
+
 def parse_build_log_l1(path):
-    """Recover the memory model's predicted L1 peak (KiB) and OOM flag from a
-    build log -- the only record of it when an OOM aborts the build before the
-    sim runs. Returns (l1_kib, oom)."""
+    """Read the memory model's predicted L1 peak (KiB) and OOM flag from a build
+    log. The model emits this during datagen, so it is the primary source for the
+    L1 column -- known at build time, no need to wait for (or even run) the sim,
+    and present even when an OOM aborts the build. Returns (l1_kib, oom)."""
     if not path or not os.path.exists(path):
         return None, False
     try:
@@ -169,13 +189,27 @@ def merge_run_into_report(report_dir, rundir):
 
     for jid, job in cur.items():
         log_abs = os.path.join(rundir, job["log"])
-        errors, sc, tot, l1 = parse_log(log_abs)
-        # When OOM aborts the build there is no sim log line; recover the predicted
-        # peak (and OOM flag) from the build log the memory model wrote into.
+        errors, sc, tot, sim_l1 = parse_log(log_abs)
+        # The cycle-accurate memsim model runs alongside the vsim into its own log;
+        # scrape the same markers for the Model error/SimbaCore/Total columns.
+        memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
+        m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
+        # Prefer the AGU audit's LOCATED layout-error count over the binary exit code
+        # for Model Err -- it says how many faults the model found, not just 0/1. Guard:
+        # if the audit located 0 but the run still failed (a non-AGU model check, exit
+        # nonzero), keep the failure visible rather than masking it with a clean 0.
+        agu = parse_model_agu_errors(memsim_log)
+        if agu is not None and not (agu == "0" and m_errors not in (None, "0")):
+            m_errors = agu
+        # L1 TCDM peak is a STATIC prediction the memory model emits during the build
+        # (datagen) -- read it straight from the build log rather than waiting for the
+        # sim to re-print the baked constant (whose format also varies per app, and
+        # which never appears at all when an OOM aborts the build). The OOM flag comes
+        # from the same place. Fall back to the sim log only if the app has no memory model.
         build_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".build.log")
-        build_l1, oom = parse_build_log_l1(build_log)
+        l1, oom = parse_build_log_l1(build_log)
         if l1 is None:
-            l1 = build_l1
+            l1 = sim_l1
         report["jobs"][jid] = {
             "app": job["app"], "tag": job.get("tag", ""),
             "params": job.get("params", {}),
@@ -185,6 +219,7 @@ def merge_run_into_report(report_dir, rundir):
             "log": os.path.relpath(log_abs, report_dir),
             "state": job.get("state", "?"),
             "errors": errors, "simbacore": sc, "total": tot,
+            "model_errors": m_errors, "model_simbacore": m_sc, "model_total": m_tot,
             "l1_kib": l1, "l1_oom": oom,
             "updated": now,
         }
@@ -300,6 +335,8 @@ def render_report(report_dir):
                _fmt_col(e.get("n_tiles")), _fmt_other(e.get("params")),
                batch_cell, commit_cell, status, e.get("errors") or "—",
                _fmt_num(e.get("simbacore")), _fmt_num(e.get("total")),
+               e.get("model_errors") or "—",
+               _fmt_num(e.get("model_simbacore")), _fmt_num(e.get("model_total")),
                _fmt_l1(e.get("l1_kib"), e.get("l1_oom")),
                _log_link(report_dir, e.get("log")))
         rows.append((stale, row))
@@ -309,9 +346,11 @@ def render_report(report_dir):
 
     tally = " · ".join(f"{EMOJI.get(k, '')} {v} {k}" for k, v in sorted(counts.items()))
     headers = ["App", "seqLen", "dModel", "n_tiles", "Params", "Batch run",
-               "Commit", "Status", "Errors", "SimbaCore", "Total", "L1 TCDM", "Log"]
+               "Commit", "Status", "Errors", "SimbaCore", "Total",
+               "Model Err", "Model SimbaCore", "Model Total", "L1 TCDM", "Log"]
     aligns = ["left", "right", "right", "right", "left", "left",
-              "left", "left", "right", "right", "right", "right", "left"]
+              "left", "left", "right", "right", "right",
+              "right", "right", "right", "right", "left"]
     head_note = f" · HEAD `{head}`" if head else ""
     return (
         "# SNAX batch-run report\n\n"
@@ -319,6 +358,8 @@ def render_report(report_dir):
         "_⚠️ = run predates current HEAD (numbers may be stale)._\n\n"
         "_⏰ next to the batch run = result from an earlier batch run (stale; sorted to the bottom)._\n\n"
         "_❌ ERRORS = nonzero mismatch count (small values may be quantization noise, not a true fail) · 🔴 OOM = exceeded L1 TCDM budget._\n\n"
+        "_Errors/SimbaCore/Total = RTL vsim · Model Err/SimbaCore/Total = cycle-accurate memsim model (memsim) on the same .elf._\n\n"
+        "_Model Err = count of AGU/layout faults the model LOCATED (bounds + producer→consumer); 0 = layout clean._\n\n"
         + _md_table(headers, aligns, rows) + "\n"
     )
 

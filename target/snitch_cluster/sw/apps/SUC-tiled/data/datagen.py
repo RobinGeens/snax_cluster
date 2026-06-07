@@ -11,7 +11,6 @@
 
 import os
 import sys
-import pathlib
 import importlib.util
 
 import hjson
@@ -38,7 +37,7 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         DataGeneratorBase.__init__(self, self.APP_NAME, **kwargs)
         self.phase1_scalars = {}
         self.phase2_scalars = {}
-        local = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local = self.params_in_path(__file__)
         for key, value in hjson.loads(local.read_text()).items():
             self.kwargs.setdefault(key, value)
 

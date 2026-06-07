@@ -2,14 +2,16 @@
 """Run a whole batch of simulations from one config file.
 
 Reads an hjson config listing apps and, per app, a list of param-override sets.
-For each (app, override-set) it: writes the merged params_in.hjson, builds the
-app's .elf (in the podman container), stages the .elf to a unique path, then
-launches the vsim. Each run gets its own log file.
+For each (app, override-set) it: generates a temp params file (the tracked
+params_in.hjson as a read-only base + the config overrides), builds the app's
+.elf (in the podman container) with the build pointed at that temp file via the
+PARAMS_IN env var, stages the .elf to a unique path, then launches the vsim. The
+tracked params_in.hjson is never modified. Each run gets its own log file.
 
 Scheduling:
-  * Builds are serialized globally (one `make` at a time) -- params_in.hjson and
-    the build dir are shared per app, so this is the natural serialization point
-    and also avoids podman/make races across apps.
+  * Builds are serialized globally (one `make` at a time) -- the per-app build
+    dir and chisel-ssm/sbt datagen cache are shared, so this is the natural
+    serialization point and also avoids podman/make races across apps.
   * Sims run concurrently, bounded by `max_parallel` (the OOM knob).
   * A lane (one app's override list) does not wait for a run's sim to finish
     before building the next override set -- the next run starts as soon as the
@@ -46,6 +48,10 @@ import batch_run_report
 
 CONTAINER = "ghcr.io/kuleuven-micas/snax:main"
 VSIM_BIN = "bin/snitch_cluster.vsim"
+# Cycle-accurate memory-simulator model: a host-side drop-in for the .vsim (no
+# podman, no license, orders of magnitude faster). Run per job alongside the
+# vsim; its Simbacore/Snitch/error lines are scraped into the report's Model cols.
+MEMSIM_BIN = "bin/snitch_cluster.memsim"
 
 
 def repo_root():
@@ -84,9 +90,9 @@ class BatchRun:
         self.root = repo_root()
         self.cluster = os.path.join(self.root, "target", "snitch_cluster")
         # Only ONE batch run may run at a time: concurrent batch runs share each
-        # app's params_in.hjson, the per-app build dir, the chisel-ssm/sbt datagen
-        # and the root report.json -- running two corrupts builds and results. Take
-        # an exclusive lock that the OS releases automatically if we die.
+        # app's build dir, the chisel-ssm/sbt datagen cache and the root
+        # report.json -- running two corrupts builds and results. Take an
+        # exclusive lock that the OS releases automatically if we die.
         self._lock_fd = open(os.path.join(self.root, ".batch_run.lock"), "w")
         try:
             fcntl.lockf(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -153,10 +159,13 @@ class BatchRun:
         """Return a list of lanes; each lane is an ordered list of job dicts."""
         lanes = []
         seen_ids = set()
+        missing_errors = []   # strict-validation failures, reported all at once
         for entry in self.cfg["runs"]:
             app = entry["app"]
-            # Base params (working-tree params_in.hjson) so the report can show
-            # effective seqLen/dModel/n_tiles for every job, default ones included.
+            # Base params = the app's tracked params_in.hjson. Every key here must
+            # be given explicitly by each config param-set: a config must be a
+            # complete spec, never silently inheriting a value (e.g. dInner) from
+            # params_in.hjson, since a stale default produces wrong/invalid data.
             base = {}
             bpath = self.params_path(app)
             if os.path.exists(bpath):
@@ -166,6 +175,11 @@ class BatchRun:
             lane = []
             for overrides in param_sets:
                 overrides = dict(overrides)
+                missing = [k for k in base if k not in overrides]
+                if missing:
+                    missing_errors.append(
+                        f"  {app}: param-set {dict(overrides) or '{}'} is missing "
+                        f"{missing} (present in {app}/data/params_in.hjson)")
                 eff = {**base, **overrides}
                 tag = make_tag(overrides)
                 jid = f"{app}__{tag}"
@@ -180,6 +194,11 @@ class BatchRun:
                              "dModel": _pick(eff, "dModel", "dim1"),
                              "n_tiles": _pick(eff, "nb_tiles", "n_tiles")})
             lanes.append(lane)
+        if missing_errors:
+            sys.exit(
+                "Config error: every param-set must specify all params present in "
+                "the app's params_in.hjson (no silent inheritance).\n"
+                + "\n".join(missing_errors))
         return lanes
 
     # --- status helpers ---
@@ -206,19 +225,22 @@ class BatchRun:
                             app + ".elf")
 
     # --- build / run primitives ---
-    def write_params(self, app, overrides):
-        path = self.params_path(app)
-        if not os.path.exists(path):
-            if overrides:
+    def write_temp_params(self, job):
+        """Write the job's full params to a temp file in the rundir and return
+        its path (or None for a params-less app like nop). The tracked
+        params_in.hjson is never modified -- the build reads this file instead,
+        via the PARAMS_IN env var. The temp file lives under the repo root so it
+        is visible at the same path inside the podman container."""
+        if not os.path.exists(self.params_path(job["app"])):
+            if job["overrides"]:
                 raise FileNotFoundError(
-                    f"{app} has no params_in.hjson but overrides were given: "
-                    f"{overrides}")
-            return  # params-less app (e.g. nop) with empty overrides: nothing to do
-        with open(path) as f:
-            params = hjson.load(f)
-        params.update(overrides)
+                    f"{job['app']} has no params_in.hjson but overrides were "
+                    f"given: {job['overrides']}")
+            return None  # params-less app (e.g. nop) with empty overrides
+        path = os.path.join(self.rundir, job["id"] + ".params.hjson")
         with open(path, "w") as f:
-            hjson.dump(params, f)
+            hjson.dump(job["all_params"], f)
+        return path
 
     # --- child process management (every child runs in its own process group
     #     so cancelling the orchestrator tears down the whole bash+vsim tree) ---
@@ -253,11 +275,23 @@ class BatchRun:
             except subprocess.TimeoutExpired:
                 self._killpg(p, signal.SIGKILL)
 
-    def build(self, app, blog):
+    def build(self, app, params_path, blog):
+        # PARAMS_IN points both make (WORKLOAD_PARAMS) and datagen.py at the
+        # generated temp params file instead of the tracked params_in.hjson.
+        env_args = ["-e", f"PARAMS_IN={params_path}"] if params_path else []
+        # `make clean` first: the repo lives on NFS and the build runs in podman,
+        # so make's mtime-based incremental rebuild is unreliable across jobs --
+        # a freshly written temp params file can appear OLDER than an existing
+        # data.h, so make skips regenerating data.h (or recompiling main.c) and
+        # the job builds against the previous job's params. Each job has different
+        # params, so there is no useful incremental state to keep anyway. clean
+        # removes only the app's data.h + build/ (the shared simbacore lib,
+        # snRuntime and the sbt datagen cache live elsewhere and are preserved).
         cmd = [
-            "podman", "run", "--rm", "-i",
+            "podman", "run", "--rm", "-i", *env_args,
             "-v", f"{self.root}:{self.root}", "-w", self.cluster,
-            CONTAINER, "make", "-C", f"sw/apps/{app}",
+            CONTAINER, "bash", "-c",
+            f"make -C sw/apps/{app} clean && make -C sw/apps/{app}",
         ]
         with open(blog, "wb") as f:
             p = self._spawn(cmd, f)
@@ -266,13 +300,37 @@ class BatchRun:
             finally:
                 self._reap(p)
 
-    def run_sim(self, jid, elf):
-        """Run one vsim; gated by the parallelism semaphore.
+    def run_memsim(self, jid, elf):
+        """Run the cycle-accurate memsim model on the staged .elf into
+        `<jid>.memsim.log`. Host-side and fast (no license), so it runs ungated
+        by the vsim semaphore. Its result is supplementary -- it never changes
+        the job state (the vsim/RTL run still drives Status); the report just
+        scrapes this log for the Model error/SimbaCore/Total columns. Skipped
+        silently if the model binary was never built."""
+        if not os.path.exists(os.path.join(self.cluster, MEMSIM_BIN)):
+            return
+        log = os.path.join(self.rundir, jid + ".memsim.log")
+        with open(log, "w") as f:
+            p = self._spawn([MEMSIM_BIN, elf], f)
+            try:
+                p.wait(timeout=(self.timeout or None))
+            except subprocess.TimeoutExpired:
+                self._killpg(p, signal.SIGTERM)
+                p.wait()
+                f.write("\n[batch_run] MEMSIM TIMEOUT\n")
+            finally:
+                self._reap(p)
 
-        The staged .elf is only needed for the duration of this sim, so it is
+    def run_sim(self, jid, elf):
+        """Run the memsim model + one vsim; the vsim is gated by the parallelism
+        semaphore.
+
+        The staged .elf is only needed for the duration of these runs, so it is
         deleted afterwards (pass/fail/timeout/abort) to keep the out folder small."""
         log = os.path.join(self.rundir, jid + ".log")
         try:
+            if not self.aborted.is_set():
+                self.run_memsim(jid, elf)
             with self.sim_sem:
                 if self.aborted.is_set():
                     return
@@ -318,8 +376,9 @@ class BatchRun:
                 return
             jid, app = job["id"], job["app"]
             self.set_state(jid, "building")
-            self.write_params(app, job["overrides"])
-            rc = self.build(app, os.path.join(self.rundir, jid + ".build.log"))
+            params_path = self.write_temp_params(job)
+            rc = self.build(app, params_path,
+                            os.path.join(self.rundir, jid + ".build.log"))
             if rc != 0:
                 # On abort the build was killed: leave it queued, not build_failed.
                 self.set_state(jid, "queued" if self.aborted.is_set() else "build_failed",
@@ -337,14 +396,6 @@ class BatchRun:
 
     # --- driver ---
     def run(self):
-        # Back up each app's params so the working tree is restored afterwards.
-        apps = {job["app"] for lane in self.jobs for job in lane}
-        backups = {}
-        for app in apps:
-            p = self.params_path(app)
-            if os.path.exists(p):  # params-less apps (e.g. nop) have nothing to restore
-                backups[app] = open(p).read()
-
         # Cancelling the orchestrator (Ctrl-C, kill, or tmux kill-pane/SIGHUP)
         # tears down every build/vsim process group.
         def on_signal(signum, _frame):
@@ -372,9 +423,6 @@ class BatchRun:
             print("\nCancelled -- terminating all build/vsim processes...")
         finally:
             self.terminate_all()
-            for app, content in backups.items():
-                with open(self.params_path(app), "w") as f:
-                    f.write(content)
 
         with self.status_lock:
             self.status["complete"] = True
@@ -384,12 +432,10 @@ class BatchRun:
             print("\nBatch run cancelled. All child processes terminated.")
             print(f"  Logs:   {self.rundir}")
             print(f"  Report: {os.path.join(self.report_dir, 'report.md')}")
-            print("Restored each app's params_in.hjson to its pre-run state.")
             return
         print("\nBatch run complete.")
         print(f"  Logs:   {self.rundir}")
         print(f"  Report: {os.path.join(self.report_dir, 'report.md')}")
-        print("Restored each app's params_in.hjson to its pre-run state.")
 
     def _render(self):
         # Merge this batch run's current results into the single persistent report,

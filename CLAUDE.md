@@ -62,6 +62,8 @@ Don't do that
 Before writing a paragraph of explanation, ask: "Does this belong in the docs, and is it
 already there?" If yes, link to it instead of re-explaining.
 
+When writing an explanation, do NOT put arbitrary words in ALL CAPS.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
@@ -148,6 +150,22 @@ Don't append anything (like the parameter, current iteration, etc.) to the `tmp-
 **Never produce vsims/waveforms for the user.** The user always inspects waves in their own separate vsim session and never looks at the `vsim.wlf` (or any waveform) from your runs.  Your runs exist only to produce the `tmp-<app_name>.log` PASS/FAIL result; debug from the log, the `.dasm` traces, and RTL/SW instrumentation — never from waveforms.
 
 **Do NOT wrap the sim in a short `timeout`.** vsim spends minutes in elaboration before the program even starts, and larger params (bigger dModel/dInner/seqLen) make the run several× longer. A run killed by `timeout 600` is almost always *slow, not hung* — and the captured trace then looks deceptively like a deadlock (core 0 spinning on `SIMBACORE_BUSY`, the other core parked at the HW barrier `0x7c2`) because that is also exactly what a mid-compute snapshot looks like. **Never conclude "hang" from a timed-out run.** Run with no timeout (or ≥1800 s) and confirm a true hang by watching the progress markers (e.g. `Finished ... for tile N`) stop advancing for minutes — not by the exit code or a single trace snapshot.
+
+### Cycle-print convention (every app MUST follow)
+
+Every app must report performance with these two canonical lines at the end of its run
+(matching `main`, `main-tiled`, `suc-only`):
+
+```c
+printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles);
+printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+```
+
+- **Simbacore elapsed time** = the SimbaCore performance counter (`read_simbacore_perf_counter()`),
+  accumulated over tiles for tiled apps. This is the *canonical* metric — always report it.
+- **Snitch elapsed time** = wall clock (`snrt_mcycle()` end − start; call `init_cycle_counter()` first).
+- Multi-phase apps may add per-phase lines (e.g. `Simbacore Phase1 (sum over tiles): ...`) but must
+  still print the single total `Simbacore elapsed time` line. Use the `[%d cc]` timestamp prefix.
 
 ## 7. Changing Apps — Test Small, Debug Until Pass
 

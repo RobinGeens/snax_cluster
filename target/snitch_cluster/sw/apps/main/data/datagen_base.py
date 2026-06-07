@@ -11,6 +11,7 @@ import re
 import sys
 import os
 import inspect
+import pathlib
 import random
 from abc import ABC
 
@@ -49,6 +50,16 @@ class DataGeneratorBase(ABC):
 
     def run(self):
         pass
+
+    @staticmethod
+    def params_in_path(datagen_file):
+        """Path to an app's params_in.hjson. The PARAMS_IN env var overrides it,
+        which batch_run uses to point a build at a generated temp params file
+        instead of editing the tracked params_in.hjson in place."""
+        override = os.environ.get("PARAMS_IN")
+        if override:
+            return pathlib.Path(override)
+        return pathlib.Path(datagen_file).resolve().parent / "params_in.hjson"
 
     def emit_header_file(self):
         """Generate all lines and return them as a string."""

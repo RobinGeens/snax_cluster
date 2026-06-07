@@ -31,7 +31,7 @@ class DataGenerator(DataGeneratorBase):
     def __init__(self, **kwargs):
         super().__init__(self.APP_NAME, **kwargs)
         # nb_l_tiles / nb_slots are not propagated by the Scala generator; read from local params.
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():

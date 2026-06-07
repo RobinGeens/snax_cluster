@@ -124,8 +124,14 @@ Per outer slice (`nb_tiles_A` = number of slices, must divide `dModel`):
 3. **Scatter** `partition3_out` into its d-slice of the full L3 output. The output
    is flattened `K_M_N` (`d` outer in the column axis, `Mu = seqLenUnroll`), so a
    d-slice is `M_3 = 2·L3/seqLenUnroll` strided row-blocks, **not** one contiguous
-   chunk — a 2-D DMA (`repeat = M_3`, `dst_stride = full_block`,
-   `src_stride = slice_block`) places it correctly.
+   chunk — a 2-D DMA (`repeat = M_3 = out_nblk`, `dst_stride = out_block_full`,
+   `src_stride = out_block_slice`) places it correctly. The block sizes are the
+   **real (FP8) row-block bytes** (`out_block_{full,slice} = {dModel,dM}·L1·L2·seqLenUnroll`),
+   **not** `length_partition3_out / M_3`: `partition3_out`'s final type is FP8, which
+   the IS-core zero-pads to the BF16 psum footprint (`padWithZeros`), so each
+   per-slice buffer is `[real | zeros]` and the padded length is 2× the real data.
+   Dividing the padded length by `M_3` makes each block straddle two `m2` row-blocks
+   and scrambles `d` vs `m2` — that was the original 22/25-failure bug.
 
 The full output is assembled in L3 and verified there (scalar reads).
 
@@ -141,11 +147,16 @@ The full output is assembled in L3 and verified there (scalar reads).
 | `in`, `partition1_out`, `hadamard1_out/_packed`, `partition2_out`, `hadamard2_out/_packed`, `partition3_out` | per slice | `dM`-sized, ping-pong'd through 2 slots |
 | `output` (full `partition3_out`) | L3 | assembled by the per-slice 2-D scatter |
 
-**Verification / precision caveat.** Only the final `partition3_out` is
-byte-checked (±1-LSB). `nb_tiles_A=1` matches the un-tiled `fft-3way` noise, but
-**slicing the batch axis amplifies FP8 quantization noise**: each slice
-requantizes with a coarser per-`dM` scale, so near-zero outputs flip sign / round
-differently. Smaller `dM` ⇒ more such positions (`dModel=8` `dM=4` → 12/25 strict
-fails; `dModel=96` `dM=12` → 20/25). The *magnitudes* stay small (sign-flips on
-~0.25–0.5 values), but the strict per-byte check is unforgiving — evaluate
-end-to-end accuracy on the real workload, and prefer the largest `dM` that fits.
+**Verification.** Only the final `partition3_out` is byte-checked (±1-LSB). Slicing
+is **exact**: the per-slice kernel is the un-tiled `fft-3way` kernel run on `dM`
+channels, and every quantization (BF16 partitions, FP8 hadamards/output) is
+per-element — no scale depends on the `dModel` grouping — so a slice's bytes equal
+the same channels of the full-`dModel` run for any `nb_tiles_A`. (An earlier note
+here blamed a "coarser per-`dM` requant scale"; that was wrong. The 22/25 failures
+were the scatter zero-pad bug above, not quantization.)
+
+The small residual (`dModel=96` `dM=12` → ~2/25) is the FFT DFT kernel's intrinsic
+HW-vs-Scala-model FP8 rounding floor: many FFT outputs are near-zero and land on
+FP8 rounding boundaries, so a few round-to-zero or flip ±1 LSB. The 2-way
+`fft-tiled` shows the same floor (~1/50); `einfft` (no DFT-matmul rounding) hits
+0/100. It is independent of `nb_tiles_A`, so prefer the largest `dM` that fits.

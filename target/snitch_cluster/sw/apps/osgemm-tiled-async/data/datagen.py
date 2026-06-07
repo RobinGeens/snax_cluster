@@ -31,7 +31,7 @@ class DataGenerator(DataGeneratorBase):
     def __init__(self, **kwargs):
         super().__init__(self.APP_NAME, **kwargs)
         # Not all parameters are propagated to scala, so read them from the local params hjson file
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():

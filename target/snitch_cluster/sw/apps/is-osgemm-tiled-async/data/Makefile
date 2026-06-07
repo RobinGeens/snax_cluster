@@ -13,7 +13,8 @@ DATAGEN_DEPS := $(CURR_DIR)/../../main/data/datagen_base.py
 DATAGEN_DEPS += $(CURR_DIR)/../../main/data/datagen_cli.py
 DATA_H     := $(DATA_DIR)/data.h
 
-WORKLOAD_PARAMS := $(CURR_DIR)/params_in.hjson
+
+WORKLOAD_PARAMS := $(or $(PARAMS_IN),$(CURR_DIR)/params_in.hjson)
 
 APP_NAME = is-osgemm-tiled-async
 

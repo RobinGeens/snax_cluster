@@ -31,7 +31,7 @@ class DataGenerator(DataGeneratorBase):
 
     def __init__(self, **kwargs):
         super().__init__(self.APP_NAME, **kwargs)
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():
@@ -197,7 +197,15 @@ class DataGenerator(DataGeneratorBase):
         len_in = L * dModel * FP8 // 8
         len_in_slice = L * dM * FP8 // 8
         len_partition3_out = 2 * L * dModel * BF16 // 8
-        len_partition3_out_slice = 2 * L * dM * BF16 // 8
+
+        # Output scatter. partition3_out's final type is FP8, which the IS-core
+        # zero-pads to the BF16 psum footprint, so only the first half of the buffer
+        # holds real data. That real data is M_3 row-blocks with `d` the outer column factor; slice s owns
+        # `dM` contiguous channels (out_block_slice bytes) inside each full row-block.
+        # Block sizes must use the real (FP8) sizes, NOT the padded buffer length.
+        out_block_full = dModel * L1 * L2 * seqLenUnroll * FP8 // 8
+        out_block_slice = dM * L1 * L2 * seqLenUnroll * FP8 // 8
+        out_nblk = M_3
 
         # Two ping-pong slots, each sized to the largest per-slice buffer
         # (partition_out, BF16). Every step reads one slot, writes the other.
@@ -218,7 +226,9 @@ class DataGenerator(DataGeneratorBase):
             "nb_d": nb_d,
             "dModel_slice": dM,
             "length_in_slice": len_in_slice,
-            "length_partition3_out_slice": len_partition3_out_slice,
+            "out_block_full": out_block_full,
+            "out_block_slice": out_block_slice,
+            "out_nblk": out_nblk,
             "slot_size": slot_size,
         }
         scalars = {**lengths, **deltas, **slice_scalars}

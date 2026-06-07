@@ -3,14 +3,12 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// main-tiled-oscore = main-tiled + ASYNC L-tiling of the os-core input (oscore_in).
-// iscore_out_P1/P2 stay FULL in TCDM (no N-tiling).
+// main-tiled + async L-tiling of the os-core input
+// iscore_out_P1/P2 stay full in TCDM
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"
 
-// P1 streamer setup, identical to helper.c's set_streamer_phase1 except R0 uses
-// the lTile (2-slot stride-0 wrap) temporal bounds.
 #define set_streamer_phase1_lTile(p_oi, p_ow, p_cw, p_cb, p_iw, p_io, p_co)                                           \
     set_streamer_csr((uint32_t)(p_oi), M1_R0_ss, M1_R0_tb_lTile, M1_R0_ts, M1_R0_en, (uint32_t)(p_ow), M1_R1_ss,      \
                      M1_R1_tb, M1_R1_ts, M1_R1_en, (uint32_t)0, 0, 0, 0, M1_R2_en, (uint32_t)(p_cw), M1_R3_ss,        \
@@ -22,8 +20,6 @@
                      (uint32_t)(p_co), M1_W1_ss, M1_W1_tb, M1_W1_ts, M1_W1_en, (uint32_t)0, 0, 0, 0, M1_W2_en,        \
                      (uint32_t)(p_io), M1_W3_ss, M1_W3_tb, M1_W3_ts, M1_W3_en)
 
-// P2 streamer setup, identical to helper.c's set_streamer_phase2 except R0 uses
-// the lTile (2-slot stride-0 wrap) temporal bounds.
 #define set_streamer_phase2_lTile(p_oi, p_ow, p_z, p_dt, p_dw1, p_dw2, p_db, p_x, p_A, p_BC, p_D, p_y, p_iw, p_io)     \
     set_streamer_csr((uint32_t)(p_oi), M2_R0_ss, M2_R0_tb_lTile, M2_R0_ts, M2_R0_en, (uint32_t)(p_ow), M2_R1_ss,       \
                      M2_R1_tb, M2_R1_ts, M2_R1_en, (uint32_t)(p_dt), M2_R2_ss, M2_R2_tb, M2_R2_ts, M2_R2_en,           \

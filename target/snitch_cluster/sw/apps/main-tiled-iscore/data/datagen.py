@@ -4,21 +4,7 @@
 # Not released under license. All rights reserved.
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
-#
-# Tiled, double-buffered, pipelined version of the Mamba main program. Both
-# Phase 1 and Phase 2 are tiled along the dInner dimension. Each per-phase
-# pipeline first finishes all tiles of Phase 1, then all tiles of Phase 2.
-# Tiling strategy:
-#   Phase 1
-#     - in proj x        : tiled in dInner (osCore output)
-#     - x_proj           : tiled in dInner (IS GeMM K-dim, accumulates psum)
-#     - x_proj outputs   : NOT tiled (delta, B, C all stay in iscore_out)
-#   Phase 2
-#     - in proj z        : tiled in dInner (osCore output)
-#     - delta proj       : tiled in dInner (switchCore output)
-#     - SUC              : tiled in dInner (consumes/produces dInner-sized x,y,z)
-#     - out proj         : tiled in dInner (IS GeMM K-dim, accumulates psum)
-#     - isCore output    : NOT tiled (kept in TCDM, accumulates across tiles)
+
 
 import pathlib
 import random
@@ -50,7 +36,7 @@ class DataGenerator(DataGeneratorBase):
         self.phase1_scalars: dict[str, int] = {}
         self.phase2_scalars: dict[str, int] = {}
         # Not all parameters are propagated to scala, so read them from the local params hjson file
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():
@@ -65,11 +51,13 @@ class DataGenerator(DataGeneratorBase):
 
     def _run_memory_model(self):
         import importlib.util
+
         app_dir = os.path.dirname(os.path.abspath(__file__))
         spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         from memory_model_base import run_model_from_datagen
+
         comment = run_model_from_datagen(mod.build_report, app_dir)
         self.lines_params.append(comment)
 
@@ -112,7 +100,9 @@ class DataGenerator(DataGeneratorBase):
         self.iscore_out_bytes = self.seqLen * self.xProjDim * BF16 // 8 + self.n_psum_matrices * self.bc_pad_bytes
         # Phase2 dt_BC read geometry
         self.n_window_matrices = self.xProjDim * FP8 // BANKWIDTH
-        self.dt_bc_window_bytes = self.seqLenUnroll * self.xProjDim * FP8 // 8 + self.n_window_matrices * self.bc_pad_bytes
+        self.dt_bc_window_bytes = (
+            self.seqLenUnroll * self.xProjDim * FP8 // 8 + self.n_window_matrices * self.bc_pad_bytes
+        )
         self.dt_to_BC_offset = (self.dtRank * FP8 // BANKWIDTH) * self.bc_matrix_stride
 
         # Tiling
@@ -131,7 +121,7 @@ class DataGenerator(DataGeneratorBase):
         # consecutive matrices = a contiguous slot. The ring R13/W3 keep the (cycles,matrices,pad) inner
         # structure, so the wrap is 4-dim: [psum_cycles_per_matrix, matrices_per_slot, nb_slots, nb_l/nb_slots].
         self.p1_matrices_per_slot = self.n_psum_matrices // self.nb_l_tiles
-        self.p1_slot_bytes        = self.p1_matrices_per_slot * self.bc_matrix_stride
+        self.p1_slot_bytes = self.p1_matrices_per_slot * self.bc_matrix_stride
 
     def check_tiling_constraints(self):
         """Verify all dInner-derived dimensions remain integer (and HW-legal) after tiling."""
@@ -161,13 +151,13 @@ class DataGenerator(DataGeneratorBase):
         L_tile = self.seqLen // self.nb_l_tiles
         assert L_tile % self.seqLenUnroll == 0, f"L_tile ({L_tile}) must be a multiple of seqLenUnroll"
         assert self.nb_slots >= 2, f"nb_slots ({self.nb_slots}) must be >= 2"
-        assert self.nb_l_tiles >= self.nb_slots and self.nb_l_tiles % self.nb_slots == 0, (
-            f"nb_l_tiles ({self.nb_l_tiles}) must be >= nb_slots ({self.nb_slots}) and a multiple of it"
-        )
+        assert (
+            self.nb_l_tiles >= self.nb_slots and self.nb_l_tiles % self.nb_slots == 0
+        ), f"nb_l_tiles ({self.nb_l_tiles}) must be >= nb_slots ({self.nb_slots}) and a multiple of it"
         # P1 iscore_out ring: n_psum_matrices must split evenly into nb_l_tiles slots.
-        assert self.n_psum_matrices % self.nb_l_tiles == 0, (
-            f"n_psum_matrices ({self.n_psum_matrices}) must be divisible by nb_l_tiles ({self.nb_l_tiles}) for the P1 ring"
-        )
+        assert (
+            self.n_psum_matrices % self.nb_l_tiles == 0
+        ), f"n_psum_matrices ({self.n_psum_matrices}) must be divisible by nb_l_tiles ({self.nb_l_tiles}) for the P1 ring"
 
     def get_safe_to_start_delay(self, dInner: int):
         """Per-tile (or per-phase) safe-to-start delay for R10 and R11. Same algorithm
@@ -262,7 +252,12 @@ class DataGenerator(DataGeneratorBase):
             # stride-0 rewind -- the nb_slots-slot ring (each slot = one seqLen L-tile of the psum). Valid
             # only because N_kern=1 (asserted): the old bound-1 N_kern axis is replaced by the wrap axes.
             "R13": (
-                [self.psum_cycles_per_matrix, self.p1_matrices_per_slot, self.nb_slots, self.nb_l_tiles // self.nb_slots],
+                [
+                    self.psum_cycles_per_matrix,
+                    self.p1_matrices_per_slot,
+                    self.nb_slots,
+                    self.nb_l_tiles // self.nb_slots,
+                ],
                 [self.psum_cycle_bytes, self.bc_matrix_stride, self.p1_slot_bytes, 0],
             ),
             "W1": (
@@ -270,7 +265,12 @@ class DataGenerator(DataGeneratorBase):
                 [BANK_BYTES],
             ),
             "W3": (
-                [self.psum_cycles_per_matrix, self.p1_matrices_per_slot, self.nb_slots, self.nb_l_tiles // self.nb_slots],
+                [
+                    self.psum_cycles_per_matrix,
+                    self.p1_matrices_per_slot,
+                    self.nb_slots,
+                    self.nb_l_tiles // self.nb_slots,
+                ],
                 [self.psum_cycle_bytes, self.bc_matrix_stride, self.p1_slot_bytes, 0],
             ),
         }
@@ -291,10 +291,10 @@ class DataGenerator(DataGeneratorBase):
         assert f"M{mode_id}_PHASE1" in self.kwargs, "verify mode_id"
         assert self.switchcore_width == BANKWIDTH
 
-        # All P1 tiles use the same streamer config (K_i K-steps). Non-final tiles run
-        # M28_PHASE1_NO_REQUANT; the final tile runs M1_PHASE1 — only the MODE CSR changes.
-        # The BankTransposer is gated on isCoreOutIsFinal (MambaCore.scala:370), so it only
-        # fires on the last K-step within the M1_PHASE1 invocation.
+        # Every P1 tile runs M28_PHASE1_NO_REQUANT with the SAME R13/W3 ring descriptor -- BF16 in, BF16 out,
+        # no requant, no transpose. The final tile is not special: it writes the complete BF16 psum, same
+        # size as the accumulation tiles, so it rides the ring identically (no FP8-vs-BF16 rate mismatch).
+        # The requant + transpose are assumed to run off-chip. See docs/dataflow/09_async_tiling.md.
         K_i = self.dInner_tile // self.dInnerUnroll  # K-steps per DMA tile
 
         streamers_bulk = self._build_p1_streamers(K_i)
@@ -357,6 +357,10 @@ class DataGenerator(DataGeneratorBase):
         }
 
         test_data["iscore_bias"] = "uint16_t"
+        # Raw BF16 psum, un-transposed: what the NO_REQUANT ring actually writes to L3. The dense check
+        # verifies the spilled L3 psum against this (BF16). P2 reads the transposed FP8 `iscore_out`
+        # instead -- the requant + transpose are assumed off-chip.
+        test_data["iscore_out_bf16_untransposed"] = "uint16_t"
 
         self.build_mode(mode_id, streamers_bulk, scalars=scalars, test_data=test_data, tests=tests)
 
@@ -376,14 +380,14 @@ class DataGenerator(DataGeneratorBase):
         N_kern = self.dInner_tile // self.dInnerUnroll  # = K_i (== 1 for the ring; asserted)
         dInner_kern = self.dInner_tile
 
-        # iscore_out_P2 psum ring: with N_kern=1 each kernel sweeps the L-tiles once, so R13/W3 walk
-        # an nb_slots-slot ring via the stride-0 wrap (mirrors osgemm-tiled-async's R0 / isgemm-tiled-
-        # async). inner = positions within one L-tile; mid = the nb_slots adjacent slots; outer =
-        # stride-0 rewind (nb_l/nb_slots times) -- the DM core spills+reloads between wraps.
+        # iscore_out_P2 is FULL -- P2 has NO async tiling (the ring is Phase-1 only). R13/W3 walk all
+        # nb_l_tiles L-tiles of the psum contiguously (mid = nb_l_tiles, outer = 1, no stride-0 wrap).
+        # A wrap here would need a SW spill/reload loop (which P2 doesn't have), so at eviction it would
+        # write only nb_slots/nb_l of the psum and leave the rest zero -> half-written output.
         MperL = (self.seqLen // self.nb_l_tiles) // self.seqLenUnroll
         psum_pos_per_l_tile = MperL * self.dModel
-        iscore_out_ring = (
-            [psum_pos_per_l_tile, self.nb_slots, self.nb_l_tiles // self.nb_slots],
+        iscore_out_full = (
+            [psum_pos_per_l_tile, self.nb_l_tiles, 1],
             [
                 self.seqLenUnroll * BF16 // 8,
                 psum_pos_per_l_tile * self.seqLenUnroll * BF16 // 8,
@@ -494,7 +498,7 @@ class DataGenerator(DataGeneratorBase):
                 [self.downsized_dModel, self.seqLen // self.seqLenUnroll, N_kern],
                 [self.gemm_weight_width // 8, 0, self.downsized_dModel * self.gemm_weight_width // 8],
             ),
-            "R13": iscore_out_ring,  # isCore psum: nb_slots-slot ring (wrap), full backing in L3
+            "R13": iscore_out_full,  # isCore psum: FULL (no P2 async tiling)
             "W0": (  # osCore out (z, 1-K-step slice)
                 [
                     (oscore_parallel_width_d // self.oscore_serial_width)
@@ -507,7 +511,7 @@ class DataGenerator(DataGeneratorBase):
                 bounds_conv_to_suc,
                 strides_conv_to_suc,
             ),
-            "W3": iscore_out_ring,  # isCore output: SAME ring as R13
+            "W3": iscore_out_full,  # isCore output: FULL (same as R13)
         }
 
         # ---------- Buffer sizes -------------------------------------------------
@@ -574,9 +578,6 @@ class DataGenerator(DataGeneratorBase):
             "length_D_tile": len_D // nb,
             "length_y_tile": len_y // nb,
             "length_iscore_weight_tile": len_iscore_weight // nb,
-            # iscore_out_P2 ring: per-slot byte size == per-L-tile L3 stride; gauge ticks per L-tile.
-            "length_iscore_out_l_tile": psum_pos_per_l_tile * self.seqLenUnroll * BF16 // 8,
-            "iscore_out_l_tile_gauge_step": psum_pos_per_l_tile,
         }
 
         scalars = {

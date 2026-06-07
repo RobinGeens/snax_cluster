@@ -39,7 +39,7 @@ class DataGenerator(DataGeneratorBase):
         self.phase1_scalars: dict[str, int] = {}
         self.phase2_scalars: dict[str, int] = {}
         # Not all parameters are propagated to scala, so read them from the local params hjson file
-        local_params_path = pathlib.Path(__file__).resolve().parent / "params_in.hjson"
+        local_params_path = self.params_in_path(__file__)
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():
