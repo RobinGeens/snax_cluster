@@ -219,6 +219,7 @@ class DataGenerator(MainDataGenerator):
 
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         suc_start_cnt, iscore_start_cnt = self.get_safe_to_start_delay()
+        suc_start_cnt, iscore_start_cnt = self.resolve_safe_to_start(suc_start_cnt, iscore_start_cnt)
         scalars = {
             **lengths, **deltas,
             "R10_start_cnt": suc_start_cnt,

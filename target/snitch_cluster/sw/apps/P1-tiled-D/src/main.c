@@ -53,8 +53,20 @@ int test_phase1_tiled() {
     };
 #undef _ALIGN64
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    const uint32_t K_i               = M1_dInner_tile / dInnerUnroll;  // K-steps per DMA tile
+    uint32_t start_cycles            = 0;
+    uint32_t simbacore_cycles_phase1 = 0;
+
+    if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: P1-tiled-D (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, conv_out via L3)\n\n", seqLen,
+               dModel, nb_tiles, K_i);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+        set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
+                            (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
+                            (uint32_t)ptr_conv_out_tile[0]);
+        set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
+    }
 
     // Preload non-tiled inputs: oscore_in (full); iscore bias into the psum buffer (where R13 reads).
     if (snrt_is_dm_core()) {
@@ -62,21 +74,7 @@ int test_phase1_tiled() {
         snrt_dma_start_1d(ptr_iscore_out_P1, M1_iscore_bias, M1_length_iscore_out);
         snrt_dma_wait_all();
     }
-    snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles            = 0;
-    uint32_t simbacore_cycles_phase1 = 0;
-    const uint32_t K_i = M1_dInner_tile / dInnerUnroll;  // K-steps per DMA tile
-
-    if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: P1-tiled-D (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, conv_out via L3)\n\n", seqLen,
-               dModel, nb_tiles, K_i);
-        start_cycles = snrt_mcycle();
-        set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
-                            (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
-                            (uint32_t)ptr_conv_out_tile[0]);
-        set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
-    }
     snrt_cluster_hw_barrier();
 
     for (uint32_t i = 0; i < nb_tiles + 2; i++) {

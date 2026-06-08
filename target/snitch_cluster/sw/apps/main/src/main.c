@@ -38,10 +38,14 @@ int test_phase1_and_2() {
     uint8_t* ptr_iscore_weight_P2 = (uint8_t*)(phase2_base_ptr + M2_addr_iscore_weight);
     uint16_t* ptr_iscore_out_P2   = (uint16_t*)(phase2_base_ptr + M2_addr_iscore_out);
 
-    // Initialize cycle counter for timing
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-
-    snrt_cluster_hw_barrier();
+    uint32_t start_cycles = 0;
+    if (snrt_global_core_idx() == 0) {
+        printf("\nStarting program: Mamba main (Phase1 and Phase2)\n\n");
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+    }
 
     // Transfer Phase1 data
     if (snrt_is_dm_core()) {
@@ -57,13 +61,8 @@ int test_phase1_and_2() {
 
     snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles            = 0;
     uint32_t simbacore_cycles_phase1 = 0;
     if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: Mamba main (Phase1 and Phase2)\n\n");
-        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
-               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
-        start_cycles = snrt_mcycle();
 #ifdef VERBOSE
         printf("[%d cc] Setting up Streamer and SimbaCore CSRs\n", start_cycles);
 #endif

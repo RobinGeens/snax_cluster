@@ -6,7 +6,6 @@
 
 APP = P2-tiled-D
 
-# Own data generator (P2-only, M2_* Phase-2 tiled constants + golden P1 outputs).
 INCDIRS = data \
           ../../snax/simbacore/include \
           ../main/src

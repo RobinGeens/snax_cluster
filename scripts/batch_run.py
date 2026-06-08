@@ -98,9 +98,11 @@ class BatchRun:
             fcntl.lockf(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             held = open(os.path.join(self.root, ".batch_run.lock")).read().strip()
-            sys.exit(f"Another batch run is already running (PID {held or '?'}). "
-                     f"Refusing to start a second one -- it would corrupt the "
-                     f"shared params_in.hjson and report. Lock: {self.root}/.batch_run.lock")
+            sys.exit(
+                f"Another batch run is already running (PID {held or '?'}). "
+                f"Refusing to start a second one -- it would corrupt the "
+                f"shared params_in.hjson and report. Lock: {self.root}/.batch_run.lock"
+            )
         self._lock_fd.seek(0)
         self._lock_fd.truncate()
         self._lock_fd.write(str(os.getpid()))
@@ -115,6 +117,8 @@ class BatchRun:
         self.max_parallel = int(self.cfg.get("max_parallel", 2))
         # Per-run wall-clock cap in seconds; 0 disables (default: none).
         self.timeout = int(self.cfg.get("timeout", 0))
+        # Build (podman make) wall-clock cap; 0 disables
+        self.build_timeout = int(self.cfg.get("build_timeout", 0))
 
         # The single, persistent report lives at the repo root and accumulates
         # across batch runs; each run's logs/elfs go in their own timestamped dir.
@@ -130,11 +134,17 @@ class BatchRun:
 
         # Every child (podman build, vsim) is launched in its own process group
         # and tracked here so the whole tree can be torn down on cancel.
-        self.procs = {}                       # pid -> Popen
+        self.procs = {}  # pid -> Popen
         self.procs_lock = threading.Lock()
         self.aborted = threading.Event()
+        # Names of live build containers. Killing the `podman run` client does NOT
+        # stop the container (conmon keeps it alive, reparented to init), so we
+        # name each one and `podman rm -f` it on teardown -- the only reliable way
+        # to kill an orphaned build. Guarded by procs_lock.
+        self.build_containers = set()
+        self._build_seq = 0
 
-        self.jobs = self._build_job_list()   # ordered list per lane
+        self.jobs = self._build_job_list()  # ordered list per lane
         self.status = {
             "rundir": self.rundir,
             "config_path": self.config_path,
@@ -147,11 +157,15 @@ class BatchRun:
         for lane in self.jobs:
             for job in lane:
                 self.status["jobs"][job["id"]] = {
-                    "app": job["app"], "tag": job["tag"],
+                    "app": job["app"],
+                    "tag": job["tag"],
                     "params": job["all_params"],
-                    "seqLen": job["seqLen"], "dModel": job["dModel"],
-                    "n_tiles": job["n_tiles"], "log": job["id"] + ".log",
-                    "state": "queued", "rc": None,
+                    "seqLen": job["seqLen"],
+                    "dModel": job["dModel"],
+                    "n_tiles": job["n_tiles"],
+                    "log": job["id"] + ".log",
+                    "state": "queued",
+                    "rc": None,
                 }
         self._write_status()
 
@@ -159,7 +173,7 @@ class BatchRun:
         """Return a list of lanes; each lane is an ordered list of job dicts."""
         lanes = []
         seen_ids = set()
-        missing_errors = []   # strict-validation failures, reported all at once
+        missing_errors = []  # strict-validation failures, reported all at once
         for entry in self.cfg["runs"]:
             app = entry["app"]
             # Base params = the app's tracked params_in.hjson. Every key here must
@@ -179,26 +193,34 @@ class BatchRun:
                 if missing:
                     missing_errors.append(
                         f"  {app}: param-set {dict(overrides) or '{}'} is missing "
-                        f"{missing} (present in {app}/data/params_in.hjson)")
+                        f"{missing} (present in {app}/data/params_in.hjson)"
+                    )
                 eff = {**base, **overrides}
                 tag = make_tag(overrides)
                 jid = f"{app}__{tag}"
                 n = 2
-                while jid in seen_ids:   # disambiguate duplicate override sets
+                while jid in seen_ids:  # disambiguate duplicate override sets
                     jid = f"{app}__{tag}__{n}"
                     n += 1
                 seen_ids.add(jid)
-                lane.append({"id": jid, "app": app, "tag": tag,
-                             "overrides": overrides, "all_params": dict(eff),
-                             "seqLen": _pick(eff, "seqLen", "dim0"),
-                             "dModel": _pick(eff, "dModel", "dim1"),
-                             "n_tiles": _pick(eff, "nb_tiles", "n_tiles")})
+                lane.append(
+                    {
+                        "id": jid,
+                        "app": app,
+                        "tag": tag,
+                        "overrides": overrides,
+                        "all_params": dict(eff),
+                        "seqLen": _pick(eff, "seqLen", "dim0"),
+                        "dModel": _pick(eff, "dModel", "dim1"),
+                        "n_tiles": _pick(eff, "nb_tiles", "n_tiles"),
+                    }
+                )
             lanes.append(lane)
         if missing_errors:
             sys.exit(
                 "Config error: every param-set must specify all params present in "
-                "the app's params_in.hjson (no silent inheritance).\n"
-                + "\n".join(missing_errors))
+                "the app's params_in.hjson (no silent inheritance).\n" + "\n".join(missing_errors)
+            )
         return lanes
 
     # --- status helpers ---
@@ -217,12 +239,10 @@ class BatchRun:
 
     # --- paths ---
     def params_path(self, app):
-        return os.path.join(self.cluster, "sw", "apps", app, "data",
-                            "params_in.hjson")
+        return os.path.join(self.cluster, "sw", "apps", app, "data", "params_in.hjson")
 
     def built_elf(self, app):
-        return os.path.join(self.cluster, "sw", "apps", app, "build",
-                            app + ".elf")
+        return os.path.join(self.cluster, "sw", "apps", app, "build", app + ".elf")
 
     # --- build / run primitives ---
     def write_temp_params(self, job):
@@ -234,8 +254,8 @@ class BatchRun:
         if not os.path.exists(self.params_path(job["app"])):
             if job["overrides"]:
                 raise FileNotFoundError(
-                    f"{job['app']} has no params_in.hjson but overrides were "
-                    f"given: {job['overrides']}")
+                    f"{job['app']} has no params_in.hjson but overrides were " f"given: {job['overrides']}"
+                )
             return None  # params-less app (e.g. nop) with empty overrides
         path = os.path.join(self.rundir, job["id"] + ".params.hjson")
         with open(path, "w") as f:
@@ -245,8 +265,7 @@ class BatchRun:
     # --- child process management (every child runs in its own process group
     #     so cancelling the orchestrator tears down the whole bash+vsim tree) ---
     def _spawn(self, cmd, stdout):
-        p = subprocess.Popen(cmd, cwd=self.cluster, stdout=stdout,
-                             stderr=subprocess.STDOUT, start_new_session=True)
+        p = subprocess.Popen(cmd, cwd=self.cluster, stdout=stdout, stderr=subprocess.STDOUT, start_new_session=True)
         with self.procs_lock:
             self.procs[p.pid] = p
         return p
@@ -262,6 +281,18 @@ class BatchRun:
         except (ProcessLookupError, PermissionError):
             pass
 
+    @staticmethod
+    def _podman_rm(name):
+        """Force-remove a build container by name. The container outlives its
+        `podman run` client (conmon detaches it), so killing the client's process
+        group is not enough -- this is what actually stops an orphaned build."""
+        try:
+            subprocess.run(
+                ["podman", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+
     def terminate_all(self):
         """Kill every tracked child's process group (SIGTERM, then SIGKILL)."""
         self.aborted.set()
@@ -274,6 +305,11 @@ class BatchRun:
                 p.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self._killpg(p, signal.SIGKILL)
+        # Killing the client leaves the container running -- remove it explicitly.
+        with self.procs_lock:
+            names = list(self.build_containers)
+        for name in names:
+            self._podman_rm(name)
 
     def build(self, app, params_path, blog):
         # PARAMS_IN points both make (WORKLOAD_PARAMS) and datagen.py at the
@@ -287,18 +323,48 @@ class BatchRun:
         # params, so there is no useful incremental state to keep anyway. clean
         # removes only the app's data.h + build/ (the shared simbacore lib,
         # snRuntime and the sbt datagen cache live elsewhere and are preserved).
+        # Name the container so it can be force-removed on timeout/abort: killing
+        # the `podman run` client alone leaves the container (and its make/sbt)
+        # running. The seq makes the name unique across this run's builds.
+        with self.procs_lock:
+            self._build_seq += 1
+            name = f"batchbuild_{os.getpid()}_{self._build_seq}"
+            self.build_containers.add(name)
         cmd = [
-            "podman", "run", "--rm", "-i", *env_args,
-            "-v", f"{self.root}:{self.root}", "-w", self.cluster,
-            CONTAINER, "bash", "-c",
+            "podman",
+            "run",
+            "--rm",
+            "-i",
+            "--name",
+            name,
+            *env_args,
+            "-v",
+            f"{self.root}:{self.root}",
+            "-w",
+            self.cluster,
+            CONTAINER,
+            "bash",
+            "-c",
             f"make -C sw/apps/{app} clean && make -C sw/apps/{app}",
         ]
         with open(blog, "wb") as f:
             p = self._spawn(cmd, f)
             try:
-                return p.wait()
+                return p.wait(timeout=(self.build_timeout or None))
+            except subprocess.TimeoutExpired:
+                f.write(b"\n[batch_run] BUILD TIMEOUT\n")
+                f.flush()
+                self._podman_rm(name)  # stop the container, not just the client
+                self._killpg(p, signal.SIGTERM)
+                p.wait()
+                return 124
             finally:
                 self._reap(p)
+                # Always tear the container down: --rm handles the clean-exit case,
+                # but on abort the client is killed and only rm -f stops the rest.
+                self._podman_rm(name)
+                with self.procs_lock:
+                    self.build_containers.discard(name)
 
     def run_memsim(self, jid, elf):
         """Run the cycle-accurate memsim model on the staged .elf into
@@ -334,7 +400,7 @@ class BatchRun:
         plotter = os.path.join(self.cluster, "sim", "plot_timeline.py")
         if not os.path.exists(csv) or not os.path.exists(plotter):
             return
-        png = os.path.splitext(csv)[0] + ".png"           # <jid>.timeline.png
+        png = os.path.splitext(csv)[0] + ".png"  # <jid>.timeline.png
         with open(os.path.join(self.rundir, jid + ".plot.log"), "w") as f:
             p = self._spawn([sys.executable, plotter, "--csv", csv, "-o", png], f)
             try:
@@ -401,19 +467,16 @@ class BatchRun:
             jid, app = job["id"], job["app"]
             self.set_state(jid, "building")
             params_path = self.write_temp_params(job)
-            rc = self.build(app, params_path,
-                            os.path.join(self.rundir, jid + ".build.log"))
+            rc = self.build(app, params_path, os.path.join(self.rundir, jid + ".build.log"))
             if rc != 0:
                 # On abort the build was killed: leave it queued, not build_failed.
-                self.set_state(jid, "queued" if self.aborted.is_set() else "build_failed",
-                               rc=rc)
+                self.set_state(jid, "queued" if self.aborted.is_set() else "build_failed", rc=rc)
                 continue
             # Stage the elf before the next build overwrites build/<app>.elf.
             staged = os.path.join(self.rundir, jid + ".elf")
             shutil.copy2(self.built_elf(app), staged)
             # Dispatch the sim asynchronously and move on to the next build.
-            t = threading.Thread(target=self.run_sim, args=(jid, staged),
-                                 daemon=True)
+            t = threading.Thread(target=self.run_sim, args=(jid, staged), daemon=True)
             with self.sim_threads_lock:
                 self.sim_threads.append(t)
             t.start()
@@ -424,6 +487,7 @@ class BatchRun:
         # tears down every build/vsim process group.
         def on_signal(signum, _frame):
             raise KeyboardInterrupt
+
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, on_signal)
 
@@ -472,8 +536,9 @@ class BatchRun:
 
 def main():
     ap = argparse.ArgumentParser(description="Run a batch of simulations")
-    ap.add_argument("config", nargs="?", default=None,
-                    help="batch-run config (.hjson); default: <repo-root>/batch_run_config.hjson")
+    ap.add_argument(
+        "config", nargs="?", default=None, help="batch-run config (.hjson); default: <repo-root>/batch_run_config.hjson"
+    )
     args = ap.parse_args()
     BatchRun(args.config).run()
 

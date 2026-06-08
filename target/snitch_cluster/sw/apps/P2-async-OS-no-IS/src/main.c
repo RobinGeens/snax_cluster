@@ -135,8 +135,23 @@ int test_p2_async_no_is() {
     uint8_t* ptr_y             = _ALIGN64(ptr_z + M2_length_z_tile);
 #undef _ALIGN64
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    const uint32_t K_i               = M2_dInner_tile / dInnerUnroll;
+    uint32_t start_cycles            = 0;
+    uint32_t simbacore_cycles_phase2 = 0;
+
+    if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: P2-async-OS-no-IS (L=%d, dModel=%d, nb_tiles=%d, nb_l_tiles=%d, L_tile=%u, "
+            "nb_slots=%d, K_i=%u, no IS-core, oscore_in async)\n\n",
+            seqLen, dModel, nb_tiles, nb_l_tiles, L_tile, nb_slots, K_i);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+        set_streamer_phase2_noIS_lTile((uint32_t)ptr_oscore_in_base, (uint32_t)ptr_oscore_weight, (uint32_t)ptr_z,
+                                       (uint32_t)ptr_dt_packed, (uint32_t)ptr_dt_weight_1, (uint32_t)ptr_dt_weight_2,
+                                       (uint32_t)ptr_dt_bias, (uint32_t)ptr_x, (uint32_t)ptr_A, (uint32_t)ptr_BC_ring,
+                                       (uint32_t)ptr_D, (uint32_t)ptr_y);
+        set_simbacore_csr(M33_PHASE2_NO_ISCORE, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+    }
 
     // Preload: first nb_slots oscore_in + BC L-tiles into their rings; PACKED full dt extracted
     // from the combined dt_BC L3 buffer (drop per-window BC bytes).
@@ -152,26 +167,6 @@ int test_p2_async_no_is() {
         snrt_dma_start_2d(ptr_dt_packed, M2_dt_BC, M2_dt_pack_window_bytes, M2_dt_pack_window_bytes,
                           M2_dtBC_window_src_stride, M2_dt_windows_total);
         snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
-    uint32_t start_cycles            = 0;
-    uint32_t simbacore_cycles_phase2 = 0;
-    const uint32_t K_i               = M2_dInner_tile / dInnerUnroll;
-
-    if (snrt_global_core_idx() == 0) {
-        printf(
-            "\nStarting program: P2-async-OS-no-IS (L=%d, dModel=%d, nb_tiles=%d, nb_l_tiles=%d, L_tile=%u, "
-            "nb_slots=%d, K_i=%u, no IS-core, oscore_in async)\n\n",
-            seqLen, dModel, nb_tiles, nb_l_tiles, L_tile, nb_slots, K_i);
-        start_cycles = snrt_mcycle();
-        // Streamer bases set ONCE: every operand is a single buffer (the loop is serialized), so
-        // x/z/y/weight base pointers are FIXED for the whole run and never rewritten per tile.
-        set_streamer_phase2_noIS_lTile((uint32_t)ptr_oscore_in_base, (uint32_t)ptr_oscore_weight, (uint32_t)ptr_z,
-                                       (uint32_t)ptr_dt_packed, (uint32_t)ptr_dt_weight_1, (uint32_t)ptr_dt_weight_2,
-                                       (uint32_t)ptr_dt_bias, (uint32_t)ptr_x, (uint32_t)ptr_A, (uint32_t)ptr_BC_ring,
-                                       (uint32_t)ptr_D, (uint32_t)ptr_y);
-        set_simbacore_csr(M33_PHASE2_NO_ISCORE, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
     }
     snrt_cluster_hw_barrier();
 
@@ -225,7 +220,7 @@ int test_p2_async_no_is() {
     // --- Verification ---
     if (snrt_global_core_idx() == 0) {
         uint32_t end_cycles = snrt_mcycle();
-        printf("[%d cc] Simbacore Phase2-no-IS (sum over tiles): %u cycles\n", end_cycles, simbacore_cycles_phase2);
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_phase2);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         err += check_result_sample(ptr_z_l3, M2_oscore_expected, M2_test_samples_z,  //

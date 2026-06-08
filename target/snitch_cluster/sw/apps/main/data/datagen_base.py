@@ -82,10 +82,31 @@ class DataGeneratorBase(ABC):
         assert variable_name is not None, "Variable name not found"
         self.format("uint32_t", variable_name, value)
 
+    SAFE_TO_START_KEYS = ("safe_to_start_r10", "safe_to_start_r11")
+
     def format_params(self):
         """Takes all parameters from the kwargs and formats them as integers."""
         for key, value in self.kwargs.items():
+            if key in self.SAFE_TO_START_KEYS:
+                continue
             self.format("uint32_t", key, value)
+
+    def resolve_safe_to_start(self, computed_r10, computed_r11):
+        """Resolve the P2safe-to-start delays (R10/R11 start counts).
+
+        The keys safe_to_start_r10 / safe_to_start_r11 must be defined in params_in.hjson.
+        A value of -1 means "derive from the formula" (use the computed_* args). Any other
+        value overrides the formula.
+        """
+        resolved = []
+        for key, computed in zip(self.SAFE_TO_START_KEYS, (computed_r10, computed_r11)):
+            if key not in self.kwargs:
+                raise KeyError(
+                    f"'{key}' must be defined in params_in.hjson (use -1 to auto-derive the safe-to-start delay)"
+                )
+            value = int(self.kwargs[key])
+            resolved.append(computed if value == -1 else value)
+        return resolved[0], resolved[1]
 
     def format_vector(self, type: str, var_name: str, value: list[int]):
         self.lines_data.append(format_vector_definition(type, var_name, value, alignment=8))

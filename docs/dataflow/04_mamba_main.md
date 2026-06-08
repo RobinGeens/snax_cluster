@@ -22,7 +22,7 @@ The Mamba block runs as two SimbaCore launches:
 
 - **Phase 1**: a "side" path that produces `conv_out` and an IS-core output
   `xProj` (the `(dt, B, C)` projection).
-- **Phase 2**: the main path. Inside one Phase-2 launch, the OS-core, Switch-
+- **Phase 2**: the main path. Inside one P2 launch, the OS-core, Switch-
   core, SU-core, and IS-core all run concurrently with on-chip forwarding:
   OS-core out streams directly into the SU-core, and SU-core out streams
   directly into the IS-core. Neither hop round-trips through TCDM.

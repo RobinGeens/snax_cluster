@@ -78,9 +78,6 @@ int main(void) {
     p_after              = _ALIGN64(p_after + M3_length_bf16);
     uint16_t* ptr_bf16_b = (uint16_t*)p_after;
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
-
     uint32_t simbacore_cycles = 0, start_cycles = 0;
 
     if (snrt_global_core_idx() == 0) {
@@ -90,6 +87,7 @@ int main(void) {
             seqLen, dModel, M3_dPerB, M3_dPerB_tile, nb_tiles, M3_nBranches);
         printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
                (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+        init_cycle_counter();
         start_cycles = snrt_mcycle();
     }
 
@@ -286,6 +284,7 @@ int main(void) {
                         simbacore_cycles += read_simbacore_perf_counter();
                     }
                 }
+
                 snrt_cluster_hw_barrier();
             }
 

@@ -84,8 +84,21 @@ int main() {
     uint8_t* ptr_y         = _ALIGN64(ptr_z + M2_length_z_tile);
 #undef _ALIGN64
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    uint32_t start_cycles     = 0;
+    uint32_t simbacore_cycles = 0;
+
+    if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: suc-async (L=%d, dModel=%d, dInner=%d, nb_tiles=%d, nb_l_tiles=%d, nb_slots=%d, "
+            "dInner_tile=%u, L_tile=%u)\n\n",
+            seqLen, dModel, dInner, nb_tiles, nb_l_tiles, nb_slots, M2_dInner_tile, L_tile);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+        set_streamer_suc_async((uint32_t)ptr_dt_packed, (uint32_t)ptr_dt_w1, (uint32_t)ptr_dt_w2, (uint32_t)ptr_dt_bias,
+                               (uint32_t)ptr_A, (uint32_t)ptr_BC_ring, (uint32_t)ptr_D, (uint32_t)ptr_x,
+                               (uint32_t)ptr_z, (uint32_t)ptr_y);
+        set_simbacore_csr(M27_SUC_ONLY, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+    }
 
     // Preload the shared, L-only inputs once: packed dt (all L windows) + first nb_slots BC L-tiles.
     if (snrt_is_dm_core()) {
@@ -97,23 +110,6 @@ int main() {
                               M2_BC_window_bytes, M2_BC_window_bytes, M2_dtBC_window_src_stride,
                               M2_BC_windows_per_l_tile);
         snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
-    // One-time streamer + simbacore config. The per-dInner-tile buffers are single (fixed addresses,
-    // reloaded in place), so the bases never change -> set the streamer exactly once.
-    uint32_t start_cycles     = 0;
-    uint32_t simbacore_cycles = 0;
-    if (snrt_global_core_idx() == 0) {
-        printf(
-            "\nStarting program: suc-async (L=%d, dModel=%d, dInner=%d, nb_tiles=%d, nb_l_tiles=%d, nb_slots=%d, "
-            "dInner_tile=%u, L_tile=%u)\n\n",
-            seqLen, dModel, dInner, nb_tiles, nb_l_tiles, nb_slots, M2_dInner_tile, L_tile);
-        start_cycles = snrt_mcycle();
-        set_streamer_suc_async((uint32_t)ptr_dt_packed, (uint32_t)ptr_dt_w1, (uint32_t)ptr_dt_w2, (uint32_t)ptr_dt_bias,
-                               (uint32_t)ptr_A, (uint32_t)ptr_BC_ring, (uint32_t)ptr_D, (uint32_t)ptr_x,
-                               (uint32_t)ptr_z, (uint32_t)ptr_y);
-        set_simbacore_csr(M27_SUC_ONLY, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
     }
     snrt_cluster_hw_barrier();
 

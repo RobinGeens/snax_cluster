@@ -52,24 +52,7 @@ int test() {
     // Phase B: overlays Phase A region after barrier. Single-buffered.
     uint8_t* ptr_had_reord_b_ktile = ptr_work_base;
     uint8_t* ptr_partition2_out    = ptr_had_reord_b_ktile + align64(M6_length_hadamard_reordered_ktile);
-
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
-
-    // Preload always-live small inputs: weights + twiddles
-    if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_weight1, M6_dft_weight1, M6_length_weight1);
-        snrt_dma_start_1d(ptr_weight2, M6_dft_weight2, M6_length_weight2);
-        snrt_dma_start_1d(ptr_twiddles_tiled, M6_twiddles, M6_length_twiddles);
-        snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
-    uint32_t start_cycles            = 0;
-    uint32_t phaseA_end_cycles       = 0;
-    uint32_t simbacore_cycles_phaseA = 0;
-    uint32_t simbacore_cycles_phaseB = 0;
-    static uint32_t _dma_done = 0, _compute_done = 0;
+    uint32_t start_cycles          = 0;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nFFT tiled: L=%d D=%d L1=%d L2=%d nb_tiles=%d nb_tiles_B=%d\n", seqLen, dModel, L1, L2, nb_tiles,
@@ -78,8 +61,24 @@ int test() {
                (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         printf("Phase A tile: in=%d p1out=%d hadout=%d reord=%d\n", M6_length_in_tile, M6_length_partition1_out_tile,
                M6_length_hadamard_out_tile, M6_length_hadamard_reordered_tile);
+        init_cycle_counter();
         start_cycles = snrt_mcycle();
     }
+
+    // Preload always-live small inputs: weights + twiddles
+    if (snrt_is_dm_core()) {
+        snrt_dma_start_1d(ptr_weight1, M6_dft_weight1, M6_length_weight1);
+        snrt_dma_start_1d(ptr_weight2, M6_dft_weight2, M6_length_weight2);
+        snrt_dma_start_1d(ptr_twiddles_tiled, M6_twiddles, M6_length_twiddles);
+        snrt_dma_wait_all();
+    }
+
+    snrt_cluster_hw_barrier();
+
+    uint32_t phaseA_end_cycles       = 0;
+    uint32_t simbacore_cycles_phaseA = 0;
+    uint32_t simbacore_cycles_phaseB = 0;
+    static uint32_t _dma_done = 0, _compute_done = 0;
 
     // Zero both ping-pong buffers ONCE up front. Streamers leave the fixed padding cells
     // untouched (downstream reads them), but each tile's compute fully overwrites the data

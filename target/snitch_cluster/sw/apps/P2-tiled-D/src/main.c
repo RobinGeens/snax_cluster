@@ -80,25 +80,16 @@ int test_phase2_tiled() {
     };
 #undef _ALIGN64
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
-
-    // Preload non-tiled inputs from golden: osCore in, dt+BC, IS-core bias into the psum buffer.
-    if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_oscore_in, M2_oscore_in, M2_length_oscore_in);
-        snrt_dma_start_1d(ptr_dt_in, M2_dt_BC, M2_length_dt_BC);
-        snrt_dma_start_1d(ptr_iscore_out_P2, M2_iscore_bias, M2_length_iscore_out);
-        snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
+    const uint32_t K_i               = M2_dInner_tile / dInnerUnroll;
     uint32_t start_cycles            = 0;
     uint32_t simbacore_cycles_phase2 = 0;
-    const uint32_t K_i = M2_dInner_tile / dInnerUnroll;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: P2-tiled-D (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, x from golden, z/y via L3)\n\n",
                seqLen, dModel, nb_tiles, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+        init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2[0], (uint32_t)ptr_z_tile[0],
                             (uint32_t)ptr_dt_in, (uint32_t)ptr_dt_weight_1[0], (uint32_t)ptr_dt_weight_2[0],
@@ -106,6 +97,14 @@ int test_phase2_tiled() {
                             (uint32_t)ptr_D[0], (uint32_t)ptr_y_tile[0], (uint32_t)ptr_iscore_weight_P2[0],
                             (uint32_t)ptr_iscore_out_P2);
         set_simbacore_csr(M29_PHASE2_NO_REQUANT, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+    }
+
+    // Preload non-tiled inputs from golden: osCore in, dt+BC, IS-core bias into the psum buffer.
+    if (snrt_is_dm_core()) {
+        snrt_dma_start_1d(ptr_oscore_in, M2_oscore_in, M2_length_oscore_in);
+        snrt_dma_start_1d(ptr_dt_in, M2_dt_BC, M2_length_dt_BC);
+        snrt_dma_start_1d(ptr_iscore_out_P2, M2_iscore_bias, M2_length_iscore_out);
+        snrt_dma_wait_all();
     }
     snrt_cluster_hw_barrier();
 

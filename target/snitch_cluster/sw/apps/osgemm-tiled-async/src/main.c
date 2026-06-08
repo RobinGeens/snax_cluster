@@ -18,7 +18,21 @@ int test_osgemm_async() {
     uint8_t* ptr_b      = ptr_a + nb_slots * M3_length_a_l_tile;  // one B-tile (reloaded per dInner tile)
     uint8_t* ptr_d      = ptr_b + M3_length_b_tile;               // full D (osCore writes tile slices)
 
-    snrt_cluster_hw_barrier();
+    uint32_t start_cycles           = 0;
+    uint32_t simbacore_cycles_total = 0;
+
+    if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: OSGeMM async (seqLen=%d dModel=%d dInner=%d nb_tiles=%d nb_l_tiles=%d nb_slots=%d "
+            "L_tile=%d)\n\n",
+            dim0, dim1, dim2, nb_tiles, nb_l_tiles, nb_slots, dim0 / nb_l_tiles);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+        set_osgemm_streamer_csr((uint32_t)ptr_a, M3_R0_ss, M3_R0_tb, M3_R0_ts,   //
+                                (uint32_t)ptr_b, M3_R1_ss, M3_R1_tb, M3_R1_ts,   //
+                                (uint32_t)ptr_d, M3_W0_ss, M3_W0_tb, M3_W0_ts);  //
+        set_simbacore_csr(M3_OSGEMM, dim0, dim1, M3_dim2_tile, 1, 1);
+    }
 
     // Preload the first nb_slots A L-tiles into the ring (B is loaded per dInner tile below).
     if (snrt_is_dm_core()) {
@@ -26,19 +40,7 @@ int test_osgemm_async() {
             snrt_dma_start_1d(ptr_a + s * M3_length_a_l_tile, M3_A + s * M3_oscore_in_l_offset, M3_length_a_l_tile);
         snrt_dma_wait_all();
     }
-    snrt_cluster_hw_barrier();
 
-    // One-time streamer + simbacore config. R0 base = ring (fixed); R1/W0 bases are updated per tile.
-    if (snrt_global_core_idx() == 0) {
-        set_osgemm_streamer_csr((uint32_t)ptr_a, M3_R0_ss, M3_R0_tb, M3_R0_ts,   //
-                                (uint32_t)ptr_b, M3_R1_ss, M3_R1_tb, M3_R1_ts,   //
-                                (uint32_t)ptr_d, M3_W0_ss, M3_W0_tb, M3_W0_ts);  //
-        set_simbacore_csr(M3_OSGEMM, dim0, dim1, M3_dim2_tile, 1, 1);
-        printf(
-            "\nStarting program: OSGeMM async (seqLen=%d dModel=%d dInner=%d nb_tiles=%d nb_l_tiles=%d nb_slots=%d "
-            "L_tile=%d)\n\n",
-            dim0, dim1, dim2, nb_tiles, nb_l_tiles, nb_slots, dim0 / nb_l_tiles);
-    }
     snrt_cluster_hw_barrier();
 
     const uint32_t N_visits   = nb_l_tiles;  // one full A pass per dInner-tile invocation
@@ -77,6 +79,7 @@ int test_osgemm_async() {
 
         if (snrt_global_core_idx() == 0) {
             wait_simbacore_and_streamer();
+            simbacore_cycles_total += read_simbacore_perf_counter();
             asm volatile("fence" ::: "memory");
         }
         snrt_cluster_hw_barrier();
@@ -84,6 +87,10 @@ int test_osgemm_async() {
 
     // Verify the full osCore output D against golden (FP8, +-1 LSB tolerance; signed-zero 0==128).
     if (snrt_global_core_idx() == 0) {
+        uint32_t end_cycles = snrt_mcycle();
+        printf("[%u cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
+        printf("[%u cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
+
         const int16_t TOL   = 1;
         uint32_t total_fail = 0;
         for (uint32_t idx = 0; idx < M3_length_d; idx++) {

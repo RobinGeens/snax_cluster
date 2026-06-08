@@ -90,28 +90,25 @@ int test_suc_tiled() {
     };
 #undef _ALIGN64
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
-
-    // Preload FULL dt+BC from golden.
-    if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_dt_in, M2_dt_BC, M2_length_dt_BC);
-        snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
+    const uint32_t K_i            = M2_dInner_tile / dInnerUnroll;
     uint32_t start_cycles         = 0;
     uint32_t simbacore_cycles_suc = 0;
-    const uint32_t K_i            = M2_dInner_tile / dInnerUnroll;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: SUC-tiled (L=%d, dModel=%d, dInner=%d, nb_tiles=%d, K_i=%u, z from golden)\n\n",
                seqLen, dModel, dInner, nb_tiles, K_i);
+        init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_streamer_suc_tile((uint32_t)ptr_dt_in, (uint32_t)ptr_dt_weight_1[0], (uint32_t)ptr_dt_bias[0],
                               (uint32_t)ptr_dt_weight_2[0], (uint32_t)ptr_A[0], (uint32_t)ptr_BC, (uint32_t)ptr_D[0],
                               (uint32_t)ptr_x_tile[0], (uint32_t)ptr_z_tile[0], (uint32_t)ptr_y_tile[0]);
         set_simbacore_csr(M27_SUC_ONLY, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+    }
+
+    // Preload FULL dt+BC from golden.
+    if (snrt_is_dm_core()) {
+        snrt_dma_start_1d(ptr_dt_in, M2_dt_BC, M2_length_dt_BC);
+        snrt_dma_wait_all();
     }
     snrt_cluster_hw_barrier();
 

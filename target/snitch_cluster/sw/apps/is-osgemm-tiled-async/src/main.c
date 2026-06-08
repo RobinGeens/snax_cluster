@@ -31,25 +31,16 @@ int test_is_osgemm_tiled_async() {
     uint8_t* ptr_b_is = ptr_a_is + M4_length_a_ktile;              // isCore B (one K-step)
     uint8_t* ptr_ring = ptr_b_is + M4_length_b_ktile;              // isCore psum ring base (slot 0)
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    uint32_t start_cycles           = 0;
+    uint32_t simbacore_cycles_total = 0;
 
-    // Preload both rings: osCore A first nb_slots L-tiles; isCore psum bias C -> L3 then first nb_slots slots.
-    if (snrt_is_dm_core()) {
-        for (uint32_t s = 0; s < nb_slots; s++)
-            snrt_dma_start_1d(ptr_a_os + s * M3_length_a_l_tile, M3_A + s * M3_oscore_in_l_offset, M3_length_a_l_tile);
-        snrt_dma_start_1d(ptr_psum_l3, M4_C, M4_length_cd);
-        snrt_dma_wait_all();
-        for (uint32_t s = 0; s < nb_slots; s++)
-            snrt_dma_start_1d(ptr_ring + s * M4_length_psum_l_tile, ptr_psum_l3 + s * M4_length_psum_l_tile,
-                              M4_length_psum_l_tile);
-        snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
-    // One-time streamer + simbacore config. Fixed bases: R0 = A ring, R13/W3 = psum ring (the wraps walk
-    // the slots). Per-invocation bases (rewritten in the loop): R1 (B_os), W0 (D_os slice), R11/R12 (A_is/B_is).
     if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: IS+OSGeMM tiled async (seqLen=%d dModel=%d dInner=%d nb_l_tiles=%d nb_slots=%d "
+            "nb_inv=%d L_tile=%d)\n\n",
+            seqLen, dModel, dInner, nb_l_tiles, nb_slots, M4_nb_k_tiles, M4_L_tile);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
         set_streamer_csr((uint32_t)ptr_a_os, M3_R0_ss, M3_R0_tb, M3_R0_ts, M3_R0_en,      // R0:  osCore A ring
                          (uint32_t)ptr_b_os, M3_R1_ss, M3_R1_tb, M3_R1_ts, M3_R1_en,      // R1:  osCore B
                          (uint32_t)0, 0, 0, 0, 0,                                         // R2:  disabled
@@ -69,20 +60,25 @@ int test_is_osgemm_tiled_async() {
                          (uint32_t)0, 0, 0, 0, 0,                                         // W2:  disabled
                          (uint32_t)ptr_ring, M4_W3_ss, M4_W3_tb, M4_W3_ts, M4_W3_en);     // W3:  psum ring write
         set_simbacore_csr(IS_OSGEMM_NO_REQUANT, seqLen, dModel, dInnerUnroll, 1, dModel);
-        printf(
-            "\nStarting program: IS+OSGeMM tiled async (seqLen=%d dModel=%d dInner=%d nb_l_tiles=%d nb_slots=%d "
-            "nb_inv=%d L_tile=%d)\n\n",
-            seqLen, dModel, dInner, nb_l_tiles, nb_slots, M4_nb_k_tiles, M4_L_tile);
     }
+
+    // Preload both rings: osCore A first nb_slots L-tiles; isCore psum bias C -> L3 then first nb_slots slots.
+    if (snrt_is_dm_core()) {
+        for (uint32_t s = 0; s < nb_slots; s++)
+            snrt_dma_start_1d(ptr_a_os + s * M3_length_a_l_tile, M3_A + s * M3_oscore_in_l_offset, M3_length_a_l_tile);
+        snrt_dma_start_1d(ptr_psum_l3, M4_C, M4_length_cd);
+        snrt_dma_wait_all();
+        for (uint32_t s = 0; s < nb_slots; s++)
+            snrt_dma_start_1d(ptr_ring + s * M4_length_psum_l_tile, ptr_psum_l3 + s * M4_length_psum_l_tile,
+                              M4_length_psum_l_tile);
+        snrt_dma_wait_all();
+    }
+
     snrt_cluster_hw_barrier();
 
     const uint32_t nb_inv  = M4_nb_k_tiles;  // = dInner / dInnerUnroll (same for both cores)
     const uint32_t os_step = M3_oscore_in_l_tile_gauge_step;
     const uint32_t is_step = M4_iscore_out_l_tile_gauge_step;
-
-    uint32_t start_cycles           = 0;
-    uint32_t simbacore_cycles_total = 0;
-    if (snrt_global_core_idx() == 0) start_cycles = snrt_mcycle();
 
     // SW-outer loop = the isCore K reduction; each invocation is also one osCore dInner N-slice.
     for (uint32_t inv = 0; inv < nb_inv; inv++) {

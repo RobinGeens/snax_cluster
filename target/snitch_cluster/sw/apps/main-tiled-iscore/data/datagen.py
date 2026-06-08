@@ -109,14 +109,11 @@ class DataGenerator(DataGeneratorBase):
         self.nb_tiles = self.kwargs["nb_tiles"]
         self.dInner_tile = self.dInner // self.nb_tiles
 
-        # ---- Phase-2 iscore_out_P2 async ring (this app). The psum lives FULL in L3; only an
-        # nb_slots-slot ring (L_tile x dModel each) is resident in TCDM, spilled+reloaded paced by
-        # ISCORE_TILE_CNT. Requires N_kern=1 (one K-step per kernel) so the isCore sweeps the
-        # L-tiles once in M-order -- see check_tiling_constraints().
+        # ---- iscore_out_P2 async ring
         self.nb_l_tiles = self.kwargs["nb_l_tiles"]
         self.nb_slots = self.kwargs["nb_slots"]
 
-        # ---- Phase-1 iscore_out_P1 async ring (this app, P1 testbed). iscore_out_P1 is bank-transposed:
+        # ---- Phase-1 iscore_out_P1 async ring. bank-transposed (TODO is this still correct?)
         # n_psum_matrices matrices of stride bc_matrix_stride (BF16). One L-tile = matrices_per_slot
         # consecutive matrices = a contiguous slot. The ring R13/W3 keep the (cycles,matrices,pad) inner
         # structure, so the wrap is 4-dim: [psum_cycles_per_matrix, matrices_per_slot, nb_slots, nb_l/nb_slots].
@@ -565,6 +562,7 @@ class DataGenerator(DataGeneratorBase):
         # processes K_i K-steps (dInner_tile bytes of K), so compute the safe delay
         # against that per-DMA-tile workload.
         suc_start_cnt, iscore_start_cnt = self.get_safe_to_start_delay(self.dInner_tile)
+        suc_start_cnt, iscore_start_cnt = self.resolve_safe_to_start(suc_start_cnt, iscore_start_cnt)
 
         tile_scalars = {
             "dInner_tile": self.dInner_tile,

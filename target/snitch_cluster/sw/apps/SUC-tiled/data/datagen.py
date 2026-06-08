@@ -5,7 +5,7 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# SUC-tiled datagen: reuses main-tiled's Phase-2 generation (the M2_* tiled constants). The app
+# SUC-tiled datagen: reuses main-tiled's P2 generation (the M2_* tiled constants). The app
 # only uses the SU-core subset (dt/BC, A, D, x, z, y) plus golden z (= M2_oscore_expected) and
 # golden y (= M2_suc_expected); the extra osCore/IS-core M2_* constants are harmless.
 

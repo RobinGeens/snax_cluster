@@ -5,5 +5,7 @@
     "nb_tiles": 16,
     "bc_pad_banks": 4,
     "nb_l_tiles": 8,
-    "nb_slots": 2
+    "nb_slots": 2,
+    "safe_to_start_r10": -1,
+    "safe_to_start_r11": -1,
 }

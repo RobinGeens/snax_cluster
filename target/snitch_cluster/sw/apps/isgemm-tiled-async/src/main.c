@@ -25,8 +25,22 @@ int test_isgemm_tiled_async() {
     uint8_t* ptr_b[2] = {ptr_a[1] + M4_length_a_ktile, ptr_a[1] + M4_length_a_ktile + M4_length_b_ktile};
     uint8_t* ptr_ring = ptr_b[1] + M4_length_b_ktile;  // slot s = ptr_ring + s * M4_length_psum_l_tile
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    uint32_t start_cycles           = 0;
+    uint32_t simbacore_cycles_total = 0;
+    const uint32_t gauge_step       = M4_iscore_out_l_tile_gauge_step;
+
+    if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: ISGeMM tiled async (seqLen=%d dInner=%d dModel=%d nb_l_tiles=%d nb_slots=%d "
+            "nb_k_tiles=%d L_tile=%d)\n\n",
+            dim0, dim1, dim2, nb_l_tiles, nb_slots, M4_nb_k_tiles, M4_L_tile);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+        set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts,  // A
+                                (uint32_t)ptr_b[0], M4_R12_ss, M4_R12_tb, M4_R12_ts,  // B
+                                (uint32_t)ptr_ring, M4_W3_ss, M4_W3_tb, M4_W3_ts);    // psum ring (R13 + W3)
+        set_simbacore_csr(M5_ISGEMM_NO_REQUANT, dim0, 1, dInnerUnroll, 1, dim2);
+    }
 
     // Init the full psum in L3 with the bias C, then preload the first nb_slots ring slots from it.
     if (snrt_is_dm_core()) {
@@ -37,27 +51,8 @@ int test_isgemm_tiled_async() {
                               M4_length_psum_l_tile);
         snrt_dma_wait_all();
     }
+
     snrt_cluster_hw_barrier();
-
-    // One-time streamer + simbacore config. R13/W3 base = ring base (fixed; the wrap walks the
-    // slots). R11 (A) / R12 (B) base ptrs are rewritten per K-step.
-    if (snrt_global_core_idx() == 0) {
-        set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts,  // A
-                                (uint32_t)ptr_b[0], M4_R12_ss, M4_R12_tb, M4_R12_ts,  // B
-                                (uint32_t)ptr_ring, M4_W3_ss, M4_W3_tb, M4_W3_ts);    // psum ring (R13 + W3)
-        set_simbacore_csr(M5_ISGEMM_NO_REQUANT, dim0, 1, dInnerUnroll, 1, dim2);
-        printf(
-            "\nStarting program: ISGeMM tiled async (seqLen=%d dInner=%d dModel=%d nb_l_tiles=%d nb_slots=%d "
-            "nb_k_tiles=%d L_tile=%d)\n\n",
-            dim0, dim1, dim2, nb_l_tiles, nb_slots, M4_nb_k_tiles, M4_L_tile);
-    }
-    snrt_cluster_hw_barrier();
-
-    const uint32_t gauge_step = M4_iscore_out_l_tile_gauge_step;
-
-    uint32_t start_cycles           = 0;
-    uint32_t simbacore_cycles_total = 0;
-    if (snrt_global_core_idx() == 0) start_cycles = snrt_mcycle();
 
     // K reduction = SW-outer loop over the nb_k_tiles single-K-step invocations.
     for (uint32_t k = 0; k < M4_nb_k_tiles; k++) {

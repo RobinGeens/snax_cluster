@@ -187,8 +187,29 @@ int test_phase1_and_2() {
     };
 #undef _ALIGN64
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    // K-steps per DMA tile (P1, P2 share). N_visits = K_i * nb_l_tiles and gauge_step are
+    // recomputed inside oscore_in_refill_loop from the same globals.
+    const uint32_t K_i = M1_dInner_tile / dInnerUnroll;
+
+    uint32_t start_cycles            = 0;
+    uint32_t simbacore_cycles_phase1 = 0;
+    uint32_t simbacore_cycles_phase2 = 0;
+
+    if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: Mamba main tiled oscore (L=%d, dModel=%d, nb_tiles=%d, nb_l_tiles=%d, L_tile=%u, "
+            "K_i=%u, oscore_in L-tiled async)\n\n",
+            seqLen, dModel, nb_tiles, nb_l_tiles, L_tile, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+        set_streamer_phase1_lTile((uint32_t)ptr_oscore_in_base, (uint32_t)ptr_oscore_weight_P1[0],
+                                  (uint32_t)ptr_conv_weight[0], (uint32_t)ptr_conv_bias[0],
+                                  (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
+                                  (uint32_t)ptr_conv_out_tile[0]);
+        set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
+    }
 
     if (snrt_is_dm_core()) {
         // Preload the first nb_slots L-tiles into the nb_slots ring slots
@@ -202,34 +223,9 @@ int test_phase1_and_2() {
 
     snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles            = 0;
-    uint32_t simbacore_cycles_phase1 = 0;
-    uint32_t simbacore_cycles_phase2 = 0;
-
-    // K-steps per DMA tile (P1, P2 share). N_visits = K_i * nb_l_tiles and gauge_step are
-    // recomputed inside oscore_in_refill_loop from the same globals.
-    const uint32_t K_i = M1_dInner_tile / dInnerUnroll;
-
     /////////////////////////////////
     //////// Phase 1 ////////////////
     /////////////////////////////////
-
-    if (snrt_global_core_idx() == 0) {
-        printf(
-            "\nStarting program: Mamba main tiled oscore (L=%d, dModel=%d, nb_tiles=%d, nb_l_tiles=%d, L_tile=%u, "
-            "K_i=%u, oscore_in L-tiled async)\n\n",
-            seqLen, dModel, nb_tiles, nb_l_tiles, L_tile, K_i);
-        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
-               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
-        start_cycles = snrt_mcycle();
-        set_streamer_phase1_lTile((uint32_t)ptr_oscore_in_base, (uint32_t)ptr_oscore_weight_P1[0],
-                                  (uint32_t)ptr_conv_weight[0], (uint32_t)ptr_conv_bias[0],
-                                  (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
-                                  (uint32_t)ptr_conv_out_tile[0]);
-        set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
-    }
-
-    snrt_cluster_hw_barrier();
 
     // dInner loop
     for (uint32_t i = 0; i < nb_tiles + 2; i++) {

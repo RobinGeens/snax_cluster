@@ -1,4 +1,4 @@
 {
-  seqLen: 3136
-  dModel: 96
+  seqLen: 192
+  dModel: 384
 }

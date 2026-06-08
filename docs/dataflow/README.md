@@ -133,7 +133,7 @@ the moving base pointers change per tile.
 
 **On-chip forwarding.** In Phase 2 the OS-core writes its output and the
 SU-core reads it on the next cycle via an on-chip wire, bypassing TCDM. The
-same pattern carries SU-core → IS-core. This is what lets one Phase-2 launch
+same pattern carries SU-core → IS-core. This is what lets one P2 launch
 run the OS-core, Switch-core, SU-core, and IS-core concurrently.
 
 **Buffer reuse across phases.** In Mamba main, Phase 1's IS-core output

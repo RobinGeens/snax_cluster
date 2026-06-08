@@ -1,8 +1,10 @@
 {
     // Max number of vsim runs allowed to execute at the same time
     max_parallel: 5
-    // Per-run wall-clock cap in seconds. 0 = no timeout.
+    // Per-run wall-clock cap in seconds. 0 = no timeout
     timeout: 10800
+    // Per-build  wall-clock cap in seconds. 0 = no timeout
+    build_timeout: 3600
 
     runs: [
         {
@@ -184,7 +186,7 @@
                     seqLen: 768
                     dModel: 192
                     dtRank: 24
-                    nb_tiles: 12
+                    nb_tiles: 16
                     nb_l_tiles: 4
                     nb_slots: 2
 

@@ -501,6 +501,7 @@ class DataGenerator(DataGeneratorBase):
         # processes K_i K-steps (dInner_tile bytes of K), so compute the safe delay
         # against that per-DMA-tile workload.
         suc_start_cnt, iscore_start_cnt = self.get_safe_to_start_delay(self.dInner_tile)
+        suc_start_cnt, iscore_start_cnt = self.resolve_safe_to_start(suc_start_cnt, iscore_start_cnt)
 
         tile_scalars = {
             "dInner_tile": self.dInner_tile,

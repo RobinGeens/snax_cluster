@@ -6,7 +6,7 @@
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
 # suc-async = SUC-only kernel, dInner-tiled (like SUC-tiled) AND with the BC input async L-tiled into
-# a TCDM ring (like the original suc-async). Reuses main-tiled's Phase-2 tiled constants (per-dInner
+# a TCDM ring (like the original suc-async). Reuses main-tiled's P2 tiled constants (per-dInner
 # M2_*_tile sizes + the FULL combined dt_BC buffer) and additionally emits the packed-dt / BC-ring
 # streamer bounds, sized for one dInner tile. Ring mechanics: docs/dataflow/09_async_tiling.md.
 

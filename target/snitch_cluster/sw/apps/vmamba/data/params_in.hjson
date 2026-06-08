@@ -2,4 +2,6 @@
     "H": 4,
     "W": 4,
     "dModel": 48,
+    "safe_to_start_r10": -1,
+    "safe_to_start_r11": -1,
 }

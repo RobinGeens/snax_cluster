@@ -39,8 +39,17 @@ int test() {
     uint8_t* ptr_slotA     = ptr_twiddles2 + align64(M6_length_twiddles2);
     uint8_t* ptr_slotB     = ptr_slotA + M6_slot_size;
 
-    if (snrt_global_core_idx() == 0) init_cycle_counter();
-    snrt_cluster_hw_barrier();
+    uint32_t start_cycles     = 0;
+    uint32_t simbacore_cycles = 0;
+
+    if (snrt_global_core_idx() == 0) {
+        printf(
+            "\nStarting program: tiled 3-way FFT (outer dModel-tile, nb_d=%d, seqLen=%d, dModel=%d, "
+            "L1=%d, L2=%d, L3=%d)\n\n",
+            M6_nb_d, seqLen, dModel, L1, L2, L3);
+        init_cycle_counter();
+        start_cycles = snrt_mcycle();
+    }
 
     // Weights and twiddles depend only on (l1, l2, l3): loaded once, broadcast
     // across all dModel slices.
@@ -52,16 +61,8 @@ int test() {
         snrt_dma_start_1d(ptr_twiddles2, M6_twiddles2, M6_length_twiddles2);
         snrt_dma_wait_all();
     }
-    snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles     = 0;
-    uint32_t simbacore_cycles = 0;
-    if (snrt_global_core_idx() == 0) {
-        printf("\nStarting program: tiled 3-way FFT (outer dModel-tile, nb_d=%d, seqLen=%d, dModel=%d, "
-               "L1=%d, L2=%d, L3=%d)\n\n",
-               M6_nb_d, seqLen, dModel, L1, L2, L3);
-        start_cycles = snrt_mcycle();
-    }
+    snrt_cluster_hw_barrier();
 
     for (uint32_t s = 0; s < M6_nb_d; s++) {
         // Load this slice's input → slotA; zero slotB (partition1 psum target).
@@ -74,26 +75,27 @@ int test() {
 
         if (snrt_global_core_idx() == 0) {
             // Step 1: partition 1 (slotA → slotB).
-            set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts,
-                                    (uint32_t)ptr_slotA, M6_R12_1_ss, M6_R12_1_tb, M6_R12_1_ts,
-                                    (uint32_t)ptr_slotB, M6_W3_1_ss, M6_W3_1_tb, M6_W3_1_ts);
+            // TODO we can greatly optimize this by only changing the necessary CSRs, rather than setting all of them
+            set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts, (uint32_t)ptr_slotA,
+                                    M6_R12_1_ss, M6_R12_1_tb, M6_R12_1_ts, (uint32_t)ptr_slotB, M6_W3_1_ss, M6_W3_1_tb,
+                                    M6_W3_1_ts);
             set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, M6_dModel_slice * L2 * L3);
             start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
             wait_simbacore_and_streamer();
             simbacore_cycles += read_simbacore_perf_counter();
 
             // Step 2: hadamard 1 CMUL (slotB → slotA).
-            set_simd_streamer_csr((uint32_t)ptr_slotB, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts,
-                                  (uint32_t)ptr_twiddles1, M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts,
-                                  (uint32_t)ptr_slotA, M6_W3_2_ss, M6_W3_2_tb, M6_W3_2_ts);
+            set_simd_streamer_csr((uint32_t)ptr_slotB, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts, (uint32_t)ptr_twiddles1,
+                                  M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts, (uint32_t)ptr_slotA, M6_W3_2_ss, M6_W3_2_tb,
+                                  M6_W3_2_ts);
             set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
             start_simbacore_and_streamers(0, 0, 0, 0);
             wait_simbacore_and_streamer();
             simbacore_cycles += read_simbacore_perf_counter();
 
             // Step 2B: reorder 1 NOOP (slotA → slotB).
-            set_simd_streamer_no_b((uint32_t)ptr_slotA, M6_R7_2B_ss, M6_R7_2B_tb, M6_R7_2B_ts,
-                                   (uint32_t)ptr_slotB, M6_W3_2B_ss, M6_W3_2B_tb, M6_W3_2B_ts);
+            set_simd_streamer_no_b((uint32_t)ptr_slotA, M6_R7_2B_ss, M6_R7_2B_tb, M6_R7_2B_ts, (uint32_t)ptr_slotB,
+                                   M6_W3_2B_ss, M6_W3_2B_tb, M6_W3_2B_ts);
             set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
             start_simbacore_and_streamers(0, 0, 0, 0);
             wait_simbacore_and_streamer();
@@ -110,26 +112,26 @@ int test() {
 
         if (snrt_global_core_idx() == 0) {
             // Step 3: partition 2 (slotB → slotA).
-            set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,
-                                    (uint32_t)ptr_slotB, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,
-                                    (uint32_t)ptr_slotA, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);
+            set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts, (uint32_t)ptr_slotB,
+                                    M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts, (uint32_t)ptr_slotA, M6_W3_3_ss, M6_W3_3_tb,
+                                    M6_W3_3_ts);
             set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L2, 1, 2 * L2_padded, 1, M6_dModel_slice * L1 * L3);
             start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
             wait_simbacore_and_streamer();
             simbacore_cycles += read_simbacore_perf_counter();
 
             // Step 4: hadamard 2 CMUL (slotA → slotB).
-            set_simd_streamer_csr((uint32_t)ptr_slotA, M6_R7_4_ss, M6_R7_4_tb, M6_R7_4_ts,
-                                  (uint32_t)ptr_twiddles2, M6_R13_4_ss, M6_R13_4_tb, M6_R13_4_ts,
-                                  (uint32_t)ptr_slotB, M6_W3_4_ss, M6_W3_4_tb, M6_W3_4_ts);
+            set_simd_streamer_csr((uint32_t)ptr_slotA, M6_R7_4_ss, M6_R7_4_tb, M6_R7_4_ts, (uint32_t)ptr_twiddles2,
+                                  M6_R13_4_ss, M6_R13_4_tb, M6_R13_4_ts, (uint32_t)ptr_slotB, M6_W3_4_ss, M6_W3_4_tb,
+                                  M6_W3_4_ts);
             set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
             start_simbacore_and_streamers(0, 0, 0, 0);
             wait_simbacore_and_streamer();
             simbacore_cycles += read_simbacore_perf_counter();
 
             // Step 4B: reorder 2 NOOP (slotB → slotA).
-            set_simd_streamer_no_b((uint32_t)ptr_slotB, M6_R7_4B_ss, M6_R7_4B_tb, M6_R7_4B_ts,
-                                   (uint32_t)ptr_slotA, M6_W3_4B_ss, M6_W3_4B_tb, M6_W3_4B_ts);
+            set_simd_streamer_no_b((uint32_t)ptr_slotB, M6_R7_4B_ss, M6_R7_4B_tb, M6_R7_4B_ts, (uint32_t)ptr_slotA,
+                                   M6_W3_4B_ss, M6_W3_4B_tb, M6_W3_4B_ts);
             set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
             start_simbacore_and_streamers(0, 0, 0, 0);
             wait_simbacore_and_streamer();
@@ -146,9 +148,9 @@ int test() {
 
         if (snrt_global_core_idx() == 0) {
             // Step 5: partition 3 (slotA → slotB).
-            set_isgemm_streamer_csr((uint32_t)ptr_weight3, M6_R11_5_ss, M6_R11_5_tb, M6_R11_5_ts,
-                                    (uint32_t)ptr_slotA, M6_R12_5_ss, M6_R12_5_tb, M6_R12_5_ts,
-                                    (uint32_t)ptr_slotB, M6_W3_5_ss, M6_W3_5_tb, M6_W3_5_ts);
+            set_isgemm_streamer_csr((uint32_t)ptr_weight3, M6_R11_5_ss, M6_R11_5_tb, M6_R11_5_ts, (uint32_t)ptr_slotA,
+                                    M6_R12_5_ss, M6_R12_5_tb, M6_R12_5_ts, (uint32_t)ptr_slotB, M6_W3_5_ss, M6_W3_5_tb,
+                                    M6_W3_5_ts);
             set_simbacore_csr(M6_ISGEMM_SQ, 2 * L3, 1, 2 * L3_padded, 1, M6_dModel_slice * L1 * L2);
             start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
             wait_simbacore_and_streamer();
@@ -180,11 +182,11 @@ int test() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_sample(ptr_output_l3, M6_partition3_expected, M6_test_samples_expected,
-                                   nb_test_samples, "partition3_out (L3)");
+        err += check_result_sample(ptr_output_l3, M6_partition3_expected, M6_test_samples_expected, nb_test_samples,
+                                   "partition3_out (L3)");
 
-        printf("Test FFT 3-way tiled (outer dModel-tile): (%d x %d), L1=%d L2=%d L3=%d, nb_d=%d\n",
-               seqLen, dModel, L1, L2, L3, M6_nb_d);
+        printf("Test FFT 3-way tiled (outer dModel-tile): (%d x %d), L1=%d L2=%d L3=%d, nb_d=%d\n", seqLen, dModel, L1,
+               L2, L3, M6_nb_d);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, nb_test_samples);
     }
 

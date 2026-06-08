@@ -5,4 +5,6 @@
     nb_tiles: 8
     nb_l_tiles: 24
     nb_slots: 2
+    safe_to_start_r10: -1
+    safe_to_start_r11: -1
 }

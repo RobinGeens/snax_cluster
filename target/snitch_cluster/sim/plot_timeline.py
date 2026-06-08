@@ -61,18 +61,22 @@ def run_memsim(elf, csv_path):
 
 
 def load_segments(csv_path):
-    # per engine: list of (start, end, ideal); plus TCDM traffic: list of (start, end, words)
+    # per engine: list of (start, end, ideal); plus TCDM traffic: list of (start, end, words);
+    # plus optimal safe-to-start delays (S2S_R10/S2S_R11 metadata rows: start=optimal, end=total).
     segs = {name: [] for name, _ in ENGINES}
     tcdm = []
+    s2s = {}
     with open(csv_path) as f:
         for row in csv.DictReader(f):
             eng = row["engine"]
             rec = (int(row["start"]), int(row["end"]), int(row["ideal"]))
             if eng == "TCDM":
                 tcdm.append(rec)
+            elif eng in ("S2S_R10", "S2S_R11"):
+                s2s[eng] = (int(row["start"]), int(row["end"]))  # (optimal, total)
             elif eng in segs:
                 segs[eng].append(rec)
-    return segs, tcdm
+    return segs, tcdm, s2s
 
 
 def bandwidth_curve(tcdm_segs, peak):
@@ -106,7 +110,7 @@ def summarize(intervals):
     """
     if not intervals:
         return [], 0, 0
-    active = sum(e - s for s, e, _ in intervals)   # blocks per engine are disjoint in time
+    active = sum(e - s for s, e, _ in intervals)  # blocks per engine are disjoint in time
     ideal = sum(i for _, _, i in intervals)
     bars = [list(iv[:2]) for iv in sorted(intervals)]
     out = [bars[0]]
@@ -139,7 +143,7 @@ def main():
     else:
         ap.error("provide an .elf or --csv")
 
-    segs, tcdm = load_segments(csv_path)
+    segs, tcdm, s2s = load_segments(csv_path)
     summ = {name: summarize(segs[name]) for name, _ in ENGINES}
 
     starts = [s for name, _ in ENGINES for s, _, _ in segs[name]] + [s for s, _, _ in tcdm]
@@ -157,41 +161,74 @@ def main():
     for i, (name, color) in enumerate(ENGINES):
         y = len(ENGINES) - 1 - i  # OSCORE on top
         bars, active, ideal = summ[name]
-        ax.broken_barh([(s, e - s) for s, e in bars], (y - 0.4, 0.8),
-                       facecolors=color, edgecolor="none")
+        ax.broken_barh([(s, e - s) for s, e in bars], (y - 0.4, 0.8), facecolors=color, edgecolor="none")
         if active:
             util = 100.0 * ideal / active
-            ax.text(t1 + 0.01 * span, y, f"util {util:5.1f}%  (active {active} cc)",
-                    va="center", ha="left", fontsize=9, family="monospace")
+            ax.text(
+                t1 + 0.01 * span,
+                y,
+                f"util {util:5.1f}%  (active {active} cc)",
+                va="center",
+                ha="left",
+                fontsize=9,
+                family="monospace",
+            )
         else:
-            ax.text(t1 + 0.01 * span, y, "    —   (inactive)",
-                    va="center", ha="left", fontsize=9, family="monospace", color="0.5")
+            ax.text(
+                t1 + 0.01 * span,
+                y,
+                "    —   (inactive)",
+                va="center",
+                ha="left",
+                fontsize=9,
+                family="monospace",
+                color="0.5",
+            )
         yticks.append(y)
         ylabels.append(name)
 
     # TCDM bandwidth line.
     xs, ys, bw_avg = bandwidth_curve(tcdm, TCDM_PEAK_WORDS_PER_CYC)
-    for frac in (0.0, 0.5, 1.0):                       # 0/50/100% reference lines + ticks
+    for frac in (0.0, 0.5, 1.0):  # 0/50/100% reference lines + ticks
         yref = BW_BASE + frac * BW_H
         ax.plot([t0, t1], [yref, yref], color="0.8", lw=0.6, zorder=1)
-        ax.text(t0 - 0.008 * span, yref, f"{int(frac * 100)}%", va="center", ha="right",
-                fontsize=7, color="0.55", zorder=4)
+        ax.text(
+            t0 - 0.008 * span, yref, f"{int(frac * 100)}%", va="center", ha="right", fontsize=7, color="0.55", zorder=4
+        )
     if xs:
         yline = [BW_BASE + min(p, 100.0) / 100.0 * BW_H for p in ys]
         ax.plot(xs, yline, color="#d62728", lw=1.1, zorder=3, solid_joinstyle="miter")
-    ax.text(t1 + 0.01 * span, BW_BASE + 0.5 * BW_H, f"avg {bw_avg:5.1f}%",
-            va="center", ha="left", fontsize=9, family="monospace", color="#d62728")
+    ax.text(
+        t1 + 0.01 * span,
+        BW_BASE + 0.5 * BW_H,
+        f"avg {bw_avg:5.1f}%",
+        va="center",
+        ha="left",
+        fontsize=9,
+        family="monospace",
+        color="#d62728",
+    )
     yticks.append(BW_BASE + 0.5 * BW_H)
     ylabels.append("TCDM BW")
 
     ax.set_yticks(yticks)
     ax.set_yticklabels(ylabels)
     ax.set_ylim(BW_BASE - 0.25, len(ENGINES) - 0.3)
-    ax.set_xlim(t0 - 0.05 * span, t1 + 0.30 * span)   # left margin for the TCDM BW % ticks
+    ax.set_xlim(t0 - 0.05 * span, t1 + 0.30 * span)  # left margin for the TCDM BW % ticks
     ax.set_xlabel("cycle (cc)")
-    ax.set_title(f"memsim engine activity timeline — {label}\n"
-                 f"total runtime {span} cc   (engine util = ideal compute / active cycles; "
-                 f"TCDM BW = words/cyc / 32 banks)", fontsize=10)
+    title = (
+        f"memsim engine activity timeline — {label}\n"
+        f"total runtime {span} cc   (engine util = ideal compute / active cycles; "
+        f"TCDM BW = words/cyc / 32 banks)"
+    )
+    if s2s:
+        title += "\noptimal safe-to-start: " + "   ".join(
+            f"{gate} = {opt}/{tot}"
+            for key, gate in (("S2S_R10", "R10 (z, osCore→SUC)"), ("S2S_R11", "R11 (y, SUC→isCore)"))
+            if key in s2s
+            for opt, tot in (s2s[key],)
+        )
+    ax.set_title(title, fontsize=10)
     ax.grid(axis="x", linestyle=":", alpha=0.4)
     fig.tight_layout()
     fig.savefig(out, dpi=130)
@@ -199,11 +236,14 @@ def main():
     for name, _ in ENGINES:
         _, active, ideal = summ[name]
         if active:
-            print(f"  {name:11s} util {100.0 * ideal / active:5.1f}%  "
-                  f"(active {active} cc, ideal {ideal} cc)")
+            print(f"  {name:11s} util {100.0 * ideal / active:5.1f}%  " f"(active {active} cc, ideal {ideal} cc)")
         else:
             print(f"  {name:11s}   —   (inactive)")
     print(f"  {'TCDM BW':11s} avg  {bw_avg:5.1f}%  of {TCDM_PEAK_WORDS_PER_CYC} words/cyc peak")
+    for key, gate in (("S2S_R10", "R10 (z)"), ("S2S_R11", "R11 (y)")):
+        if key in s2s:
+            opt, tot = s2s[key]
+            print(f"  optimal S2S {gate:8s} {opt}/{tot}")
 
 
 if __name__ == "__main__":

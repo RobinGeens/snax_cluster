@@ -1,8 +1,10 @@
 {
-  seqLen: 3136
-  dModel: 96
-  dtRank: 24
-  nb_tiles: 8
-  nb_l_tiles: 28
-  nb_slots: 4
+    seqLen: 3136
+    dModel: 96
+    dtRank: 24
+    nb_tiles: 8
+    nb_l_tiles: 28
+    nb_slots: 4
+    safe_to_start_r10: -1
+    safe_to_start_r11: -1
 }
