@@ -2,8 +2,7 @@
     "seqLen": 64,
     "dModel": 48,
     "dtRank": 24,
-    // BC bank-conflict fix: pad each bank-transpose matrix in the BC region of dt_BC by this many
-    // banks (multiple of 4). Makes the SU-core BC read (R7) hit 4 distinct banks/cycle. 0 = disabled.
+    // BC bank-conflict fix: pad each bank-transpose matrix in the BC region of dt_BC (multiple of 4)
     "bc_pad_banks": 4,
     "safe_to_start_r10": -1,
     "safe_to_start_r11": -1,

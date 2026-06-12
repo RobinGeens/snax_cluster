@@ -108,11 +108,30 @@ int test() {
             if (i >= 2) {
                 uint32_t spill_tile = i - 2;
                 int sbuf            = spill_tile & 1;
-                uint8_t* reals_dst  = ptr_hadamard_reordered_l3 + spill_tile * M6_phaseA_dma_per_tile_per_part;
-                uint8_t* imags_dst  = reals_dst + (M6_length_hadamard_reordered / 2);
-                snrt_dma_start_1d(reals_dst, ptr_had_reord_a_tile[sbuf], M6_phaseA_dma_per_tile_per_part);
-                snrt_dma_start_1d(imags_dst, ptr_had_reord_a_tile[sbuf] + M6_length_hadamard_reordered_tile_re,
-                                  M6_phaseA_dma_per_tile_per_part);
+                // Scatter the per-tile col-major reorder output into the flattenB (K-tile-major) L3
+                // layout the partition-2 IS-core reads. Each seqLenUnroll-elem block
+                // reals[m*L2 + k2*seqLenUnroll .. +seqLenUnroll][d] lands at flattenB block (k2, d, m).
+                // For L2 == seqLenUnroll (nk == 1) flattenB == col-major and this is one contiguous
+                // 1D spill (fast path). See docs/dataflow/05_fft.md §5.2.
+                uint8_t* tile_re = ptr_had_reord_a_tile[sbuf];
+                uint8_t* tile_im = tile_re + M6_length_hadamard_reordered_tile_re;
+                uint8_t* l3_re   = ptr_hadamard_reordered_l3;
+                uint8_t* l3_im   = l3_re + (M6_length_hadamard_reordered / 2);
+                uint32_t nk      = L2 / 16;  // K-tiles per re/im half (= L2 / seqLenUnroll)
+                uint32_t d0      = spill_tile * M6_dModel_tile;
+                if (nk == 1) {
+                    snrt_dma_start_1d(l3_re + d0 * L1 * 16, tile_re, M6_phaseA_dma_per_tile_per_part);
+                    snrt_dma_start_1d(l3_im + d0 * L1 * 16, tile_im, M6_phaseA_dma_per_tile_per_part);
+                } else {
+                    for (uint32_t k2 = 0; k2 < nk; k2++) {
+                        for (uint32_t dl = 0; dl < M6_dModel_tile; dl++) {
+                            uint32_t dst_off = (k2 * dModel * L1 + (d0 + dl) * L1) * 16;
+                            uint32_t src_off = dl * seqLen + k2 * 16;
+                            snrt_dma_start_2d(l3_re + dst_off, tile_re + src_off, 16, 16, L2, L1);
+                            snrt_dma_start_2d(l3_im + dst_off, tile_im + src_off, 16, 16, L2, L1);
+                        }
+                    }
+                }
             }
 
             if (i < nb_tiles) {
@@ -209,7 +228,9 @@ int test() {
         snrt_cluster_hw_barrier();
     }
 
-    if (snrt_global_core_idx() == 0) phaseA_end_cycles = snrt_mcycle();
+    if (snrt_global_core_idx() == 0) {
+        phaseA_end_cycles = snrt_mcycle();
+    }
 
     // ========================================================================
     // Phase B: partition 2, K-axis tiled. The partition2_out zero-init (DMA core) overlaps

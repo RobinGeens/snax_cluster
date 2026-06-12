@@ -92,19 +92,13 @@ class DataGeneratorBase(ABC):
             self.format("uint32_t", key, value)
 
     def resolve_safe_to_start(self, computed_r10, computed_r11):
-        """Resolve the P2safe-to-start delays (R10/R11 start counts).
-
-        The keys safe_to_start_r10 / safe_to_start_r11 must be defined in params_in.hjson.
-        A value of -1 means "derive from the formula" (use the computed_* args). Any other
+        """Resolve the P2 safe-to-start delays (R10/R11 start counts).
+        A missing key, or a missing PARAMS_IN env var, means "derive from the formula" (use the computed_* args). Any other
         value overrides the formula.
         """
         resolved = []
         for key, computed in zip(self.SAFE_TO_START_KEYS, (computed_r10, computed_r11)):
-            if key not in self.kwargs:
-                raise KeyError(
-                    f"'{key}' must be defined in params_in.hjson (use -1 to auto-derive the safe-to-start delay)"
-                )
-            value = int(self.kwargs[key])
+            value = int(self.kwargs.get(key, -1))
             resolved.append(computed if value == -1 else value)
         return resolved[0], resolved[1]
 

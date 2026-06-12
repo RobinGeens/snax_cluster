@@ -5,47 +5,10 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 #
-# Tiled version of the FFT program. The goal is to reduce TCDM (L1 scratchpad)
-# peak usage by NEVER keeping a full input or output tensor in TCDM. All large
-# tensors live in L3; TCDM only holds the per-tile working slots plus the small
-# weight/twiddle tables. (Beware naming: "L1" usually means the TCDM scratchpad,
-# but in the FFT data model L1 is also the inner butterfly dimension, and L2
-# is the outer butterfly dimension. We tile the FFT *dimension* L2 in Phase A
-# and the dModel batch axis in Phase B.)
-#
-# Tiling axes:
-#   - Phase A (partition 1 + hadamard + reorder): tile along the L2 axis.
-#     `in` is laid out [L2*dModel][L1] col-major in L3, so an L2-slice is a
-#     contiguous L3 chunk that DMAs in cleanly.
-#   - Phase B (partition 2): tile along the dModel axis. `hadamard_reordered`
-#     is laid out [d][L] col-major (Scala's __flattenColMajor), so a dModel
-#     slice is a contiguous L3 chunk for both reals and imags regions.
-#
-# What lives where:
-#   TCDM (always live, small):
-#       weight1, weight2, twiddles
-#   TCDM (Phase A working set, reused across tiles):
-#       in_tile, partition1_out_tile, hadamard_out_tile, had_reord_a_tile
-#   TCDM (Phase B working set, OVERLAYS the Phase A region after barrier):
-#       had_reord_b_tile, partition2_out_tile
-#   L3 (via snrt_l3alloc), assembled tile-by-tile in Phase A and read tile-
-#   by-tile in Phase B:
-#       hadamard_reordered (standard [reals|imags] [d][l] col-major)
-#       partition2_out (final result, verified at end)
-#
-# Phase A reorder writes into a TCDM tile slot with a 2D outer access so the
-# tile output is `[tile_reals (contig) | tile_imags (contig)]`. The per-tile
-# DMA-out is then two 2D strided DMAs (one for reals, one for imags) that
-# scatter each d-row's `L_tile` bytes into the matching position of the L3
-# standard layout. Phase B's per-tile DMA-in is two 1D contiguous DMAs.
-#
-# Phase B partition 2's output tile is assumed to be a contiguous slice of
-# partition2_out's flatten when its M*N bound is halved. Given the
-# isCoreLoopOrder = K_M_N flatten (M outer, N inner), this corresponds to
-# tiling the M (= 2*L2) axis. This is not the same axis as the input tile
-# axis (dModel), so be aware: if verification fails on partition2_out, the
-# Phase B GEMM bounds need to be reformulated as a 2D outer write that
-# scatters into N-tile positions.
+# Tiled FFT datagen. Keeps TCDM peak low by holding all large tensors in L3 and
+# only the per-tile working slots + small weight/twiddle tables in TCDM.
+# Design (tiling axes, buffer lifecycles, the flattenB L3 spill):
+# docs/dataflow/05_fft.md, "fft-tiled" section.
 
 import pathlib
 import sys
@@ -165,26 +128,25 @@ class DataGenerator(DataGeneratorBase):
             # Step 2: hadamard (Phase A, tiled). Operates on per-tile L_tile_a sequence positions.
             #
             "R7_2": (  # SIMD input from per-tile partition1_out tile slot.
-                # The bank-transposed partition1 splits the l1 axis into L1/seqLenUnroll
-                # M-tiles (each seqLenUnroll rows x N_1_tile cols). Walking l1 contiguously
-                # therefore jumps one whole M-tile (seqLenUnroll*N_1_tile) at each tile
-                # boundary, so the l1 walk needs its own dim separate from d. For
-                # L1 == seqLenUnroll the M-tile dim is a no-op (bound 1) and this reduces to
-                # the old 2-dim config (d-stride N_1_tile == L when L1==L2==dModel_tile).
+                # 2x2-spatial reader: spatial[0] picks the 2 banktranspose matrices, spatial[1]
+                # the re/im split; temporal dims (inner->outer) are l2-high, l1_dft, M-tile, d
+                # (per-dim comments below). The l2-high dim is bound 1 for L2 == seqLenUnroll
+                # but required for L2 > seqLenUnroll, else R7_2 under-reads and the SIMD hangs.
                 [
-                    seqLenUnroll,  # l1 within an M-tile
-                    L1 // seqLenUnroll,  # M-tile of l1
+                    L2 // seqLenUnroll,  # l2-high: 16-wide l2 groups beyond the spatial vector
+                    seqLenUnroll,  # l1_dft within a macro-row
+                    L1 // seqLenUnroll,  # M-tile (macro-row) of l1_dft
                     dModel_tile,  # d (dModel, tiled)
                 ],
                 [
-                    BANK_BYTES,
+                    2 * seqLenUnroll * BANK_BYTES,  # l2-high: skip the 2 spatial[0] matrices
+                    BANK_BYTES,  # l1_dft within a macro-row
                     seqLenUnroll * N_1_tile * FP8 // 8,  # jump to next M-tile
-                    seqLenUnroll * L2 * FP8 // 8,  # next d (= M-tile size / dModel_tile;
-                    # equals the old L*FP8//8 only when L1==seqLenUnroll)
+                    seqLenUnroll * L2 * FP8 // 8,  # next d
                 ],
                 [
                     # spatial[0]: the 2 banks read in parallel are one seqLenUnroll-sized
-                    # M-tile apart, NOT L1 apart — these coincide only for L1==seqLenUnroll.
+                    # matrix apart, NOT L1 apart — these coincide only for L1==seqLenUnroll.
                     seqLenUnroll * BANK_BYTES,
                     L * dModel_tile * FP8 // 8,  # spatial[1]: re/im split (= tile re region size)
                 ],
@@ -284,11 +246,12 @@ class DataGenerator(DataGeneratorBase):
         len_twiddles_per_tile_padded = len_twiddles  # = 512 B (un-tiled)
         len_twiddles_tiled_total = len_twiddles  # one shared copy in TCDM
 
-        # ---- Phase A DMA-out: 1D contiguous into L3 [d][l] col-major. ----
-        # `hadamard_reordered` in L3 is `[reals|imags]` each in `[d][l]` col-major
-        # (= [d outer, l inner], per `__flattenColMajor` in DataGeneratorFFT).
-        # With dModel tiling, tile k contributes d-rows [k*dModel_tile, (k+1)*dModel_tile)
-        # — a contiguous chunk of dModel_tile*L bytes per re/im in L3.
+        # ---- Phase A spill: scatter each d-tile's col-major blocks into flattenB L3. ----
+        # `hadamard_reordered` in L3 is flattenB (K-tile-major) `[reals_fb | imags_fb]` —
+        # the layout the partition-2 IS-core reads (see flattenHadamardReordered in
+        # DataGeneratorFFT). Each seqLenUnroll-elem block reals[m*L2+k2*seqLenUnroll .. ][d]
+        # goes to flattenB block (k2, d, m). This value is the per-tile per-part byte count
+        # (it equals the contiguous 1D spill size used on the L2 == seqLenUnroll fast path).
         len_phaseA_dma_per_tile_per_part = dModel_tile * L * FP8 // 8  # = 4096 B for nb=2
 
         # Phase B is K-axis tiled (accumulating into FULL partition2_out in TCDM).

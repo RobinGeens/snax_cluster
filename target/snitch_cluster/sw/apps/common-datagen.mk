@@ -51,6 +51,7 @@ cache-seed:
 	@CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
 	mkdir -p "$(DATAGEN_CACHE_DIR)"; \
 	tar cf "$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.tar" -C "$(SBT_GEN_DIR)" .; \
+	printf '%s' "$(CACHE_ARGS)" > "$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.args"; \
 	echo "[DATAGEN CACHE] Seeded $(APP_NAME) → $$CACHE_KEY"
 
 # Step 1: ensure sbt golden data exists (from cache or fresh run).
@@ -59,13 +60,16 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 	@set -e; \
 	CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
 	CACHED="$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.tar"; \
-	if [ -f "$$CACHED" ]; then \
+	ARGS_FILE="$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.args"; \
+	if [ -f "$$CACHED" ] && [ "$$(cat "$$ARGS_FILE" 2>/dev/null)" = "$(CACHE_ARGS)" ]; then \
 		echo "[DATAGEN CACHE] Hit ($(APP_NAME)) — restoring sbt output"; \
-		mkdir -p "$(SBT_GEN_DIR)"; \
+		rm -rf "$(SBT_GEN_DIR)"; mkdir -p "$(SBT_GEN_DIR)"; \
 		tar xf "$$CACHED" --no-same-owner -C "$(SBT_GEN_DIR)"; \
 	else \
+		[ -f "$$CACHED" ] && echo "[DATAGEN CACHE] Stale/mismatched entry for $$CACHE_KEY — ignoring"; \
 		echo "[DATAGEN CACHE] Miss ($(APP_NAME)) — running sbt"; \
 		echo "  Scala $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
+		rm -rf "$(SBT_GEN_DIR)"; \
 		cd $(CHISEL_SSM) && sbt "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
 		if [ ! -f "$(DATA_CFG)" ]; then \
 			echo "[DATAGEN CACHE] ERROR: sbt produced no $(DATA_CFG) for $(APP_NAME) — check params_in.hjson" >&2; \
@@ -73,6 +77,7 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 		fi; \
 		mkdir -p "$(DATAGEN_CACHE_DIR)"; \
 		tar cf "$$CACHED" -C "$(SBT_GEN_DIR)" .; \
+		printf '%s' "$(CACHE_ARGS)" > "$$ARGS_FILE"; \
 		echo "[DATAGEN CACHE] Stored $(APP_NAME) → $$CACHE_KEY"; \
 	fi
 	@echo "Generating data.h from $(DATA_CFG)"

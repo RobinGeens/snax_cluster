@@ -4,10 +4,29 @@
 // FIFOs. Bank conflicts, FIFO backpressure, and DMA preemption are produced by
 // stepping this every cycle. See docs/dataflow/10_memsim.md.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <vector>
 
 #include "machine.hpp"  // Agu
+
+// One row of the per-cycle streamer-FIFO occupancy trace: index = port (R0..R13 = 0..13,
+// W0..W3 = 14..17), value = elements in that port's FIFO this cycle, or -1 if the port is
+// absent from this invocation. Matches AccelEngine's EngineResult::fifo so all stepper paths
+// (engine P1/P2, cyc_gemm, cyc_simd) feed the same .fifo.csv plot.
+using FifoRow = std::array<int16_t, 18>;
+
+// Per-port streamer FIFO depth, taken verbatim from the simbacore streamer config
+// (hw/chisel/.../snax/streamer/StreamParamGen.scala, tagName snax_simbacore_). Both
+// addressBufferDepth and dataBufferDepth equal this value for every port. Index is the
+// streamer port: readers R0..R13 = 0..13, writers W0..W3 = 14..17. The depths are
+// heterogeneous (e.g. osCore weight R1 = 3, isCore weight R12 = 6), so a uniform depth
+// over-hides contention on the shallow ports.
+inline int snax_streamer_depth(int port_idx) {
+    static const int D[18] = {8, 3, 8, 1, 6, 3, 2, 4, 1, 6, 7, 2, 6, 4,  // R0..R13
+                              4, 8, 3, 4};                                // W0..W3
+    return (port_idx >= 0 && port_idx < 18) ? D[port_idx] : 4;
+}
 
 // ---- 32-bank TCDM fabric with per-bank round-robin arbitration --------------
 struct Fabric {
@@ -19,36 +38,122 @@ struct Fabric {
     // requests posted this cycle: bank -> list of requester tokens
     int req_bank[64];                      // up to 64 simultaneous lane requests
     int req_tok[64];                       // requester token (encodes port<<4 | lane)
+    int req_prio[64];                      // 1 = urgent (reader FIFO near-empty / writer near-full)
     int n_req = 0;
 
+    // --- optional per-bank contention histogram (MEMSIM_BANKHIST), debug-only ---
+    static bool h_on;
+    static long h_req[NB];                  // total lane-requests landing on each bank
+    static long h_conf[NB];                 // requests that lost arbitration on each bank
+    static long h_portbank[18][NB];         // per-port (R0..W3) request count per bank
+    static void hist_reset();
+    static void hist_dump(const char* tag);
+
     void begin_cycle(uint32_t dma_mask) { dma_owned = dma_mask; n_req = 0; }
-    void post(int bank, int tok) {
-        if (n_req < 64) { req_bank[n_req] = bank & (NB - 1); req_tok[n_req] = tok; n_req++; }
+    void post(int bank, int tok, int prio = 0) {
+        if (n_req < 64) {
+            req_bank[n_req] = bank & (NB - 1);
+            req_tok[n_req]  = tok;
+            req_prio[n_req] = prio;
+            n_req++;
+        }
     }
-    // Resolve: returns a bitset (by request index) of which requests were GRANTED.
-    // One winner per bank (round-robin); DMA-owned banks grant nobody.
+    // Resolve: returns a bitset (by request index) of which requests were GRANTED. One winner per
+    // bank: the real RTL is a PriorityRoundRobinArbiter (SparseInterconnect.scala) — the highest
+    // priority masks the rest, then round-robin among ties. Priority is the streamers' buffer-urgency
+    // QoS (ComplexQueue.scala:63: reader near-empty / writer near-full). DMA-owned banks grant nobody.
     void arbitrate(bool granted[64]) {
         for (int i = 0; i < n_req; i++) granted[i] = false;
         for (int b = 0; b < NB; b++) {
             if (dma_owned & (1u << b)) continue;            // DMA preempts this bank
-            // collect requesters for bank b
-            int best = -1, best_rank = 1 << 30;
+            int best = -1, best_rank = 1 << 30, best_prio = -1;
             for (int i = 0; i < n_req; i++) {
                 if (req_bank[i] != b) continue;
                 int rank = (req_tok[i] - rr[b] + 256) & 0xff;  // round-robin distance
-                if (rank < best_rank) { best_rank = rank; best = i; }
+                if (req_prio[i] > best_prio || (req_prio[i] == best_prio && rank < best_rank)) {
+                    best_prio = req_prio[i];
+                    best_rank = rank;
+                    best      = i;
+                }
             }
             if (best >= 0) { granted[best] = true; rr[b] = (uint8_t)(req_tok[best] + 1); }
+            if (h_on) {
+                int c = 0;
+                for (int i = 0; i < n_req; i++) {
+                    if (req_bank[i] != b) continue;
+                    c++;
+                    int p = req_tok[i] >> 4;
+                    if (p >= 0 && p < 18) h_portbank[p][b]++;
+                }
+                if (c > 0 && !(dma_owned & (1u << b))) { h_req[b] += c; if (c > 1) h_conf[b] += c - 1; }
+            }
         }
     }
 };
 
-// ---- Reader streamer: AGU (4 temporal dims + spatial lanes) + FIFO -----------
-// Models: num_channel parallel lanes/cycle; a lane stalls (re-proposes next cycle)
-// if it loses bank arbitration; the AGU group advances only when ALL its lanes are
-// granted (so a 2-banks-for-4-lanes group takes 2 cycles). stride-0 INNER dim =
-// reuse: the group is read once and replayed `reuse` times to the accelerator with
-// NO new TCDM reads. Reader fills the FIFO up to fifo_depth ahead of the consumer.
+// ---- Resident DMA beat engine ------------------------------------------------
+// Drains queued cluster-DMA transfers one 64 B beat at a time and exposes, per cycle, the
+// TCDM superbank its current beat occupies. The real mem_wide_narrow_mux (fixed priority,
+// DMA wins) grounds the 8 narrow streamer q_ready on the superbank the DMA presents a beat
+// to (snitch_cluster.sv); a 64 B beat = 8 banks = exactly one superbank, advancing by one
+// superbank per beat as the address streams. Stepped on the SAME clock + SAME Fabric as the
+// accelerator streamers, so DMA<->compute contention is produced by arbitration, not a
+// per-app dma_cycles parameter -> the refill-ring stall and async-ring contention emerge.
+// Each transfer becomes drainable only at its submit cycle (at_rel), so DMAs issued mid-
+// invocation collide only from when the SW actually launched them. period = cycles the
+// backend holds a superbank per beat (L3 read-bound vs TCDM bus-bound; derived from the DMA
+// trace, see docs/dataflow/10_memsim.md).
+struct DmaEngine {
+    struct Xfer { uint32_t tcdm_addr; uint32_t beats; int period; uint64_t at_rel; };
+    std::vector<Xfer> q;            // FIFO of transfers, in submit order
+    size_t head = 0;               // next undrained transfer
+    uint32_t done_cnt = 0;         // completed transfers (dma_completed_id analogue)
+    // current transfer
+    bool active = false;
+    uint32_t addr = 0, beats_left = 0;
+    int period = 1, timer = 0;
+
+    int beat_period_l3 = 4;        // cycles/64B beat, L3<->TCDM (read-bound)
+    int beat_period_tcdm = 1;      // cycles/64B beat, TCDM<->TCDM (bus-bound)
+
+    void clear() { q.clear(); head = 0; done_cnt = 0; active = false; }
+    void rewind() { head = 0; done_cnt = 0; active = false; }  // re-drain the same queue (re-run)
+    void enqueue(uint32_t tcdm_addr, uint32_t bytes, bool l3, uint64_t at_rel) {
+        uint32_t beats = (bytes + 63) / 64;
+        if (!beats) return;
+        q.push_back({tcdm_addr, beats, l3 ? beat_period_l3 : beat_period_tcdm, at_rel});
+    }
+    bool busy() const { return active || head < q.size(); }
+    // Advance one cycle (relative cycle `cyc`); return the dma_owned superbank mask (0 = idle).
+    // The backend presents a TCDM beat for ONE cycle per 64 B, then is read-bound on L3 for the
+    // remaining (period-1) cycles during which it grounds nothing (measured: ~1 beat / ~4.4 cyc for
+    // L3, so it occupies a given superbank only ~1/period of the time). Each beat advances the
+    // address by 64 B = +1 superbank, so a streaming DMA walks the 4 superbanks.
+    uint32_t step(uint64_t cyc) {
+        if (!active) {
+            if (head >= q.size() || q[head].at_rel > cyc) return 0;  // not launched yet
+            Xfer& x = q[head++];
+            active = true; addr = x.tcdm_addr; beats_left = x.beats; period = x.period; timer = x.period;
+        }
+        uint32_t mask = (period > 0 && timer == period) ? (0xFFu << (((addr >> 6) & 3) * 8)) : 0u;  // beat this cyc
+        if (--timer <= 0) {                            // beat done -> advance address, next beat
+            addr += 64;
+            if (--beats_left == 0) { active = false; done_cnt++; }
+            timer = period;
+        }
+        return mask;
+    }
+};
+
+// ---- Reader streamer: AGU + per-lane PIPELINED issue (request + data FIFOs) ----
+// Each of num_channel lanes runs its OWN address generator and issues reads independently: a lane
+// keeps issuing the next group's address as soon as it wins arbitration, up to addr_depth requests
+// outstanding (the request-side address FIFO) and data_depth groups ahead of the consumer (the
+// response-side data FIFO). Lanes do NOT wait for each other — a lane blocked by bank/DMA contention
+// re-proposes while the others run ahead; a group becomes consumable only once ALL lanes have landed
+// it (min over lanes). This is the real streamer: the read-ahead hides the +1cc latency and sparse
+// contention, so a one-cycle DMA block does not stall the whole reader. stride-0 inner dim = reuse:
+// one TCDM read replayed `reuse` times to the accelerator. RTL depths: addr_depth=4, data_depth=8.
 struct CycReader {
     // config
     uint64_t base = 0;
@@ -58,53 +163,59 @@ struct CycReader {
     int n_spatial = 1;
     int32_t sstride[2] = {8, 0};
     int sbound[2] = {1, 1};
-    int fifo_depth = 4;
+    int data_depth = 8;                     // response-side data FIFO (read-ahead vs consumer)
+    int addr_depth = 4;                     // request-side address FIFO (outstanding/unlanded)
     int reuse = 1;                          // replays per group (stride-0 dim0 bound)
+    int port = 0;
 
-    // state
-    int ti[4] = {0, 0, 0, 0};
-    bool lane_done[8] = {false};           // granted lanes of the current group
-    int port = 0;                          // for arbiter token
-    bool active = false;
-    bool done = false;
-    int fifo_occ = 0;                       // beats buffered for the consumer
-    int outstanding = 0;                    // granted reads in flight (+1cc)
-    int pending_push = 0;                   // reads granted this cycle -> push next cycle
-    int reuse_left = 0;                     // remaining replays of the buffered group
+    // per-lane pipelined state
+    long lane_issued[8] = {0};             // groups this lane has had granted
+    long lane_landed[8] = {0};             // groups landed for this lane (+1cc after grant)
+    int  pend[8] = {0};                    // granted this cycle -> land next
+    long consumed = 0;                      // groups the consumer has popped
+    int  reuse_left = 0;
+    bool active = false, done = false;
+    int  fifo_occ = 0;                      // consumer-visible available groups = min(landed)-consumed
+    // Compat for the safe-to-start stale check: the temporal position + count of the read GRANTED this
+    // cycle (lane 0). word_off(ts, ti) gives the word a 1-lane reader just accessed.
+    int  ti[4] = {0, 0, 0, 0};
+    int  pending_push = 0;
 
-    // BIST: tag each delivered group with its production index so the consumer can
-    // verify it receives groups in AGU order (a delay/reorder bug breaks the order).
-    bool track_idx = false;                 // enable index tagging (BIST only)
-    int prod_idx = 0;                       // next group's production index
-    int pend_idx = -1;                      // index granted this cycle, lands next
-    int idx_ring[64] = {0};                 // delivered indices, FIFO order
+    // BIST: deliver group production indices in order so the consumer can verify ordering.
+    bool track_idx = false;
+    long prod_delivered = 0;
+    int idx_ring[64] = {0};
     int ir_head = 0, ir_tail = 0, ir_cnt = 0;
-    bool pop_idx(int& v) {                  // BIST consumer pops one delivered index
+    bool pop_idx(int& v) {
         if (ir_cnt == 0) return false;
         v = idx_ring[ir_head]; ir_head = (ir_head + 1) & 63; ir_cnt--; return true;
     }
 
-    void configure(const Agu& a, int nch, int nsp, int fd, int prt);
-    // lane byte address at the current temporal position
-    uint64_t lane_addr(int lane) const;
-    // Phase 1 of a cycle: post bank requests for ungranted lanes (if FIFO has room).
-    void propose(Fabric& f);
-    // Phase 2: apply arbiter grants (granted[] indexed as posted), advance AGU.
-    void commit(Fabric& f, const bool granted[64], int& grant_idx);
-    // consumer pops one beat (returns true if a beat was available)
-    bool pop();
-    // call at top of cycle: land last cycle's granted reads into the FIFO
-    void land_reads() {
-        if (track_idx && pending_push && pend_idx >= 0) {
-            idx_ring[ir_tail] = pend_idx; ir_tail = (ir_tail + 1) & 63; ir_cnt++; pend_idx = -1;
-        }
-        fifo_occ += pending_push; outstanding -= pending_push; pending_push = 0;
+    long total() const { return (long)eb[0] * eb[1] * eb[2] * eb[3]; }
+    long min_landed() const {
+        long m = lane_landed[0];
+        for (int l = 1; l < num_channel; l++) if (lane_landed[l] < m) m = lane_landed[l];
+        return m;
     }
-    int total_read_groups() const { return eb[0] * eb[1] * eb[2] * eb[3]; }
+    void set_ti(long g) { long r = g % (total() ? total() : 1); for (int d = 0; d < 4; d++) { ti[d] = (int)(r % eb[d]); r /= eb[d]; } }
+
+    void configure(const Agu& a, int nch, int nsp, int fd, int prt);
+    uint64_t lane_addr(long group, int lane) const;     // byte address of `lane` at temporal `group`
+    void propose(Fabric& f);
+    void commit(Fabric& f, const bool granted[64], int& grant_idx);
+    bool pop();
+    // call at top of cycle: land last cycle's granted reads; refresh consumer occupancy + BIST order
+    void land_reads() {
+        for (int l = 0; l < num_channel; l++) { lane_landed[l] += pend[l]; pend[l] = 0; }
+        long m = min_landed();
+        if (track_idx) while (ir_cnt < 64 && prod_delivered < m) { idx_ring[ir_tail] = (int)prod_delivered++; ir_tail = (ir_tail + 1) & 63; ir_cnt++; }
+        fifo_occ = (reuse > 1) ? (m > consumed ? 1 : 0) : (int)(m - consumed);
+    }
+    int total_read_groups() const { return (int)total(); }
     void reset() {                          // restart the AGU (continuous stream)
-        for (int i = 0; i < 4; i++) ti[i] = 0;
-        for (int l = 0; l < 8; l++) lane_done[l] = false;
-        done = false; active = true;
+        for (int l = 0; l < 8; l++) { lane_issued[l] = lane_landed[l] = 0; pend[l] = 0; }
+        consumed = 0; reuse_left = 0; fifo_occ = 0; pending_push = 0; prod_delivered = 0;
+        ir_head = ir_tail = ir_cnt = 0; done = false; active = true;
     }
 };
 
@@ -123,6 +234,7 @@ struct CycWriter {
     int32_t sstride[2] = {8, 0};
     int sbound[2] = {1, 1};
     int port = 0;
+    int depth = 8;         // output-FIFO depth: a near-full writer (>= depth-1) asserts TCDM priority
     int ti[4] = {0, 0, 0, 0};
     bool lane_done[8] = {false};
     long fifo_occ = 0;     // groups produced by the core, waiting to be written
@@ -144,9 +256,22 @@ struct CycWriter {
 // by stepping. dma_mask = banks a concurrent DMA owns. n_out_tiles = M_i*N_i; K_i =
 // reduction steps per tile.
 struct GemmResult { uint64_t busy; uint64_t end; };
+// fifo_out (optional): if non-null, every stepped cycle appends one FifoRow with the reader/writer
+// FIFO occupancies placed at their REAL port indices (reader_ports[i] for in_readers[i], writer_port
+// for out_writer), -1 elsewhere — so single-GEMM invocations also feed the .fifo.csv plot.
 GemmResult cyc_gemm(const Agu* in_readers, const int* rd_nch, const int* rd_nsp, int n_readers,
                     const Agu& out_writer, int w_nch, int w_nsp,
-                    long n_out_tiles, long K_i, uint32_t dma_mask = 0);
+                    long n_out_tiles, long K_i, long dma_cycles = 0,
+                    const int* reader_ports = nullptr, int writer_port = -1,
+                    std::vector<FifoRow>* fifo_out = nullptr);
+
+// Per-cycle SIMD pass (SimdCore): the enabled reader ports (R0..R13) feed the core and the enabled
+// writer ports (W0..W3) drain it, all stepped on ONE shared 32-bank fabric so strided-gather bank
+// conflicts emerge (unlike GEMM's conflict-free per-port readers). Replaces the old max-of-beats
+// formula. port_nch = per-port channel count (PORT_NCH). Returns the busy-cycle count; appends the
+// per-cycle FIFO occupancy to fifo_out when non-null. Div/Sqrt iterative back-pressure not modeled.
+uint64_t cyc_simd(const Agu* ports, const int* port_nch, long dma_cycles = 0,
+                  std::vector<FifoRow>* fifo_out = nullptr);
 
 // Bank-conflict probe (used by test/suc_grid_test.cpp): drive a reader (e.g. captured R7)
 // per-cycle with a consumer that pops one beat every `consume_period` cycles, for `n_beats`

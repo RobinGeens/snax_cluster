@@ -3,13 +3,15 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled EinFFT with PER-TILE fuse.
-//   - The N (= D/4 output-channel) axis is tiled. Each tile's 4 OSGEMMs are
-//     immediately followed by the SIMD fuse for that tile, so the OS-core
-//     scratch (rr/ii/ri/ir), BF16 staging, and output buffers only ever hold
-//     ONE tile (L x dPerB_tile) instead of a full per-branch slab. This is
-//     what lets large (L, dModel) fit in TCDM.
-//   - Weight tiles are prefetched one tile ahead (ping-pong).
+// Tiled EinFFT with per-tile fuse.
+//   - The N (= D/4 output-channel) axis is tiled. The four per-tile matmuls are run as
+//     two concat OSGEMMs that share an activation (x_re @ [W_re|W_im] = [rr|ri], and
+//     x_im @ [W_re|W_im] = [ir|ii]), then the SIMD fuse runs for that tile. The OS-core
+//     scratch (out_A/out_B), BF16 staging, and output buffers only ever hold one tile,
+//     so large (L, dModel) fit in TCDM. The concat keeps every OSGEMM at N>=2 (the HW
+//     requirement) with no wasted compute, even at dModel=96 where each matmul is N=1.
+//   - Weight tiles are prefetched one tile ahead (ping-pong); W_re and W_im are packed
+//     adjacently so the concat OSGEMM reads them as one weight.
 //   - Output tiles are spilled to L3 one tile behind (depth-2 ping-pong),
 //     overlapping the spill DMA with the next tile's compute.
 
@@ -59,21 +61,18 @@ int main(void) {
 
     uint8_t* p_after = _ALIGN64(ptr_out_im_pp[1] + M3_length_d_tile);
 
-    // Weight ping-pong tiles
-    uint8_t* ptr_W_re_pp[2] = {p_after, _ALIGN64(p_after + M3_length_w_branch_tile)};
-    p_after                 = _ALIGN64(ptr_W_re_pp[1] + M3_length_w_branch_tile);
-    uint8_t* ptr_W_im_pp[2] = {p_after, _ALIGN64(p_after + M3_length_w_branch_tile)};
-    p_after                 = _ALIGN64(ptr_W_im_pp[1] + M3_length_w_branch_tile);
+    // Combined weight ping-pong: each buffer holds [W_re_tile | W_im_tile] adjacently, so the
+    // OSGEMM reads them as one N_cat = 2*N_t weight (flattenB is N-tile-major). The DMA fills
+    // the W_re half at +0 and the W_im half at +M3_length_w_branch_tile.
+    uint8_t* ptr_W_pp[2] = {p_after, _ALIGN64(p_after + M3_length_w_cat_tile)};
+    p_after              = _ALIGN64(ptr_W_pp[1] + M3_length_w_cat_tile);
 
-    // OS-core scratches + BF16 staging: TILE-sized.
-    uint8_t* ptr_rr      = p_after;
-    p_after              = _ALIGN64(p_after + M3_length_d_tile);
-    uint8_t* ptr_ii      = p_after;
-    p_after              = _ALIGN64(p_after + M3_length_d_tile);
-    uint8_t* ptr_ri      = p_after;
-    p_after              = _ALIGN64(p_after + M3_length_d_tile);
-    uint8_t* ptr_ir      = p_after;
-    p_after              = _ALIGN64(p_after + M3_length_d_tile);
+    // OS-core scratches: each concat OSGEMM writes two real sub-tiles (no wasted compute).
+    //   out_A = [rr | ri]  (= x_re @ [W_re|W_im])    out_B = [ir | ii]  (= x_im @ [W_re|W_im])
+    uint8_t* ptr_outA    = p_after;
+    p_after              = _ALIGN64(p_after + M3_length_d_cat);
+    uint8_t* ptr_outB    = p_after;
+    p_after              = _ALIGN64(p_after + M3_length_d_cat);
     uint16_t* ptr_bf16_a = (uint16_t*)p_after;
     p_after              = _ALIGN64(p_after + M3_length_bf16);
     uint16_t* ptr_bf16_b = (uint16_t*)p_after;
@@ -114,10 +113,11 @@ int main(void) {
 
                 if (snrt_is_dm_core()) {
                     if (i < nb_tiles) {
-                        snrt_dma_start_1d(ptr_W_re_pp[buf], w_re_b_l3 + i * M3_length_w_branch_tile,
+                        // Pack [W_re_tile | W_im_tile] into the combined buffer for the concat OSGEMM.
+                        snrt_dma_start_1d(ptr_W_pp[buf], w_re_b_l3 + i * M3_length_w_branch_tile,
                                           M3_length_w_branch_tile);
-                        snrt_dma_start_1d(ptr_W_im_pp[buf], w_im_b_l3 + i * M3_length_w_branch_tile,
-                                          M3_length_w_branch_tile);
+                        snrt_dma_start_1d(ptr_W_pp[buf] + M3_length_w_branch_tile,
+                                          w_im_b_l3 + i * M3_length_w_branch_tile, M3_length_w_branch_tile);
                     }
 
                     // Branch input x + bias (loaded once at this branch's first iter).
@@ -147,55 +147,41 @@ int main(void) {
                     int cbuf      = tile & 1;
                     int obuf      = tile & 1;
 
-                    // ---- OSGEMM: rr, ir, ii, ri for this tile ----
+                    // ---- Two concat OSGEMMs for this tile (each N_cat=2*N_t real tiles) ----
+                    //   out_A = x_re @ [W_re|W_im] = [rr | ri] ; out_B = x_im @ [W_re|W_im] = [ir | ii]
                     set_osgemm_streamer_csr((uint32_t)ptr_x_re_b, M3_R0_ss, M3_R0_tb, M3_R0_ts,
-                                            (uint32_t)ptr_W_re_pp[cbuf], M3_R1_ss, M3_R1_tb, M3_R1_ts, (uint32_t)ptr_rr,
+                                            (uint32_t)ptr_W_pp[cbuf], M3_R1_ss, M3_R1_tb, M3_R1_ts, (uint32_t)ptr_outA,
                                             M3_W0_ss, M3_W0_tb, M3_W0_ts);
-                    set_simbacore_csr(M3_OSGEMM, seqLen, M3_dPerB, M3_dPerB_tile, 1, 1);
+                    set_simbacore_csr(M3_OSGEMM, seqLen, M3_dPerB, M3_dInner_cat, 1, 1);
 
-                    // rr = x_re @ W_re ; rebind for ir = x_im @ W_re
+                    // A: out_A = x_re @ [W_re|W_im] ; rebind for B: out_B = x_im @ [W_re|W_im]
                     _set_streamer_start();
                     _set_simbacore_start();
                     write_csr(STREAMER_START_CSR, 0);
                     write_csr(SIMBACORE_START, 0);
                     write_csr(BASE_PTR_READER_0_LOW, (uint32_t)ptr_x_im_b);
-                    write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_ir);
+                    write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_outB);
                     while (read_csr(SIMBACORE_BUSY));
                     while (read_csr(STREAMER_BUSY_CSR));
                     simbacore_cycles += read_simbacore_perf_counter();
 
-                    // ir ; rebind for ii = x_im @ W_im
+                    // B ; preload SIMD widen streamers for side 0 (fuse follows; rr = out_A[0])
                     _set_streamer_start();
                     _set_simbacore_start();
                     write_csr(STREAMER_START_CSR, 0);
                     write_csr(SIMBACORE_START, 0);
-                    write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_W_im_pp[cbuf]);
-                    write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_ii);
-                    while (read_csr(SIMBACORE_BUSY));
-                    while (read_csr(STREAMER_BUSY_CSR));
-                    simbacore_cycles += read_simbacore_perf_counter();
-
-                    // ii ; rebind for ri = x_re @ W_im
-                    _set_streamer_start();
-                    _set_simbacore_start();
-                    write_csr(STREAMER_START_CSR, 0);
-                    write_csr(SIMBACORE_START, 0);
-                    write_csr(BASE_PTR_READER_0_LOW, (uint32_t)ptr_x_re_b);
-                    write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_ri);
-                    while (read_csr(SIMBACORE_BUSY));
-                    while (read_csr(STREAMER_BUSY_CSR));
-                    simbacore_cycles += read_simbacore_perf_counter();
-
-                    // ri ; preload SIMD widen streamers for side 0 (fuse follows)
-                    _set_streamer_start();
-                    _set_simbacore_start();
-                    write_csr(STREAMER_START_CSR, 0);
-                    write_csr(SIMBACORE_START, 0);
-                    set_simd_streamer_no_b((uint32_t)ptr_rr, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
+                    set_simd_streamer_no_b((uint32_t)ptr_outA, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
                                            (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
                     while (read_csr(SIMBACORE_BUSY));
                     while (read_csr(STREAMER_BUSY_CSR));
                     simbacore_cycles += read_simbacore_perf_counter();
+
+                    // Sub-tiles inside the concat outputs (ConvFormat is d3-outer):
+                    //   out_A = [rr | ri] , out_B = [ir | ii] , each half = one real sub-tile.
+                    uint8_t* ptr_rr = ptr_outA;
+                    uint8_t* ptr_ri = ptr_outA + M3_length_d_tile;
+                    uint8_t* ptr_ir = ptr_outB;
+                    uint8_t* ptr_ii = ptr_outB + M3_length_d_tile;
 
                     // ---- SIMD fuse for this tile (both sides) ----
                     for (int side = 0; side < 2; side++) {
@@ -209,7 +195,7 @@ int main(void) {
 
                         // Widen pos -> bf16_a
                         if (side == 0) {
-                            // Streamers preloaded during last OSGEMM ri
+                            // Streamers preloaded during OSGEMM B (pos = rr = out_A[0])
                             set_simbacore_csr(M25_SIMD_NOOP_FP8_REQUANT, seqLen, M3_dPerB_tile, M3_dPerB_tile, 1, 1);
                         } else {
                             set_simd_streamer_no_b((uint32_t)pos, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,

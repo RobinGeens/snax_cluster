@@ -92,6 +92,8 @@ int main(void) {
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: einfft-tiled-is-osgemm (L=%u, dModel=%u, dPerB=%u, nBranches=%u)\n\n", seqLen,
                dModel, M3_dPerB, M3_nBranches);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
     }

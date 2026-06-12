@@ -54,6 +54,17 @@ class DataGenerator(DataGeneratorBase):
 
     def run(self):
         self.build_einfft_data()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     # ------------------------------------------------------------------
     # Bias expansion helpers.
@@ -187,23 +198,8 @@ class DataGenerator(DataGeneratorBase):
         len_w   = nBranches * len_w_branch
         len_out = nBranches * len_out_branch
 
-        # ---- TCDM footprint sanity check (per-branch resident, L3-staged) ----
-        def _a64(v):
-            return (v + 63) & ~63
-
-        per_branch_resident = (
-            _a64(len_x_branch) * 4 +            # x_re/x_im (flatA) + x_re_conv/x_im_conv (ConvFormat)
-            _a64(len_w_branch) * 4 +            # W_re/W_im (OS) + W_re_is/W_im_is (IS)
-            _a64(len_d) * 2 +                   # rr, ii (OS scratch)
-            _a64(len_cd) * 1 +                  # psum P (IS): seeded with b_im, accumulates ri then ir
-            _a64(len_bf16) * 2 +               # bf16_a, bf16_b (real SIMD staging)
-            _a64(len_bias_mini_branch) * 1 +   # b_re mini (real)
-            _a64(len_out_branch) * 2           # out_re, out_im
-        )
-        assert per_branch_resident <= self.TCDM_BYTES, (
-            f"footprint {per_branch_resident} B exceeds TCDM {self.TCDM_BYTES} B"
-        )
-        print(f"// einfft-tiled-is-osgemm L1 usage (per-branch resident): {per_branch_resident} B")
+        # TCDM footprint (per-branch resident, L3-staged) is modeled in
+        # memory_model.py and emitted via _run_memory_model().
 
         # ---- Biases -----------------------------------------------------------
         # Real: conv-walk semi-expand here. Imag: chisel already emitted the

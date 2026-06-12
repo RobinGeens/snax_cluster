@@ -49,6 +49,18 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         self.check_tiling_constraints()
         self.build_Phase1_data()
         self.build_Phase2_data()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        # Override the inherited (main-tiled, 2-phase) version with this app's Phase-1-only model
+        # (memory_model.py next to here); main-tiled's would over-report iscore_out_P2 + P2 tiles.
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(_HERE, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.path.append(os.path.join(_HERE, "../../main/data"))
+        from memory_model_base import run_model_from_datagen  # type: ignore[import]
+
+        self.lines_params.append(run_model_from_datagen(mod.build_report, _HERE))
 
 
 if __name__ == "__main__":

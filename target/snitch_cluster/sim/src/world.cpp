@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cyc.hpp"
+#include "cyc_engine.hpp"
 #include "fp.hpp"
 
 // TCDM narrow channels per streamer port (R0..R13, W0..W3); a port issues this many 8-byte
@@ -65,6 +66,23 @@ uint32_t SimWorld::dma_submit(const DmaDesc& d, uint64_t at) {
     // TCDM traffic: each 64B beat = 8 narrow (8B) words on each TCDM-resident side of the copy.
     int tcdm_sides = (d.src_is_l3 ? 0 : 1) + (d.dst_is_l3 ? 0 : 1);
     rec(TR_TCDM, seg_start, dma_busy_until_, beats * 8 * (uint64_t)tcdm_sides);
+    if (tcdm_sides > 0) dma_busy_addr_ = d.dst_is_l3 ? src : dst;  // remember the in-flight TCDM-side addr
+    // Record DMAs launched DURING a P2 invocation for the cycle-accurate contention re-step. Only
+    // the TCDM-resident side contends on the banks; an L3->L3 copy (tcdm_sides==0) doesn't.
+    if (dma_engine_on_ && inv_kind_ && !inv_finalized_ && at >= accel_start_ && tcdm_sides > 0) {
+        uint32_t tcdm_addr = d.dst_is_l3 ? src : dst;     // the side that lands in TCDM
+        inv_dma_.enqueue(tcdm_addr, d.size * rows, l3, at - accel_start_);
+    }
+    // Engine path: enqueue the DMA live; advance_to steps it in the same loop as compute so the
+    // contention (and its FIFO-slack hiding) emerges. at_rel is relative to the invocation start.
+    if (engine_active_ && at >= accel_start_ && tcdm_sides > 0) {
+        advance_to(at);
+        uint32_t ta = d.dst_is_l3 ? src : dst;
+        engine_.dma_enqueue(ta, d.size * rows, l3, at - accel_start_);
+        if (std::getenv("MEMSIM_ENGDBG"))
+            std::fprintf(stderr, "  [ENQ] +%lld dst=%08x sb%d bytes=%u l3=%d\n",
+                         (long long)(at - accel_start_), ta, (int)((ta >> 6) & 3), d.size * rows, (int)l3);
+    }
     ++dma_txid_;
     if (std::getenv("MEMSIM_DMA") && dma_txid_ <= 8) {
         std::fprintf(stderr, "  dma#%u src=0x%08x dst=0x%08x size=%u 2d=%d rep=%u beats=%llu busy_until=%llu\n",
@@ -83,8 +101,12 @@ void SimWorld::snax_write(uint32_t csr, uint32_t val, uint64_t at) {
         case SNAX_STREAMER_START:
             break;  // functional: run happens at simbacore start
         case SNAX_DELAYED_START_R10:
-            break;  // functional no-op (pacing only)
+            // Engine path: latch the SUC release at the ACTUAL SW-write cycle (advance the engine to it
+            // first so the gauge it polled is consistent). Else release is gauge-based in the co-sim.
+            if (val && engine_active_) { advance_to(at); engine_.release_r10(); }
+            break;
         case SNAX_DELAYED_START_R11:
+            if (val && engine_active_) { advance_to(at); engine_.release_r11(); }
             break;
         case SNAX_MODE:
             cfg_.mode = val;
@@ -132,25 +154,39 @@ uint32_t SimWorld::gauge_at(uint64_t now, uint64_t t0, uint64_t t1, uint32_t tot
 
 uint32_t SimWorld::snax_read(uint32_t csr, uint64_t at, bool& is_poll) {
     is_poll = false;
+    // The first BUSY poll happens after the SW has issued the invocation's DMAs (the refill loop
+    // runs before the wait_simbacore), so this is the point to fold the recorded DMA contention into
+    // the P2 timeline. Apps with no mid-invocation DMA recorded nothing -> no re-step, no change.
+    if (inv_kind_ && !inv_finalized_ && (csr == SNAX_SIMBACORE_BUSY || csr == SNAX_STREAMER_BUSY)) {
+        inv_finalized_ = true;
+        if (inv_dma_.busy()) finalize_inv();
+    }
     switch (csr) {
         case SNAX_STREAMER_BUSY:
             is_poll = true;
-            return at < accel_end_ ? 1 : 0;
+            return (engine_active_ || at < accel_end_) ? 1 : 0;
         case SNAX_SIMBACORE_BUSY:
             is_poll = true;
-            return at < accel_end_ ? 1 : 0;
+            return (engine_active_ || at < accel_end_) ? 1 : 0;
         case SNAX_STREAMER_PERF:
             return 0;
         case SNAX_SIMBACORE_PERF:
             return perf_;
         case SNAX_R10_GAUGE:
             is_poll = true;
-            return gauge_at(at, accel_start_, t_oscore_done_, g_r10_total_);
+            // Engine path: the live osCore-tile fire-counter (advance_to stepped it to `at`). Else the
+            // co-sim fire-vector / linear ramp.
+            if (engine_used_) return engine_.g_r10();
+            return !g_r10_fire_.empty() ? gauge_stepped(g_r10_fire_, at)
+                                        : gauge_at(at, accel_start_, t_oscore_done_, g_r10_total_);
         case SNAX_R11_GAUGE:
             is_poll = true;
-            return gauge_at(at, t_oscore_done_, t_suc_done_, g_r11_total_);
+            if (engine_used_) return engine_.g_r11();
+            return !g_r11_fire_.empty() ? gauge_stepped(g_r11_fire_, at)
+                                        : gauge_at(at, t_suc_start_, t_suc_done_, g_r11_total_);
         case SNAX_ISCORE_TILE_CNT:
             is_poll = true;
+            if (engine_used_) return engine_.g_iscore();
             // P2: isCore runs last (after SUC); P1: overlaps osCore from start.
             return gauge_at(at, phase2_ ? t_suc_done_ : accel_start_, accel_end_, g_iscore_total_);
         default:
@@ -161,6 +197,27 @@ uint32_t SimWorld::snax_read(uint32_t csr, uint64_t at, bool& is_poll) {
 
 void SimWorld::run_invocation(uint64_t at) {
     decode_ports();
+    // Fresh per-invocation DMA-contention state: DMAs the SW launches during this invocation
+    // (recorded in dma_submit) are folded in by finalize_p2() on the first SIMBACORE_BUSY read.
+    inv_dma_.clear();
+    // The per-cycle DMA-contention engine is OPT-IN (MEMSIM_DMA_PERIOD=<beats period>). Verification
+    // showed P2's SUC is switchCore-bound (sw_cyc gating already captures the oscore gap to +0.5%), so
+    // the engine's bank contention is mostly hidden and over-counts if always on. Off by default ->
+    // the (accurate) provisional timeline is unchanged. See docs/dataflow/10_memsim.md.
+    // The per-cycle DMA-contention engine is ALWAYS ON: all timing emerges from stepping, no closed
+    // form. beat_period_l3 = measured L3 rate (~4 cyc/64B beat). MEMSIM_DMA_PERIOD overrides the period;
+    // =0 disables the engine (debug only -> falls back to the dma_cycles approximation).
+    dma_engine_on_ = true;
+    inv_dma_.beat_period_l3 = 4;
+    if (const char* e = std::getenv("MEMSIM_DMA_PERIOD")) {
+        int p = atoi(e);
+        if (p > 0) inv_dma_.beat_period_l3 = p;
+        else dma_engine_on_ = false;
+    }
+    inv_kind_     = 0;
+    inv_finalized_ = false;
+    engine_active_ = false;
+    engine_used_   = false;
     // ---- compute per-invocation busy-cycle durations (see docs/dataflow/10_memsim.md
     // and the MambaCore FSM). cfg_.dInner is the per-tile dInner (M*_dInner_tile). ----
     const uint32_t Mu = 16, Nu = 24;
@@ -194,78 +251,140 @@ void SimWorld::run_invocation(uint64_t at) {
 
     accel_start_ = at;
     if (is_simd) {
-        // SIMD pass (SimdCore): no GEMM subcore runs; the core consumes one bank-group per
-        // cycle, so the busy time = the gating streamer's temporal beat count, taken from the
-        // captured AGU bounds (no GEMM/SUC formula applies; this is what the FFT uses).
-        uint64_t beats = 0;
-        for (int p = 0; p < N_PORTS; p++) {
-            if (!ports_[p].enabled) continue;
-            uint64_t b = 1;
-            for (int d = 0; d < 4; d++) b *= ports_[p].t_bound[d] ? (uint64_t)ports_[p].t_bound[d] : 1;
-            if (b > beats) beats = b;
-        }
+        // SIMD pass (SimdCore): no GEMM subcore runs. The enabled reader ports feed the core and the
+        // enabled writers drain it, stepped per cycle on ONE shared fabric (cyc_simd) so strided-gather
+        // bank conflicts + the W-drain tail emerge — was a max-of-beats formula. Records the FIFO plot.
+        std::vector<FifoRow> ff;
+        long dma_ov = (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0;
+        uint64_t busy = cyc_simd(ports_, PORT_NCH, dma_ov, trace_on_ ? &ff : nullptr);
         t_oscore_done_ = t_suc_done_ = at;
-        accel_end_                   = at + beats;
+        accel_end_                   = at + busy;
+        append_fifo(ff, accel_start_);
     } else if (en_suCore) {
-        // Strict serialize (gauges at 100% — see docs). Per-stage pipeline fills:
-        // osCore+261, SUC (per-cycle conflict via cyc_suc_duration), isCore+118.
-        t_oscore_done_ = at + osc_dur_ + fill_osc_p2_;
-        t_suc_done_    = t_oscore_done_ + suc_dur_;
-        accel_end_     = t_suc_done_ + isc_dur_ + fill_isc_p2_;
-        // ideal: osCore/isCore arrays are conflict-free (1 MAC-group/cyc) so ideal==dur (util~1);
-        // the SUC's ideal is the conflict-free group count seqLen*dInner_tile, so its bank
-        // conflict shows as util<1 (suc_dur_ carries the ~1.75x at bc_pad=0). Fill = handoff bubble.
-        rec(TR_OSCORE, accel_start_, accel_start_ + osc_dur_, osc_dur_);
-        rec(TR_SUC, t_oscore_done_, t_oscore_done_ + suc_dur_, (uint64_t)cfg_.seqLen * cfg_.dInner);
-        rec(TR_ISCORE, t_suc_done_, t_suc_done_ + isc_dur_, isc_dur_);
+        // Phase 2 with safe-to-start overlap. The app releases the SUC when the R10 (osCore z)
+        // gauge reaches r10_start_cnt, and the isCore when the R11 (SUC y) gauge reaches
+        // r11_start_cnt (shipped via SNAX_DELAYED_START_R10/R11). With full-serialize start_cnts
+        // (== gauge totals, the conservative default used by `main`) this reduces to strict
+        // osCore->SUC->isCore; a tiled app that paces them low overlaps the stages, which is why
+        // modeling it matters — strict-serialize over-predicts P2 by ~40% on overlapped configs.
+        // Per-stage fills (osCore+261, isCore+118) are the handoff bubble from gauge-trigger to the
+        // consumer's real start; the SUC bank conflict is already inside suc_dur_ (cyc_suc_duration).
+        // Cycle-accurate co-sim: step osCore->z->SUC->y->isCore on the fabric with the app's
+        // start_cnts; the overlapped busy count and the per-stage windows EMERGE from stepping
+        // (no gauge fractions, no fill constants). Validated: main R11 boundary 5377 sits inside
+        // the vsim 5300-hang/5400-safe bracket, R10=2 exact. See cyc_phase2.cpp.
+        // A prefetch/spill DMA still in flight at accel start preempts a cycling superbank for its
+        // remaining beats (double-buffered apps overlap the next tile's DMA with this compute).
+        long dma_ov = (dma_busy_until_ > accel_start_) ? (long)(dma_busy_until_ - accel_start_) : 0;
+        // switchCore dt projection (Matmul) cycles: dt_delta = dt·Wᵀ streams ON-CHIP to the SUC, which
+        // can't scan past it -> they are co-active. Cycles = seqLen·dInner·dtRank/(convUnroll·dtRankUnroll).
+        long sw_cyc = (((cfg_.mode >> 8) & 0x3) == 2 && dtRankUnroll_ && cfg_.dtRank)
+                          ? (long)((uint64_t)cfg_.seqLen * cfg_.dInner * cfg_.dtRank / (4u * dtRankUnroll_))
+                          : 0;
+        // Single cycle-exact engine (MEMSIM_ENGINE): configure now; advance_to steps it one cycle at a
+        // time with DMA enqueued live (dma_submit). accel_end_/perf_/gauges come from the engine once it
+        // completes; the DMA hides naturally via the reader FIFO slack -> no over-count. Sentinel
+        // accel_end_ keeps BUSY polls "busy" until advance_to finishes the engine.
+        {  // the single per-cycle engine — the only P1/P2 stepper
+            engine_.configure(ports_, cfg_, r10_start_cnt_, r11_start_cnt_, sw_cyc);
+            engine_.rec_fires = true;
+            engine_.rec_fifo  = trace_on_;  // per-cycle FIFO occupancy for the schedule plot
+            engine_active_ = engine_used_ = engine_.active();
+            if (engine_active_) {
+                accel_end_     = accel_start_ + 1000000000ULL;  // sentinel until advance_to completes it
+                t_oscore_done_ = t_suc_start_ = t_suc_done_ = accel_start_;
+                // DMA still in flight at invocation start (the dma_ov prefetch tail): ground its real
+                // superbank for the remaining cycles, so initial DMA contention emerges like live DMA.
+                if (dma_busy_until_ > accel_start_ && dma_busy_addr_) {
+                    long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;  // L3 beat period = 4
+                    engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
+                }
+            }
+        }
+        (void)dma_ov;
+        if (!engine_active_) {  // degenerate config (M_i<=0 etc.): strict serialize from stage durations
+            t_oscore_done_ = at + osc_dur_;
+            t_suc_start_   = t_oscore_done_;
+            t_suc_done_    = t_suc_start_ + suc_dur_;
+            uint64_t t_isc_start = t_suc_done_, t_isc_done = t_isc_start + isc_dur_;
+            accel_end_     = t_isc_done;
+            if (en_osCore) rec(TR_OSCORE, accel_start_, accel_start_ + osc_dur_, osc_dur_);
+            rec(TR_SUC, t_suc_start_, t_suc_done_, (uint64_t)cfg_.seqLen * cfg_.dInner);
+            if (en_isCore) rec(TR_ISCORE, t_isc_start, t_isc_done, isc_dur_);
+        }
     } else if (en_osCore && !en_isCore) {
         // OSGEMM: cycle-stepped osCore array (R0=A, R1=B) draining through W0. The busy-cycle
         // count and the post-compute output drain are produced by stepping the array + writer.
         // (R0/R1/W0 = the fixed osCore hardware ports; num_channel 2/4/1 from StreamParamGen.)
-        Agu rd[2]  = {ports_[0], ports_[1]};
-        int nch[2] = {2, 4}, nsp[2] = {1, 1};
-        GemmResult g   = cyc_gemm(rd, nch, nsp, 2, ports_[14], 1, 1, (long)M_i * osN, (long)cfg_.dModel, 0);
+        Agu rd[2]   = {ports_[0], ports_[1]};
+        int nch[2]  = {2, 4}, nsp[2] = {1, 1}, rports[2] = {0, 1};  // R0,R1 -> W0
+        std::vector<FifoRow> ff;
+        GemmResult g   = cyc_gemm(rd, nch, nsp, 2, ports_[14], 1, 1, (long)M_i * osN, (long)cfg_.dModel,
+                                 (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0,
+                                 rports, 14, trace_on_ ? &ff : nullptr);
         t_oscore_done_ = t_suc_done_ = at;
         accel_end_                   = at + g.end;
+        append_fifo(ff, accel_start_);
         // ideal = array MAC-group count; g.end adds the output drain -> util<1.
         rec(TR_OSCORE, at, accel_end_, (uint64_t)M_i * osN * cfg_.dModel);
     } else if (en_isCore && !en_osCore) {
         // ISGEMM: cycle-stepped isCore array draining through W3. GEMM input readers are
         // conflict-free (gran>=lanes), so the array is fed at 1/cycle; the W3 output drain is
         // produced by stepping. n_out_tiles = M_i*dFinal, K_i = dInner/24. (W3 = ports_[17], 4ch.)
-        GemmResult g = cyc_gemm(nullptr, nullptr, nullptr, 0, ports_[17], 4, 1, (long)M_i * cfg_.dFinal, (long)K_i, 0);
+        std::vector<FifoRow> ff;  // isgemm: no input readers, output drains through W3 (port 17)
+        GemmResult g = cyc_gemm(nullptr, nullptr, nullptr, 0, ports_[17], 4, 1, (long)M_i * cfg_.dFinal, (long)K_i,
+                                 (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0,
+                                 nullptr, 17, trace_on_ ? &ff : nullptr);
         t_oscore_done_ = t_suc_done_ = at;
         accel_end_                   = at + g.end;
+        append_fifo(ff, accel_start_);
         rec(TR_ISCORE, at, accel_end_, (uint64_t)M_i * cfg_.dFinal * K_i);  // ideal = MACs; drain -> util<1
     } else {
-        // both-core chained (PHASE1, IS_OSGEMM): osCore -> switchCore -> isCore stream as a
-        // pipeline; globalState (the perf counter) spans until all three finish, so the busy is
-        // the slowest stage + the pipeline fill. In PHASE1 the switchCore runs the depthwise
-        // conv1d (m_switchCoreMode = Conv), which processes seqLen*dInner elements convUnroll
-        // (=delaySU=4) at a time -> seqLen*dInner/4 cycles (SwitchCore.scala loop order). conv is
-        // the bottleneck when dModel is small (osCore/isCore cheap); it must be in the max.
-        int sw_mode       = (cfg_.mode >> 8) & 0x3;  // SimbaCoreCtrlBundle.m_switchCoreMode (1=Conv)
-        uint64_t conv_dur = (sw_mode == 1) ? (uint64_t)cfg_.seqLen * cfg_.dInner / 4 : 0;
-        uint64_t comp     = osc_dur_;
-        if (conv_dur > comp) comp = conv_dur;
-        if (isc_dur_ > comp) comp = isc_dur_;
-        // PHASE1 (conv) fill scales with seqLen tiles; IS_OSGEMM (no conv) keeps its flat fill.
-        uint64_t fill  = (sw_mode == 1) ? ((uint64_t)M_i * fill_p1_per_mtile_ + fill_p1_base_) : fill_is_osgemm_;
+        // both-core chained (PHASE1, IS_OSGEMM): osCore -> switchCore conv -> isCore pipeline,
+        // stepped per cycle on the shared fabric (cyc_phase1) — the slowest stage, the lead-in/drain
+        // and the cross-stage contention all emerge, no max-of-formulas, no fitted fill.
+        int sw_mode    = (cfg_.mode >> 8) & 0x3;  // m_switchCoreMode (1=Conv -> PHASE1)
+        long dma_ov    = (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0;
+        // Single cycle-exact engine (MEMSIM_ENGINE): the P1 pipeline runs real-time with DMA enqueued
+        // live, so contention emerges (no deferred cycling-superbank approximation). Else legacy cyc_phase1.
+        {  // the single per-cycle engine — the only P1/P2 stepper
+            engine_.configure(ports_, cfg_, r10_start_cnt_, r11_start_cnt_, /*sw_cyc=*/0);
+            engine_.rec_fires = false;
+            engine_.rec_fifo  = trace_on_;  // per-cycle FIFO occupancy for the schedule plot
+            engine_active_ = engine_used_ = engine_.active();
+            if (engine_active_ && dma_busy_until_ > accel_start_ && dma_busy_addr_) {
+                long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;  // prefetch tail (dma_ov)
+                engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
+            }
+        }
+        if (engine_active_) {
+            accel_end_ = accel_start_ + 1000000000ULL;  // sentinel until advance_to completes the engine
+        } else {
+            accel_end_ = at + osc_dur_ + isc_dur_;  // degenerate (engine inactive): strict serialize
+        }
+        (void)dma_ov;
+        has_conv_  = (sw_mode == 1);
         t_oscore_done_ = at + osc_dur_;
         t_suc_done_    = t_oscore_done_;
-        accel_end_     = at + comp + fill;
-        // PHASE1/IS_OSGEMM: the stages pipeline, so they overlap from `at` for their own
-        // durations (osCore, switchCore conv, isCore are separate rows). All three run at peak
-        // here (conflict-free, no per-stage drain modeled), so ideal==dur (util~1); the pipeline
-        // fill is shared lead-in/drain, not chargeable to one engine.
-        rec(TR_OSCORE, at, at + osc_dur_, osc_dur_);
-        if (sw_mode == 1) rec(TR_SWITCHCORE, at, at + conv_dur, conv_dur);
-        rec(TR_ISCORE, at, at + isc_dur_, isc_dur_);
+        // Trace rows: the three chained stages are co-active across the whole invocation
+        // [at, accel_end_], so each bar spans the true stepped duration; `ideal` stays the
+        // conflict/drain-free work count, so util = ideal/(accel_end_-at) reflects the
+        // shared-fabric bank contention + pipeline lead-in/drain (osCore is the bottleneck;
+        // the shorter conv/isCore stages read lower because they idle within the window).
+        if (!engine_active_) {  // engine path: accel_end_ is a sentinel until advance_to completes it
+            rec(TR_OSCORE, at, accel_end_, osc_dur_);
+            if (sw_mode == 1) {
+                uint64_t conv_dur = (uint64_t)cfg_.seqLen * cfg_.dInner / 4;
+                rec(TR_SWITCHCORE, at, accel_end_, conv_dur);
+            }
+            rec(TR_ISCORE, at, accel_end_, isc_dur_);
+        }
     }
     // The perf counter counts MambaCore busy (globalState != sIDLE, MambaCore.scala:159). The
     // SimdCore is outside the MambaCore, so a SIMD pass costs wall-clock (accel_end_) but does
     // not tick the counter -> perf_ = GEMM/SUC busy only, 0 for a SIMD-only invocation.
-    perf_           = is_simd ? 0u : (uint32_t)(accel_end_ - accel_start_);
+    // engine path: accel_end_/perf_ are set by advance_to when the engine completes (sentinel for now).
+    if (!engine_active_) perf_ = is_simd ? 0u : (uint32_t)(accel_end_ - accel_start_);
     g_r10_total_    = M_i * osN;
     g_r11_total_    = cfg_.seqLen * cfg_.dInner;
     g_iscore_total_ = M_i * cfg_.dFinal * K_i;
@@ -275,7 +394,7 @@ void SimWorld::run_invocation(uint64_t at) {
     // Summed over all ports active this invocation and spread over [accel_start_, accel_end_], this
     // is the average TCDM word demand; plot_timeline.py divides by the 32-bank peak. (In P2 the
     // serialized stages are averaged together — a single invocation-average, not per-stage peaks.)
-    if (trace_on_) {
+    if (trace_on_ && !engine_active_) {  // engine path: accel_end_ is a sentinel here -> deferred to advance_to
         uint64_t tcdm_words = 0;
         for (int p = 0; p < N_PORTS; p++) {
             if (!ports_[p].enabled) continue;
@@ -302,6 +421,16 @@ void SimWorld::run_invocation(uint64_t at) {
                      cfg_.mode, phase2_ ? 2 : 1, cfg_.seqLen, cfg_.dModel, cfg_.dInner, cfg_.dFinal,
                      (unsigned long long)osc_dur_, (unsigned long long)suc_dur_, (unsigned long long)isc_dur_, perf_,
                      (unsigned long long)(accel_end_ - accel_start_));
+}
+
+// Re-step the P2 co-sim with the DMAs the SW issued during this invocation (inv_dma_), now stepping
+// on the shared fabric so DMA<->streamer contention emerges by arbitration. Updates the (previously
+// provisional) accel_end_/perf_/gauges. ports_/cfg_ still describe THIS invocation (decode_ports runs
+// only at START; the SW's next-tile config writes land in raw_ but aren't decoded until the next START).
+void SimWorld::finalize_inv() {
+    // Obsolete deferred DMA re-step: the single engine enqueues DMA live (dma_submit -> engine_.dma_enqueue)
+    // and steps it on the same fabric as compute, so there is nothing to fold in afterwards. inv_kind_ is
+    // never set anymore, so this is never reached; kept as a no-op for the existing call site.
 }
 
 // Scale-normalized FP32-vs-golden compare for the functional datapath. A correct
@@ -571,7 +700,11 @@ void SimWorld::verify_datapath() {
     // fp8_alt->FP32, compute z=A.B, compare to the golden. A global requant scale is
     // normalized out (median ratio) so only wrong operands (layout/stale read) flag; the
     // tolerance covers fp8(e5m2) rounding. See docs/dataflow/10_memsim.md.
-    if (golden_z_) {
+    // Gated on MEMSIM_DATAPATH like the isCore/SUC golden checks below: the flattenB/convfmt
+    // layout assumed here is the non-tiled `main` layout, so a TILED app's tile-0 golden does
+    // not match (scale collapses to ~0) and would false-fail every tiled config. The structural
+    // round-trip + AGU audit above already cover layout for tiled apps without a golden.
+    if (std::getenv("MEMSIM_DATAPATH") && golden_z_) {
         auto rdf = [&](uint32_t a) { return fp8_alt_to_f32((uint8_t)mem->ld8(a)); };
         std::vector<double> model, gold;
         // oscore_weight is flattenB(N_M_K, Ku=1, Nu=24): col-major tile grid, so element
@@ -698,65 +831,52 @@ void SimWorld::verify_datapath() {
         layout_pass_ = layout_pass_ && cmp_fp32_golden(model, gold, "SUC (scan)", Din, 0.40, 0.125, 0.10);
     }
 
-    // Safe-to-start sweep (R10 z-gate osCore->SUC, R11 y-gate SUC->isCore): a per-element,
-    // reorder-aware commit-vs-read schedule. Releasing a reader at the upstream gauge=start_cnt
-    // overlaps the producer; each output element commits at commit_cyc and is read at
-    // reader_start+read_off. read < commit -> a stale read (the consumer pulls an element the
-    // producer hasn't written = the subtle in-buffer corruption). The min start_cnt with zero
-    // stale is the optimum; it is computed by stepping the schedule (tile-granular commit +
-    // the small commit-pipe). See docs/dataflow/10_memsim.md.
-    if (phase2_ && osc_dur_ && suc_dur_ && isc_dur_) {
-        const long Mu = 16, Nu = 24, delaySU = 4;
-        const long M = cfg_.seqLen, N = cfg_.dInner, Ne = M * N, M_i = M / Mu, osN = N / Nu;
-        const long Ki = (M_i * osN != 0) ? (long)osc_dur_ / (M_i * osN) : (long)osc_dur_;
-        // R10 z-gate: producer osCore (N_M_K tile commit), consumer SUC (SUCFormat read).
-        auto z_stale = [&](long sc) {
-            double rstart = (double)sc / (M_i * osN) * osc_dur_, rrate = (double)suc_dur_ / Ne;
-            long stale = 0;
-            for (long m = 0; m < M; m++)
-                for (long n = 0; n < N; n++) {
-                    long tile     = (n / Nu) * M_i + (m / Mu);  // N_M_K produce order
-                    double commit = (double)(tile + 1) * Ki + s2s_lat_z_;
-                    long beat     = (n / delaySU) * (M * delaySU) + m * delaySU + (n % delaySU);  // SUCFormat read
-                    double read   = rstart + (double)beat * rrate;
-                    if (read < commit) stale++;
-                }
-            return stale;
+    // Safe-to-start boundary (R10 z-gate osCore->SUC, R11 y-gate SUC->isCore): NO analytic model.
+    // The cycle-accurate co-sim steps osCore->z->SUC->y->isCore on the fabric and reports the
+    // smallest start_cnt for which the consumer never reads a word its producer has not committed
+    // (the stale/hazard check over the real per-cycle write + read schedules). Validated against
+    // the vsim brackets (main R10=2, R11=5377 in 5300-hang/5400-safe). See cyc_phase2.cpp.
+    if (phase2_) {
+        long sw_cyc = (((cfg_.mode >> 8) & 0x3) == 2 && dtRankUnroll_ && cfg_.dtRank)
+                          ? (long)((uint64_t)cfg_.seqLen * cfg_.dInner * cfg_.dtRank / (4u * dtRankUnroll_))
+                          : 0;
+        bool en_osCore = (cfg_.mode >> 19) & 1;
+        bool en_isCore = (cfg_.mode >> 17) & 1;
+        // Engine-based sweep (single stepper): run the engine at fixed (r10,r11) WITHOUT real-time
+        // release -> it gates the SUC on g_r10>=r10 and the isCore on g_r11>=r11; result().stale_z/y
+        // count reads of words their producer had not committed. bsearch the smallest zero-stale count.
+        long r10_total = (long)(cfg_.seqLen / 16) * (cfg_.dInner >= 24 ? cfg_.dInner / 24 : 0);
+        long r11_total = (long)cfg_.seqLen * cfg_.dInner;
+        struct SR { long z, y; };
+        auto run = [&](long r10c, long r11c) -> SR {
+            AccelEngine eng;
+            eng.configure(ports_, cfg_, r10c, r11c, sw_cyc);
+            if (!eng.active()) return {-1, -1};
+            long guard = 0;
+            while (eng.step() && ++guard < 500000000) {}
+            return {eng.result().stale_z, eng.result().stale_y};
         };
-        // R11 y-gate: producer SUC (SUCFormat ~1/cyc), consumer isCore (rate-difference dominated).
-        auto y_stale = [&](long sc) {
-            double rstart = (double)sc / Ne * suc_dur_, prate = (double)suc_dur_ / Ne, crate = (double)isc_dur_ / Ne;
-            long stale = 0;
-            for (long e = 0; e < Ne; e++) {
-                double commit = (double)(e + 1) * prate + s2s_lat_y_;
-                double read   = rstart + (double)e * crate;
-                if (read < commit) stale++;
-            }
-            return stale;
-        };
-        // Smallest start_cnt with zero stale reads = the optimum. The stale count is monotone
-        // non-increasing in start_cnt (releasing later only moves reads later), so binary-search
-        // it; report the optimum and the stale count one tick earlier (the boundary is tight).
-        auto run = [&](const char* lbl, long total, auto&& fn) -> long {
-            long lo = 1, hi = total, opt = total;
-            while (lo <= hi) {
-                long mid = lo + (hi - lo) / 2;
-                if (fn(mid) == 0) {
-                    opt = mid;
-                    hi  = mid - 1;
-                } else
-                    lo = mid + 1;
-            }
-            long below = opt > 1 ? opt - 1 : opt, s_below = opt > 1 ? fn(below) : 0;
+        if (en_osCore && r10_total > 0 && r11_total > 0) {
+            long min_r10 = r10_total, lo = 1, hi = r10_total;   // z-gate: isCore released last (r11=total)
+            while (lo <= hi) { long mid = lo + (hi - lo) / 2;
+                if (run(mid, r11_total).z == 0) { min_r10 = mid; hi = mid - 1; } else lo = mid + 1; }
+            long min_r11 = r11_total;                            // y-gate: SUC released at the z-safe point
+            if (en_isCore) { lo = 1; hi = r11_total;
+                while (lo <= hi) { long mid = lo + (hi - lo) / 2;
+                    if (run(min_r10, mid).y == 0) { min_r11 = mid; hi = mid - 1; } else lo = mid + 1; } }
+            SR app = run(r10_start_cnt_ ? (long)r10_start_cnt_ : r10_total,
+                         r11_start_cnt_ ? (long)r11_start_cnt_ : r11_total);
+            s2s_total_r10_ = r10_total; s2s_total_r11_ = r11_total;
+            s2s_opt_r10_ = min_r10; s2s_opt_r11_ = min_r11;
             std::fprintf(stderr,
-                         "safe-to-start %s: optimal start_cnt=%ld/%ld (start_cnt=%ld has %ld stale element(s))\n", lbl,
-                         opt, total, below, s_below);
-            return opt;
-        };
-        s2s_total_r10_ = M_i * osN;
-        s2s_total_r11_ = Ne;
-        s2s_opt_r10_   = run("R10 (z, osCore->SUC)", s2s_total_r10_, z_stale);
-        s2s_opt_r11_   = run("R11 (y, SUC->isCore)", s2s_total_r11_, y_stale);
+                         "safe-to-start (cycle-accurate engine): R10 (z) optimal=%ld/%ld | R11 (y) optimal=%ld/%ld | "
+                         "at app(r10=%u,r11=%u) stale_z=%ld stale_y=%ld%s\n",
+                         min_r10, r10_total, min_r11, r11_total, r10_start_cnt_, r11_start_cnt_,
+                         app.z, app.y, (app.z > 0 || app.y > 0) ? "  <-- UNSAFE (reads uncommitted data)" : "");
+            // An app start_cnt releasing a consumer before its producer committed is a predicted
+            // wrong-output fault (the gross iscore_out/SUC-y vsim failures) -> fail the run.
+            if (app.z > 0 || app.y > 0) layout_pass_ = false;
+        }
     }
 
     // Timing-coupled BIST (SUC dt_BC delivery): the consumer must receive BC groups in AGU
@@ -781,8 +901,61 @@ void SimWorld::verify_datapath() {
     }
 }
 
+// Step the single engine (MEMSIM_ENGINE) up to `t`. Driven by the interp before every SNAX read and
+// by the scheduler's blocked-poll path. The engine consumes the DMAs enqueued live by dma_submit, so
+// DMA<->compute contention (and its FIFO-slack hiding) emerges. On completion accel_end_/perf_ latch.
+void SimWorld::advance_to(uint64_t t) {
+    if (!engine_active_ || t <= accel_start_) return;
+    uint64_t target_rel = t - accel_start_;
+    while (engine_.active() && engine_.cyc() < target_rel) engine_.step();
+    if (!engine_.active()) {
+        engine_active_ = false;
+        const auto& r = engine_.result();
+        accel_end_ = accel_start_ + r.busy;
+        perf_      = (uint32_t)r.busy;
+        // Stage-activity bars for the timeline plot: the engine reports the REAL per-stage windows
+        // (osc_end / suc_start..suc_end / isc_start..isc_end / sw_start..sw_end), relative to
+        // accel_start_. `ideal` = conflict-free MAC-group count -> the plot's utilization line.
+        if (trace_on_) {
+            long M_i = cfg_.seqLen / 16, osN = (cfg_.dInner >= 24) ? cfg_.dInner / 24 : 0;
+            bool en_os = (cfg_.mode >> 19) & 1, en_isc = (cfg_.mode >> 17) & 1;
+            uint64_t osc_id = (uint64_t)M_i * osN * cfg_.dModel;
+            uint64_t suc_id = (uint64_t)cfg_.seqLen * cfg_.dInner;
+            uint64_t isc_id = (uint64_t)M_i * cfg_.dFinal * osN;
+            if (phase2_) {  // osCore -> SUC -> isCore, real windows from the co-sim
+                if (en_os) rec(TR_OSCORE, accel_start_, accel_start_ + r.osc_end, osc_id);
+                rec(TR_SUC, accel_start_ + r.suc_start, accel_start_ + r.suc_end, suc_id);
+                if (en_isc) rec(TR_ISCORE, accel_start_ + r.isc_start, accel_start_ + r.isc_end, isc_id);
+                if (r.sw_end > r.sw_start) rec(TR_SWITCHCORE, accel_start_ + r.sw_start, accel_start_ + r.sw_end, suc_id);
+            } else {  // P1 / IS_OSGEMM: osCore/conv/isCore co-active across the invocation window
+                if (en_os) rec(TR_OSCORE, accel_start_, accel_end_, osc_id);
+                if (((cfg_.mode >> 8) & 0x3) == 1) rec(TR_SWITCHCORE, accel_start_, accel_end_, suc_id / 4);
+                if (en_isc) rec(TR_ISCORE, accel_start_, accel_end_, isc_id);
+            }
+            // TCDM streamer-bandwidth demand over the real invocation window (run_invocation defers this
+            // for the engine path since accel_end_ was a sentinel there).
+            uint64_t tcdm_words = 0;
+            for (int p = 0; p < N_PORTS; p++) {
+                if (!ports_[p].enabled) continue;
+                uint64_t steps = 1;
+                for (int d = 0; d < 4; d++) steps *= ports_[p].t_bound[d] ? (uint64_t)ports_[p].t_bound[d] : 1;
+                tcdm_words += steps * PORT_NCH[p];
+            }
+            rec(TR_TCDM, accel_start_, accel_end_, tcdm_words);
+        }
+        // Splice this invocation's per-cycle FIFO trace into the run-wide trace at its absolute cycle.
+        append_fifo(engine_.result().fifo, accel_start_);
+        if (std::getenv("MEMSIM_ENGDBG"))
+            std::fprintf(stderr, "  [ENGDONE] busy=%llu stale_z=%ld stale_y=%ld\n",
+                         (unsigned long long)engine_.result().busy, engine_.result().stale_z, engine_.result().stale_y);
+    }
+}
+
 uint64_t SimWorld::next_event_cycle() const {
     uint64_t e = UINT64_MAX;
+    // While the engine runs, step it forward a bounded amount so a blocked poll re-checks the live
+    // gauge (and the peer hart can interleave its DMAs) rather than jumping straight to completion.
+    if (engine_active_) return accel_start_ + engine_.cyc() + 1;
     if (accel_end_ > accel_start_) e = accel_end_;  // accelerator completion
     if (dma_busy_until_ && dma_busy_until_ < e) e = dma_busy_until_;
     return e;

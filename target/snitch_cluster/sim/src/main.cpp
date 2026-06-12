@@ -60,6 +60,8 @@ int main(int argc, char** argv) {
     };
     world.set_ssm(symval("dState"), symval("xProjDim"), symval("bc_pad_banks"), symval("dtRankUnroll"));
     world.set_p1out(img.sym("M2_dt_BC"), img.sym("M2_suc_x"));
+    // Phase-2 safe-to-start thresholds (the app paces the SUC/isCore release to these gauge counts).
+    world.set_s2s(symval("M2_R10_start_cnt"), symval("M2_R11_start_cnt"));
     m.world = &world;
 
     m.harts.resize(2);
@@ -94,6 +96,32 @@ int main(int argc, char** argv) {
             std::fclose(f);
             std::fprintf(stderr, "memsim: wrote timeline (%zu segments) to %s\n", world.trace().size(),
                          timeline_path.c_str());
+        }
+
+        // Per-cycle streamer-FIFO occupancy (wide CSV: cycle + one column per port), for the FIFO
+        // fullness plot. Path = <timeline>.fifo.csv (strip a trailing .csv, append .fifo.csv) so
+        // plot_timeline.py can find it next to the timeline CSV. Engine (P1/P2), cyc_gemm
+        // (osgemm/isgemm) and cyc_simd (SIMD) invocations all contribute rows; -1 = port idle/absent.
+        std::string fifo_path = timeline_path;
+        if (fifo_path.size() >= 4 && fifo_path.compare(fifo_path.size() - 4, 4, ".csv") == 0)
+            fifo_path.resize(fifo_path.size() - 4);
+        fifo_path += ".fifo.csv";
+        const auto& ftrace = world.fifo_trace();
+        if (!ftrace.empty()) {
+            FILE* ff = std::fopen(fifo_path.c_str(), "w");
+            if (!ff) {
+                std::fprintf(stderr, "memsim: cannot open FIFO file %s\n", fifo_path.c_str());
+            } else {
+                std::fprintf(ff, "cycle,R0,R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12,R13,W0,W1,W2,W3\n");
+                for (const auto& s : ftrace) {
+                    std::fprintf(ff, "%llu", (unsigned long long)s.first);
+                    for (int p = 0; p < 18; p++) std::fprintf(ff, ",%d", (int)s.second[p]);
+                    std::fprintf(ff, "\n");
+                }
+                std::fclose(ff);
+                std::fprintf(stderr, "memsim: wrote FIFO occupancy (%zu cycles) to %s%s\n", ftrace.size(),
+                             fifo_path.c_str(), world.fifo_capped() ? "  [ROW CAP HIT — trace truncated]" : "");
+            }
         }
     }
 

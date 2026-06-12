@@ -12,7 +12,7 @@
 > [8. Performance optimization](08_performance_optimization.md) ·
 > [9. Async tiling](09_async_tiling.md)
 
-> Byte layouts (weights, twiddles, intermediates, the `[d][l]`-col-major
+> Byte layouts (weights, twiddles, intermediates, the `flattenB`
 > reorder output): [memory_layouts/09](../../../chisel-ssm/docs/memory_layouts/09_fft.md).
 
 All FFT programs implement an **EinFFT-style partitioned DFT**: a length-`L`
@@ -53,19 +53,38 @@ the banked port); the final IS-core launch uses the plain mode.
 
 ## `fft-tiled` (2-way, tiled)
 
+(Naming: `L1`/`L2` are the FFT butterfly dimensions, `L = L1·L2` — not the TCDM
+scratchpad, which is also colloquially called "L1".)
+
 Tiles use different axes per phase, because the two phases have different
 constraints:
 
 - **Phase A** (partition 1 + hadamard + reorder) is **dModel-tiled**. Each
   tile DMAs a `dModel`-slice of the input in, runs the three accelerator
-  stages on per-tile TCDM slots, and DMAs the per-tile reorder output up to
-  an L3 spill buffer.
+  stages on per-tile TCDM slots, and spills the per-tile reorder output up to
+  an L3 spill buffer. The on-chip reorder emits col-major per d-tile; the
+  spill writes it into the L3 buffer in `flattenB` (K-tile-major) order — the
+  layout the Phase B IS-core reads (see below).
 - **Phase B** (partition 2) is **K-tiled**, mirroring `isgemm-tiled`. The
   `partition2_out` psum stays FULL in TCDM and accumulates across tiles;
   non-final tiles run in no-requant mode, final tile applies the requant.
 
 The L3 spill is needed because the reorder output of all of Phase A would
 not fit in TCDM at once.
+
+**`hadamard_reordered` L3 layout (`flattenB`).** The partition-2 IS-core reads
+its `B` input (the `2·L2 × L1·dModel` stacked re/im matrix) in `flattenB`
+(`K_M_N`) order: the `2·L2` contraction rows are split into `2·L2/seqLenUnroll`
+K-tiles laid out **outermost**, each followed by its full `L1·dModel` N-sweep.
+When `L2 == seqLenUnroll` each re/im half is exactly one K-tile and `flattenB`
+collapses to plain col-major reals-then-imags, so the Phase A spill is a single
+contiguous 1D DMA. When `L2 > seqLenUnroll` the col-major reorder output no
+longer matches `flattenB`, so the Phase A spill **scatters** each
+`seqLenUnroll`-element block `reals[m·L2 + k2·seqLenUnroll … ][d]` into its
+`flattenB` block `(k2, d, m)` (a `k2 × dModel_tile` loop of block-granular 2D
+DMAs). Phase B then reads each K-slice as a contiguous L3 chunk. This keeps the
+finicky on-chip reorder streamers (`R7_2B`/`W3_2B`) L2-agnostic and folds the
+K-tile reorder into the already-present spill DMA.
 
 | Tensor                            | Phase | Lifecycle                                                          |
 | --------------------------------- | ----- | ------------------------------------------------------------------ |
@@ -135,17 +154,45 @@ Per outer slice (`nb_tiles_A` = number of slices, must divide `dModel`):
 
 The full output is assembled in L3 and verified there (scalar reads).
 
-**TCDM footprint / `nb_tiles_A`.** The slice runs through a **2-slot ping-pong**
-(slotA/slotB, each = the largest per-slice buffer `partition_out` BF16); peak ≈
-`always_live + 2·align64(2·L·dM·2)`. At `L=4096` this fits TCDM for `dM ≤ 12`, so
-**`nb_tiles_A ≥ ceil(dModel/12)`** (e.g. `dModel=96 → nb_tiles_A=8, dM=12`,
-~396 KiB). `nb_tiles_A=1` (no slicing) is exact but only fits small `dModel`.
+**TCDM footprint / `nb_tiles_A`.** Each slice uses **dedicated right-sized buffers**
+(not two max-sized ping-pong slots): one BF16 partition psum `P` (`slot_size =
+2·L·dM·2`, reused in turn by all three partition gemms), two FP8 hadamard scratch
+buffers `H1`/`H2` (each `slot_size/2` — FP8 is half the BF16 partition), and one FP8
+input. Peak ≈ `always_live + 2·L·dM·2 + 2·(L·dM) + L·dM`; at `L=4096` this fits TCDM
+for `dM ≤ 12`, so **`nb_tiles_A ≥ ceil(dModel/12)`** (e.g. `dModel=96 → nb_tiles_A=8,
+dM=12`, ~445 KiB). `nb_tiles_A=1` (no slicing) is exact but only fits small `dModel`.
 
 | Tensor | Lifetime | Notes |
 | --- | --- | --- |
 | `weight1/2/3`, `twiddles1/2` | all slices | **shared** — preloaded once, broadcast over `d` |
-| `in`, `partition1_out`, `hadamard1_out/_packed`, `partition2_out`, `hadamard2_out/_packed`, `partition3_out` | per slice | `dM`-sized, ping-pong'd through 2 slots |
+| `in` | per slice | FP8 input; gemm1's R12 |
+| `P` (partition psum) | per slice | BF16 `slot_size`; gemm1→cmul1, gemm2→cmul2, gemm3→scatter |
+| `H1` (CMul out), `H2` (reorder out) | per slice | FP8 `slot_size/2` each |
 | `output` (full `partition3_out`) | L3 | assembled by the per-slice 2-D scatter |
+
+**Latency hiding (DMA + CSR).** Right-sizing the FP8 scratch frees the headroom for
+two overlaps that the old 2-slot ping-pong could not afford:
+
+- **DMA behind compute.** Once a partition psum has been consumed by its CMul, the DM
+  core re-zeros `P` for the next gemm *during* the following reorder (NOOP) step, and
+  prefetches the next slice's input in the same window. Only the per-slice output
+  scatter stays on the critical path. (The gemms read-accumulate the psum via R13/W3
+  on the same `P` pointer, so each gemm needs a zeroed target — `K_1=1` but
+  `K_2=K_3=2`, so the zero is not removable, only hideable.)
+- **CSR setup behind the accelerator.** The streamer latches its config at `start`
+  (verified: programming a step's CSRs — including disabling the *running* gemm's
+  R11/R12 ports — mid-run does not disturb it), so each step's ~50 streamer-CSR writes
+  are issued while the previous step still runs. The 6-write simbacore MODE CSR stays
+  serial (issued right before each `start`).
+
+These cut the Snitch overhead from **~136% to ~107%** (`dModel=96`: 585k→512k cycles),
+byte-identical output. The residual ~107% is the per-invocation **streamer fill/drain**
+(W3 writer + bank-transposer) across the 56 small accelerator invocations
+(8 slices × 7 steps): the streamer is busy ~1.9× the compute core, and that drain does
+**not** overlap — consecutive steps have true data deps *and* share the R13/W3 ports, so
+no streaming-chain is possible — and shrinks only with fewer invocations (capped by the
+512 KiB TCDM at `dM=12`). Reducing it further is an RTL-level concern (faster
+transposer/W3), not a SW one.
 
 **Verification.** Only the final `partition3_out` is byte-checked (±1-LSB). Slicing
 is **exact**: the per-slice kernel is the un-tiled `fft-3way` kernel run on `dM`

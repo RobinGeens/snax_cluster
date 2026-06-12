@@ -1,12 +1,48 @@
 // Copyright 2026 KU Leuven. memsim — per-cycle fabric + reader/writer streamers.
 #include "cyc.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
+// --- per-bank contention histogram (MEMSIM_BANKHIST), debug-only ---
+bool Fabric::h_on = false;
+long Fabric::h_req[Fabric::NB] = {0};
+long Fabric::h_conf[Fabric::NB] = {0};
+long Fabric::h_portbank[18][Fabric::NB] = {{0}};
+void Fabric::hist_reset() {
+    for (int b = 0; b < NB; b++) { h_req[b] = h_conf[b] = 0; for (int p = 0; p < 18; p++) h_portbank[p][b] = 0; }
+}
+void Fabric::hist_dump(const char* tag) {
+    if (!h_on) return;
+    // fabric tokens use the Q_* ids (cyc_phase1): osCore=R0(0),R1(1),W1(6),W0(9); isCore=R12(4),R13(5),W3(7),R11(8)
+    const int osP[] = {0, 1, 6, 9}, isP[] = {4, 5, 7, 8};
+    long tot_req = 0, tot_conf = 0;
+    fprintf(stderr, "[BANKHIST %s] bank: req conf | osCore isCore (which streams hit each bank)\n", tag);
+    for (int b = 0; b < NB; b++) {
+        if (h_req[b] == 0) continue;
+        long os = 0, is = 0;
+        for (int p : osP) os += h_portbank[p][b];
+        for (int p : isP) is += h_portbank[p][b];
+        tot_req += h_req[b];
+        tot_conf += h_conf[b];
+        const char* shared = (os > 0 && is > 0) ? " <-SHARED" : "";
+        fprintf(stderr, "  b%02d: %8ld %8ld | os=%-8ld is=%-8ld%s\n", b, h_req[b], h_conf[b], os, is, shared);
+    }
+    long pt[18] = {0};
+    for (int p = 0; p < 18; p++) for (int b = 0; b < NB; b++) pt[p] += h_portbank[p][b];
+    fprintf(stderr, "[BANKHIST %s] per-port lane-reqs: R0=%ld R1=%ld R3=%ld R4=%ld R12=%ld R13=%ld W1=%ld W3=%ld R11=%ld W0=%ld\n",
+            tag, pt[0], pt[1], pt[2], pt[3], pt[4], pt[5], pt[6], pt[7], pt[8], pt[9]);
+    fprintf(stderr, "[BANKHIST %s] total req=%ld conflicts=%ld (%.1f%% of requests lost arbitration)\n",
+            tag, tot_req, tot_conf, tot_req ? 100.0 * tot_conf / tot_req : 0.0);
+}
+
 void CycReader::configure(const Agu& a, int nch, int nsp, int fd, int prt) {
     base = a.base;
     for (int i = 0; i < 4; i++) ts[i] = a.t_stride[i];
     num_channel = nch;
     n_spatial = nsp;
-    fifo_depth = fd;
+    data_depth = fd;       // response-side data FIFO depth (read-ahead vs consumer)
+    addr_depth = fd;       // request-side address FIFO == data FIFO depth in the RTL (StreamParamGen)
     port = prt;
     sstride[0] = a.s_stride[0];
     sstride[1] = a.s_stride[1];
@@ -16,61 +52,58 @@ void CycReader::configure(const Agu& a, int nch, int nsp, int fd, int prt) {
     reuse = (a.t_stride[0] == 0 && a.t_bound[0] > 1) ? a.t_bound[0] : 1;
     eb[0] = (reuse > 1) ? 1 : (a.t_bound[0] ? a.t_bound[0] : 1);
     for (int i = 1; i < 4; i++) eb[i] = a.t_bound[i] ? a.t_bound[i] : 1;
-    for (int i = 0; i < 4; i++) ti[i] = 0;
-    for (int l = 0; l < 8; l++) lane_done[l] = false;
-    active = true; done = false;
-    fifo_occ = outstanding = pending_push = reuse_left = 0;
+    reset();
 }
 
-uint64_t CycReader::lane_addr(int lane) const {
-    int64_t toff = (int64_t)ti[0] * ts[0] + (int64_t)ti[1] * ts[1] +
-                   (int64_t)ti[2] * ts[2] + (int64_t)ti[3] * ts[3];
+// Byte address of `lane` at temporal group index `group` (cyclic over the AGU extent).
+uint64_t CycReader::lane_addr(long group, int lane) const {
+    long r = group % (total() ? total() : 1), ti0[4];
+    for (int d = 0; d < 4; d++) { ti0[d] = r % eb[d]; r /= eb[d]; }
+    int64_t toff = ti0[0] * ts[0] + ti0[1] * ts[1] + ti0[2] * ts[2] + ti0[3] * ts[3];
     int64_t soff;
-    if (n_spatial == 2) {
-        int i = lane % sbound[0], j = lane / sbound[0];
-        soff = (int64_t)i * sstride[0] + (int64_t)j * sstride[1];
-    } else {
-        soff = (int64_t)lane * sstride[0];
-    }
+    if (n_spatial == 2) { int i = lane % sbound[0], j = lane / sbound[0]; soff = (int64_t)i * sstride[0] + (int64_t)j * sstride[1]; }
+    else soff = (int64_t)lane * sstride[0];
     return base + toff + soff;
 }
 
+// Each lane proposes its NEXT un-issued group's address, independently: bounded by the data FIFO
+// (don't read more than data_depth ahead of the consumer) and the address FIFO (at most addr_depth
+// requests outstanding/unlanded). A blocked lane simply re-proposes; others run ahead.
 void CycReader::propose(Fabric& f) {
-    if (!active || done) return;
-    // Cap on LANDED data only (data FIFO). The address buffer (deeper) lets the
-    // reader issue reads ahead while earlier ones are still in flight, so the
-    // +1cc TCDM response latency is hidden — matching the real 2-buffer streamer.
-    if (fifo_occ >= fifo_depth) return;  // data FIFO full: stop reading ahead
-    for (int l = 0; l < num_channel; l++)
-        if (!lane_done[l]) {
-            uint32_t a = (uint32_t)lane_addr(l);
-            f.post((a >> 3) & 31, (port << 4) | l);
-        }
+    if (!active) return;
+    int prio = (min_landed() - consumed <= 1) ? 1 : 0;   // near-empty -> urgent (ComplexQueue QoS)
+    for (int l = 0; l < num_channel; l++) {
+        long g = lane_issued[l];
+        if (g - consumed >= data_depth) continue;        // data FIFO full
+        if (g - lane_landed[l] >= addr_depth) continue;  // address FIFO full (outstanding cap)
+        uint32_t a = (uint32_t)lane_addr(g, l);
+        f.post((a >> 3) & 31, (port << 4) | l, prio);
+    }
 }
 
 void CycReader::commit(Fabric& f, const bool granted[64], int& grant_idx) {
-    if (!active || done) return;
-    if (fifo_occ >= fifo_depth) return;  // mirror propose's gate (landed-data cap)
-    int all = 1;
+    pending_push = 0;
+    if (!active) return;
     for (int l = 0; l < num_channel; l++) {
-        if (lane_done[l]) continue;
-        if (granted[grant_idx++]) lane_done[l] = true;   // granted this cycle
-        else all = 0;                                    // lost arbitration -> retry next cycle
-    }
-    if (all) {                       // whole group delivered this cycle
-        outstanding++;               // lands in FIFO next cycle (+1cc response)
-        pending_push++;
-        if (track_idx) pend_idx = prod_idx++;   // BIST: tag this group's order
-        for (int l = 0; l < 8; l++) lane_done[l] = false;
-        // advance the temporal AGU (inner -> outer)
-        int d = 0;
-        for (; d < 4; d++) { if (++ti[d] < eb[d]) break; ti[d] = 0; }
-        if (d == 4) { done = true; active = false; }
+        long g = lane_issued[l];
+        if (g - consumed >= data_depth) continue;
+        if (g - lane_landed[l] >= addr_depth) continue;
+        if (granted[grant_idx++]) {                      // this lane's read accepted by the bank
+            if (l == 0) set_ti(g);                       // expose the granted group (stale check)
+            lane_issued[l]++; pend[l]++; pending_push++;
+        }
     }
 }
 
 bool CycReader::pop() {
-    if (fifo_occ > 0) { fifo_occ--; return true; }
+    if (reuse_left > 0) { reuse_left--; return true; }   // replay (stride-0 dim0 reuse)
+    if (min_landed() > consumed) {
+        consumed++;
+        if (reuse > 1) reuse_left = reuse - 1;
+        long m = min_landed();
+        fifo_occ = (reuse > 1) ? (m > consumed ? 1 : 0) : (int)(m - consumed);
+        return true;
+    }
     return false;
 }
 
@@ -97,8 +130,11 @@ uint64_t CycWriter::lane_addr(int lane) const {
 
 void CycWriter::propose(Fabric& f) {
     if (done || fifo_occ <= 0) return;
+    // Buffer-urgency QoS (ComplexQueue.scala:67): a writer whose input FIFO is near-full is about to
+    // stall the producing core, so it asserts TCDM priority to drain.
+    int prio = (fifo_occ >= depth - 1) ? 1 : 0;
     for (int l = 0; l < num_channel; l++)
-        if (!lane_done[l]) { uint32_t a = (uint32_t)lane_addr(l); f.post((a >> 3) & 31, (port << 4) | l); }
+        if (!lane_done[l]) { uint32_t a = (uint32_t)lane_addr(l); f.post((a >> 3) & 31, (port << 4) | l, prio); }
 }
 
 void CycWriter::commit(Fabric& f, const bool granted[64], int& grant_idx) {
@@ -118,11 +154,21 @@ void CycWriter::commit(Fabric& f, const bool granted[64], int& grant_idx) {
 
 GemmResult cyc_gemm(const Agu* in_readers, const int* rd_nch, const int* rd_nsp, int n_readers,
                     const Agu& out_writer, int w_nch, int w_nsp,
-                    long n_out_tiles, long K_i, uint32_t dma_mask) {
+                    long n_out_tiles, long K_i, long dma_cycles,
+                    const int* reader_ports, int writer_port, std::vector<FifoRow>* fifo_out) {
     if (n_out_tiles <= 0 || K_i <= 0) return {0, 0};
     CycReader r[4];
     for (int i = 0; i < n_readers && i < 4; i++) r[i].configure(in_readers[i], rd_nch[i], rd_nsp[i], 4, i);
     CycWriter w; w.configure(out_writer, w_nch, w_nsp, 8);
+    if (writer_port >= 0) w.depth = snax_streamer_depth(writer_port);  // real W0/W3 FIFO depth (else default 8)
+    auto sample = [&]() {
+        if (!fifo_out) return;
+        FifoRow row; row.fill(-1);
+        for (int i = 0; i < n_readers; i++)
+            if (reader_ports && reader_ports[i] >= 0) row[reader_ports[i]] = (int16_t)r[i].fifo_occ;
+        if (writer_port >= 0) row[writer_port] = (int16_t)w.fifo_occ;
+        fifo_out->push_back(row);
+    };
     long wbpt = w.total_beats() / n_out_tiles;            // writer groups per output tile
     if (wbpt < 1) wbpt = 1;
     // Sparse interconnect: each port is residue-pinned, so ports contend only within their
@@ -130,36 +176,113 @@ GemmResult cyc_gemm(const Agu* in_readers, const int* rd_nch, const int* rd_nsp,
     // superbank preemption (dma_mask). See docs/dataflow/10_memsim.md (sparse interconnect).
     Fabric fr[4], fw;
     uint64_t cyc = 0, busy = 0;
-    long as = 0, tiles = 0;
+    long as = 0, tiles = 0, owed = 0;
     uint64_t cap = (uint64_t)n_out_tiles * K_i * 8 + 100000;   // safety: ~8x ideal, never spin
     while (cyc < cap) {
         cyc++;
         for (int i = 0; i < n_readers; i++) { r[i].land_reads(); if (r[i].done) r[i].reset(); }
+        // Drip one output group per cycle into the writer FIFO while it has room (the writer commits one
+        // per cycle), and hold a tile until its predecessor's output has fully entered the FIFO -> a full
+        // writer stalls the array (the FIFO never exceeds its depth), just like the AccelEngine/cyc_simd.
+        if (owed > 0 && w.fifo_occ < w.depth) { w.push(1); owed--; }
         // Array step: consume one group from each input reader (stall only if a reader's FIFO
         // is empty from a within-port conflict); every K_i steps, emit one output tile.
         if (tiles < n_out_tiles) {
             bool fed = true;
             for (int i = 0; i < n_readers; i++) if (r[i].fifo_occ <= 0) fed = false;
-            if (fed) {
+            if (fed && ((as + 1) % K_i != 0 || owed == 0)) {
                 for (int i = 0; i < n_readers; i++) r[i].pop();
-                if (++as % K_i == 0) { tiles++; w.push(wbpt); }
+                if (++as % K_i == 0) { tiles++; owed += wbpt; }
             }
         }
+        sample();  // record FIFO occupancy after this cycle's consume/produce (before the drain)
         // MambaCore busy (perf counter) ends when the subcore is DONE = its output (out_d
         // -> W0) has all fired, i.e. the writer has drained every group.
         if (tiles == n_out_tiles && w.written >= w.total_beats()) { busy = cyc; break; }
         for (int i = 0; i < n_readers; i++) {            // each port arbitrates within itself
-            fr[i].begin_cycle(dma_mask);
+            fr[i].begin_cycle((long)cyc <= dma_cycles ? (0xFFu << ((cyc & 3u) * 8)) : 0u);
             r[i].propose(fr[i]);
             bool g[64]; fr[i].arbitrate(g);
             int gi = 0; r[i].commit(fr[i], g, gi);
         }
-        fw.begin_cycle(dma_mask);
+        fw.begin_cycle((long)cyc <= dma_cycles ? (0xFFu << ((cyc & 3u) * 8)) : 0u);
         w.propose(fw);
         bool gw[64]; fw.arbitrate(gw);
         int giw = 0; w.commit(fw, gw, giw);
     }
     return {busy, busy};
+}
+
+// Per-cycle SIMD pass. The enabled reader ports feed an implicit SimdCore that drains to the enabled
+// writer ports; each port streams its own beat count, all on ONE shared fabric so strided-gather bank
+// conflicts emerge. Readers and writers run at their own rate to their own beat totals (the in:out
+// ratio varies per op: reduce is input-bound, widen output-bound — the slowest gates), so the pass
+// ends when every reader has consumed and every writer drained. = old max(beats), now contention-aware.
+uint64_t cyc_simd(const Agu* ports, const int* port_nch, long dma_cycles, std::vector<FifoRow>* fifo_out) {
+    CycReader rd[14];
+    CycWriter wr[4];
+    bool r_en[14] = {false}, w_en[4] = {false};
+    long r_beats[14] = {0}, r_pops[14] = {0};
+    long maxbeats = 0;
+    bool any = false;
+    for (int p = 0; p < 14; p++) {
+        if (!ports[p].enabled) continue;
+        rd[p].configure(ports[p], port_nch[p], 1, snax_streamer_depth(p), p);
+        long b = 1;
+        for (int d = 0; d < 4; d++) b *= ports[p].t_bound[d] ? (long)ports[p].t_bound[d] : 1;
+        r_en[p] = true; r_beats[p] = b; if (b > maxbeats) maxbeats = b; any = true;
+    }
+    for (int p = 14; p < 18; p++) {
+        if (!ports[p].enabled) continue;
+        wr[p - 14].configure(ports[p], port_nch[p], 1, p);
+        wr[p - 14].depth = snax_streamer_depth(p);
+        w_en[p - 14] = true;
+        long b = wr[p - 14].total_beats(); if (b > maxbeats) maxbeats = b; any = true;
+    }
+    if (!any) return 0;
+
+    auto sample = [&]() {
+        if (!fifo_out) return;
+        FifoRow row; row.fill(-1);
+        for (int p = 0; p < 14; p++) if (r_en[p]) row[p] = (int16_t)rd[p].fifo_occ;
+        for (int p = 14; p < 18; p++) if (w_en[p - 14]) row[p] = (int16_t)wr[p - 14].fifo_occ;
+        fifo_out->push_back(row);
+    };
+    auto r_active = [&](int p) { return r_en[p] && r_pops[p] < r_beats[p]; };
+    auto w_active = [&](int p) { return w_en[p - 14] && wr[p - 14].written < wr[p - 14].total_beats(); };
+
+    Fabric f;
+    uint64_t cyc = 0, busy = 0;
+    uint64_t cap = (uint64_t)maxbeats * 8 + 100000;
+    while (cyc < cap) {
+        cyc++;
+        for (int p = 0; p < 14; p++) {
+            if (!r_en[p]) continue;
+            rd[p].land_reads();
+            if (r_pops[p] < r_beats[p] && rd[p].fifo_occ > 0) { rd[p].pop(); r_pops[p]++; }  // core consumes
+        }
+        for (int p = 14; p < 18; p++) {                                                     // core produces
+            if (!w_en[p - 14]) continue;
+            CycWriter& wp = wr[p - 14];
+            if (wp.written + wp.fifo_occ < wp.total_beats() && wp.fifo_occ < wp.depth) wp.push(1);
+        }
+        sample();
+        bool done = true;
+        for (int p = 0; p < 14; p++) if (r_active(p)) done = false;
+        for (int p = 14; p < 18; p++) if (w_active(p)) done = false;
+        if (done) { busy = cyc; break; }
+
+        f.begin_cycle((long)cyc <= dma_cycles ? (0xFFu << ((cyc & 3u) * 8)) : 0u);
+        for (int p = 0; p < 14; p++) if (r_active(p)) rd[p].propose(f);
+        for (int p = 14; p < 18; p++) if (w_active(p)) wr[p - 14].propose(f);
+        bool g[64];
+        f.arbitrate(g);
+        int gi = 0;
+        for (int p = 0; p < 14; p++) if (r_active(p)) rd[p].commit(f, g, gi);
+        for (int p = 14; p < 18; p++) if (w_active(p)) wr[p - 14].commit(f, g, gi);
+    }
+    if (busy == 0) busy = cyc;
+    return busy;
 }
 
 uint64_t cyc_suc_duration(const Agu& r7_agu, int seqLen, int dInner_tile, uint32_t dma_mask) {
@@ -250,9 +373,10 @@ static void suc_bist_pass(const Agu& agu, int seqLen, int dInner_tile, bool inje
             if (!r.pop_idx(idx)) {
                 out.poison_count++;
                 if (out.n_idx < 8) out.idx[out.n_idx++] = (int)(expect + p);
+            } else {
+                r.pop();  // advance the reader's consumer cursor so it keeps issuing (data-FIFO frees)
             }
         }
-        r.fifo_occ = r.ir_cnt;                                  // single ledger: mirror ring
         expect += RPR;
         have_bc = true;
     };

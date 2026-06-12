@@ -11,7 +11,7 @@
 // Pipeline (3 stages):
 //   stage 1 : DMA transfer_in  (B_os tile, A_is tile, B_is tile)
 //   stage 2 : compute          (oscore + iscore in parallel)
-//   stage 3 : DMA transfer_out (D_os tile -> contiguous result buffer)
+//   stage 3 : DMA transfer_out (D_os tile -> L3)
 
 #include "data.h"
 #include "snax-simbacore-lib.h"
@@ -21,9 +21,13 @@
 int test_iosgemm_tiled() {
     int err = 0;
 
-    // TCDM layout:
-    //   [ A_os (full) | B_os0 | B_os1 | D_os0 | D_os1 |
-    //     A_is0 | A_is1 | B_is0 | B_is1 | CD_is (full) | D_os_full ]
+    static uint8_t* l3_d_os = NULL;
+    if (snrt_global_core_idx() == 0) {
+        (void)snrt_l3alloc(16 * 1024);  // reserve putc_buffer region
+        l3_d_os = (uint8_t*)snrt_l3alloc(M3_length_d);
+    }
+    snrt_cluster_hw_barrier();
+
     void* tcdm_base_ptr = snrt_l1_next();
 
     // OSGEMM buffers: A_os shared across tiles, B_os and D_os ping-ponged
@@ -47,9 +51,6 @@ int test_iosgemm_tiled() {
         ptr_a_is[1] + M4_length_a_tile + M4_length_b_tile,
     };
     uint16_t* ptr_cd_is = (uint16_t*)(ptr_b_is[1] + M4_length_b_tile);
-
-    // Contiguous OSGEMM output buffer (collect D_os tiles via transfer_out)
-    uint8_t* ptr_d_os_full = (uint8_t*)ptr_cd_is + M4_length_cd;
 
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
@@ -138,12 +139,12 @@ int test_iosgemm_tiled() {
             }
         }
 
-        // Stage 3: transfer_out D_os tile i-2 to contiguous buffer
+        // Stage 3: spill D_os tile i-2 to L3 (write-only, not consumed on-chip)
         if (i >= 2) {
             uint32_t tile = i - 2;
             int sbuf      = tile % 2;
             if (snrt_is_dm_core()) {
-                snrt_dma_start_1d(ptr_d_os_full + tile * M3_length_d_tile, ptr_d_os[sbuf], M3_length_d_tile);
+                snrt_dma_start_1d(l3_d_os + tile * M3_length_d_tile, ptr_d_os[sbuf], M3_length_d_tile);
             }
         }
 
@@ -161,7 +162,7 @@ int test_iosgemm_tiled() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
         printf("DMA latency hiding: tile=%s\n", _dma_done < _compute_done ? "ok" : "STALL");
-        err += check_result_sample(ptr_d_os_full, M3_D, M3_test_samples_D, nb_test_samples, "osgemm_out");
+        err += check_result_sample(l3_d_os, M3_D, M3_test_samples_D, nb_test_samples, "osgemm_out");
         err += check_result_sample((uint8_t*)ptr_cd_is, M4_D, M4_test_samples_D, nb_test_samples, "isgemm_out");
 
         printf("Test IS+OSGeMM tiled: seqLen=%d, dModel=%d, dInner=%d, nb_tiles=%d\n", seqLen, dModel, dInner,

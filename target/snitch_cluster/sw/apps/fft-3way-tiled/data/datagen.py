@@ -245,6 +245,7 @@ class DataGenerator(DataGeneratorBase):
         print(
             f"// TCDM peak usage (fft-3way-tiled, outer dModel-tile, nb_d={nb_d}): " f"{peak} B ({peak/1024:.2f} KiB)"
         )
+        print(f"Expected L1 TCDM usage: {peak} B ({peak // 1024} KiB)", file=sys.stderr)
 
         test_data = {
             **{

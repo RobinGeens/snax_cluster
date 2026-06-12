@@ -38,6 +38,11 @@ RE_L1_OOM = re.compile(r"L1 TCDM OOM")
 # for the Model Err column: it is the actual number of streamer/AGU layout faults the
 # model located (bounds + producer->consumer), not just pass/fail.
 RE_MODEL_AGU = re.compile(r"AGU layout audit:\s+(\d+)\s+located error")
+# memsim's safe-to-start co-sim prints the stale-read count at the app's actual start_cnts:
+# a config that releases a consumer before its producer has committed reads uncommitted data
+# (exactly the gross iscore_out/SUC-y vsim failures). This is the model's prediction that a
+# config produces WRONG OUTPUT, and it belongs in Model Err alongside the AGU faults.
+RE_MODEL_S2S = re.compile(r"stale_z=(\d+)\s+stale_y=(\d+)")
 
 REPORT_JSON = "report.json"
 REPORT_MD = "report.md"
@@ -49,10 +54,14 @@ EMOJI = {
     "BUILDING": "🔨", "BUILD_FAIL": "🧱", "TIMEOUT": "🕒", "QUEUED": "🟡",
     "NO_RESULT": "❔",
 }
-# Appended to the Batch-run cell of any row NOT from the most recent batch run
-# (stale, regardless of status). Distinct from TIMEOUT's 🕒 and the commit ⚠️.
+# The Batch-run cell is just a marker (not the long timestamp): ✨ = from the most
+# recent (current) batch run, ⏰ = from an earlier run (stale, regardless of status;
+# sorted to the bottom). Both distinct from TIMEOUT's 🕒 and the commit ⚠️.
 STALE_MARK = "⏰"
-_WIDE = set(EMOJI.values()) | {"🔴", STALE_MARK}
+CURRENT_MARK = "✨"
+# 💾 = job fully skipped this batch (force:false / --no-redo): stored row kept verbatim.
+CACHED_MARK = "💾"
+_WIDE = set(EMOJI.values()) | {"🔴", STALE_MARK, CURRENT_MARK, CACHED_MARK}
 
 # Markdown link [text](url): when rendered, only `text` occupies columns, so the
 # table's width math must ignore the (often long) url part.
@@ -100,6 +109,25 @@ def parse_model_agu_errors(path):
         return None
     m = RE_MODEL_AGU.findall(text)
     return m[-1] if m else None
+
+
+def parse_model_s2s_stale(path):
+    """Total stale reads (z + y) the safe-to-start co-sim located at the app's own
+    start_cnts, or None if the line is absent (not a P2 osCore->SUC->isCore app).
+    Nonzero = the model predicts this config releases a consumer too early and reads
+    uncommitted data -> wrong output (the gross vsim iscore_out/SUC-y failures)."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = RE_MODEL_S2S.findall(text)
+    if not m:
+        return None
+    z, y = m[-1]
+    return int(z) + int(y)
 
 
 def parse_build_log_l1(path):
@@ -188,19 +216,47 @@ def merge_run_into_report(report_dir, rundir):
     report.setdefault("jobs", {})
 
     for jid, job in cur.items():
+        cached = job.get("cached", False)
+        prev = report["jobs"].get(jid, {})  # existing row (carries the reused result)
+        if cached:
+            # vsim was reused (no build/vsim), but the fast memsim model re-runs every batch on the
+            # cached elf -> keep the stored vsim columns but refresh the Model columns from the FRESH
+            # memsim log when present (else keep the stored row verbatim). Re-stamped -> renders 💾.
+            row = {**prev, "batch_run": stamp, "cached": True,
+                   "state": prev.get("state", job.get("state", "done")), "updated": now}
+            memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
+            if os.path.exists(memsim_log):
+                m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
+                # Only OVERWRITE the stored Model columns when the fresh memsim actually produced a
+                # SimbaCore number; a timeout / unparseable / config-mismatch run must NOT blank the row.
+                if m_sc is not None:
+                    agu = parse_model_agu_errors(memsim_log)
+                    stale = parse_model_s2s_stale(memsim_log)
+                    if agu is not None or stale is not None:
+                        m_errors = str(int(agu or 0) + int(stale or 0))
+                    row.update(model_errors=m_errors, model_simbacore=m_sc, model_total=m_tot)
+                    plot_abs = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".timeline.png")
+                    if os.path.exists(plot_abs):
+                        row["timeline"] = os.path.relpath(plot_abs, report_dir)
+            report["jobs"][jid] = row
+            continue
         log_abs = os.path.join(rundir, job["log"])
         errors, sc, tot, sim_l1 = parse_log(log_abs)
         # The cycle-accurate memsim model runs alongside the vsim into its own log;
         # scrape the same markers for the Model error/SimbaCore/Total columns.
         memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
         m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
-        # Prefer the AGU audit's LOCATED layout-error count over the binary exit code
-        # for Model Err -- it says how many faults the model found, not just 0/1. Guard:
-        # if the audit located 0 but the run still failed (a non-AGU model check, exit
-        # nonzero), keep the failure visible rather than masking it with a clean 0.
+        # Model Err = the faults the model LOCATED, not its binary exit code (which a
+        # tiled-golden false positive can flip). Two located sources, summed:
+        #   - the golden-free AGU audit (bounds + producer->consumer + writer no-alias), and
+        #   - the safe-to-start co-sim's stale reads at the app's own start_cnts (a config
+        #     that releases a consumer too early -> reads uncommitted data -> wrong output).
+        # When either line is present the model ran, so the sum is authoritative; only fall
+        # back to the exit code for logs with no audit at all (vsim-only / --timing-only).
         agu = parse_model_agu_errors(memsim_log)
-        if agu is not None and not (agu == "0" and m_errors not in (None, "0")):
-            m_errors = agu
+        stale = parse_model_s2s_stale(memsim_log)
+        if agu is not None or stale is not None:
+            m_errors = str(int(agu or 0) + int(stale or 0))
         # L1 TCDM peak is a STATIC prediction the memory model emits during the build
         # (datagen) -- read it straight from the build log rather than waiting for the
         # sim to re-print the baked constant (whose format also varies per app, and
@@ -214,15 +270,18 @@ def merge_run_into_report(report_dir, rundir):
         # the memsim log (sibling of the sim log). Absent for older runs / when memsim or
         # matplotlib was unavailable -> stored as None (cell shows em-dash).
         plot_abs = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".timeline.png")
+        log_rel = os.path.relpath(log_abs, report_dir)
         report["jobs"][jid] = {
             "app": job["app"], "tag": job.get("tag", ""),
+            "name": job.get("name"),
             "params": job.get("params", {}),
             "seqLen": job.get("seqLen"), "dModel": job.get("dModel"),
             "n_tiles": job.get("n_tiles"),
             "batch_run": stamp, "commit": commit,
-            "log": os.path.relpath(log_abs, report_dir),
+            "log": log_rel,
             "timeline": os.path.relpath(plot_abs, report_dir) if os.path.exists(plot_abs) else None,
             "state": job.get("state", "?"),
+            "cached": cached,
             "errors": errors, "simbacore": sc, "total": tot,
             "model_errors": m_errors, "model_simbacore": m_sc, "model_total": m_tot,
             "l1_kib": l1, "l1_oom": oom,
@@ -244,7 +303,7 @@ def _fmt_other(params):
     items = [(k, v) for k, v in (params or {}).items() if k not in SPECIAL_KEYS]
     if not items:
         return "—"
-    return ", ".join(f"{k}={v}" for k, v in items)
+    return ", ".join(f"{k.replace('safe_to_start_', 's2s_')}={v}" for k, v in items)
 
 
 def _fmt_col(v):
@@ -338,13 +397,17 @@ def render_report(report_dir):
             commit_cell = f"{commit} ⚠️"
         else:
             commit_cell = commit
-        # Stale = not from the most recent batch run (any status): clock the batch-run
-        # cell and sort these to the bottom.
+        # Stale = not from the most recent batch run (any status): sort these to the
+        # bottom. The cell is just a marker, not the long timestamp (it's in report.json).
         stale = bool(latest_run) and e.get("batch_run") != latest_run
-        batch_cell = e.get("batch_run", "?")
         if stale:
-            batch_cell = f"{batch_cell} {STALE_MARK}"
-        row = (e["app"], _fmt_col(e.get("seqLen")), _fmt_col(e.get("dModel")),
+            batch_cell = STALE_MARK
+        elif e.get("cached"):
+            batch_cell = CACHED_MARK
+        else:
+            batch_cell = CURRENT_MARK
+        row = (_fmt_col(e.get("name")), e["app"],
+               _fmt_col(e.get("seqLen")), _fmt_col(e.get("dModel")),
                _fmt_col(e.get("n_tiles")), _fmt_other(e.get("params")),
                batch_cell, commit_cell, status, e.get("errors") or "—",
                _fmt_num(e.get("simbacore")), _fmt_num(e.get("total")),
@@ -354,15 +417,16 @@ def render_report(report_dir):
                _log_link(report_dir, e.get("log")),
                _plot_link(report_dir, e.get("timeline")))
         rows.append((stale, row))
-    # Fresh rows first (stale at the bottom); within each group by app then params.
-    rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][4]))
+    # Fresh rows first (stale at the bottom); within each group by user-defined name
+    # (row[0]), then app to keep unnamed rows deterministic.
+    rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][1]))
     rows = [r for _, r in rows]
 
     tally = " · ".join(f"{EMOJI.get(k, '')} {v} {k}" for k, v in sorted(counts.items()))
-    headers = ["App", "seqLen", "dModel", "n_tiles", "Params", "Batch run",
+    headers = ["Name", "App", "seqLen", "dModel", "n_tiles", "Params", "Run",
                "Commit", "Status", "Errors", "SimbaCore", "Total",
                "Model Err", "Model SimbaCore", "Model Total", "L1 TCDM", "Log", "Plot"]
-    aligns = ["left", "right", "right", "right", "left", "left",
+    aligns = ["left", "left", "right", "right", "right", "left", "left",
               "left", "left", "right", "right", "right",
               "right", "right", "right", "right", "left", "left"]
     head_note = f" · HEAD `{head}`" if head else ""
@@ -370,10 +434,10 @@ def render_report(report_dir):
         "# SNAX batch-run report\n\n"
         f"_Updated {report.get('updated', '?')} · {len(jobs)} jobs{head_note} · {tally}_\n\n"
         "_⚠️ = run predates current HEAD (numbers may be stale)._\n\n"
-        "_⏰ next to the batch run = result from an earlier batch run (stale; sorted to the bottom)._\n\n"
+        "_Run: ✨ = current batch run · 💾 = fully skipped this run (force:false; stored row kept verbatim) · ⏰ = earlier batch run (stale; sorted to the bottom)._\n\n"
         "_❌ ERRORS = nonzero mismatch count (small values may be quantization noise, not a true fail) · 🔴 OOM = exceeded L1 TCDM budget._\n\n"
         "_Errors/SimbaCore/Total = RTL vsim · Model Err/SimbaCore/Total = cycle-accurate memsim model (memsim) on the same .elf._\n\n"
-        "_Model Err = count of AGU/layout faults the model LOCATED (bounds + producer→consumer); 0 = layout clean._\n\n"
+        "_Model Err = faults the model LOCATED = AGU/layout faults (bounds + producer→consumer) + safe-to-start stale reads (a consumer released before its producer committed → wrong output). 0 = clean; a large value = the model predicts this config produces wrong output (e.g. start_cnt too low)._\n\n"
         + _md_table(headers, aligns, rows) + "\n"
     )
 

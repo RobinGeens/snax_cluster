@@ -3,11 +3,7 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// P2-tiled-D = Phase 2 of the Mamba main in isolation, dInner-tiled and double-buffered.
-// The Phase-1 outputs that Phase 2 consumes (oscore_in, dt+BC, x) are preloaded from the golden
-// reference instead of being produced upstream. osCore + SU-core + IS-core all run, with on-chip
-// forwarding (z -> SU-core, y -> IS-core). z and y are staged through L3; iscore_out_P2 (the final
-// out-proj) stays FULL in TCDM and accumulates in place. Dataflow: docs/dataflow/04_mamba_main.md.
+// P2 only, tiled over dInner
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"

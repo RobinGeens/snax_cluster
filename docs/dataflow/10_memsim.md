@@ -80,11 +80,19 @@ M_i  = seqLen / 16            osN = K_i = dInner_tile / 24
 osCore = M_i · osN · dModel             (input-feed bound)
 isCore = M_i · dFinal · K_i             (dFinal = xProjDim in P1, dModel in P2)
 conv   = seqLen · dInner_tile / 4       (Phase 1 switchCore conv1d; convUnroll=delaySU=4)
+matmul = seqLen · dInner_tile · dtRank / (4 · dtRankUnroll)   (Phase 2 switchCore dt projection)
 SUC    = bc · seqLen · dInner_tile      (Phase 2 only; bc = bank-conflict factor)
 ```
 - **Phase 1** (osCore → switchCore conv → isCore, pipelined): `max(osCore, conv, isCore) + fill_p1`.
-- **Phase 2** (osCore → SUC → isCore, **serialized** by the safe-to-start gauges
-  whose thresholds equal the full osCore/SUC windows): `osCore + SUC + isCore + fill_p2`.
+- **Phase 2** (osCore → SUC → isCore, **overlapped** by the safe-to-start gauges): the SUC starts at
+  `r10_cnt/r10_total · osCore + fill_osc`, the isCore that far into the SUC; busy =
+  `max(osCore, SUC, isCore)`. Full-serialize start_cnts collapse it to `osCore + SUC + isCore + fill_p2`
+  (the conservative `main` default); a low-paced tiled app overlaps and finishes sooner.
+  The switchCore dt projection (m_switchCoreMode=Matmul, `dt_delta = dt·Wᵀ + bias`) runs
+  concurrently — it streams `dt_delta` into the SUC scan — so it is recorded as an overlapping
+  trace bar from the invocation start (`matmul` cycles) but does not enter the SUC-bound
+  critical-path sum. `matmul` is the MambaCore outer loop (`dInner_tile/convUnroll` windows,
+  MambaCore.scala) × the SwitchCore matmul input phase (`seqLen · dtRank/dtRankUnroll`).
 
 **Which stages run is decoded from the MODE bitfield, not the streamer ports.** MODE is a
 packed `SimbaCoreCtrlBundle` ([SimbaCoreMode.scala], width 20, first field = MSB): bit19
@@ -409,7 +417,14 @@ committed by the producer at `commit_cyc` and read by the consumer at `reader_st
 `read < commit` the consumer reads an element the producer hasn't written yet (stale). The producer
 commit is tile-granular (osCore writes z in N_M_K tile order: element (m,n) commits at
 `(tile(m,n)+1)·K_i + commit_pipe`); the consumer read uses the real AGU order (SUC reads z in
-SUCFormat). The smallest `start_cnt` with zero stale reads is the optimum. The only constant is
+SUCFormat). **R11 (y, SUC→isCore) must use the real write/read AGU reorder**, not a same-order
+rate model: the SUC writes y *scattered* (W2, port 16) as it scans while the isCore reads it
+*linearly* (R11, port 11), so a linear read pulls a low address the scattered write commits late.
+Both orders are enumerated from the decoded W2/R11 streamers (dim0 innermost); a word read at step
+`j` is stale if it precedes the commit of the word W2 wrote there. The same-order model missed this
+and under-predicted catastrophically (~25 where vsim needs thousands; the reorder gives 3549 for
+main-tiled dModel=384, and reproduces main's 5398≈5397). The smallest `start_cnt` with zero stale
+reads is the optimum. The only constant is
 `commit_pipe`, the RTL commit pipeline of the first output element (z: array + W0 ≈3 cc; y: SU-core
 output datapath `delayTotal=17` [StateUpdateCore.scala:135: delayPath1 3 + delayNewState 4 +
 delayStateC 7 + delayDxhC 2 + delayY 1] + W2 commit ≈3 = ≈20 cc — not `delayBtoC`, which is B-C
@@ -460,10 +475,15 @@ tile-quantization scales with shape (it is in the schedule). Validated layout fo
   handoff latencies are data-dependent residuals, not static depths; and the fabric's
   `dma_owned` superbank-preemption mask exists but is not yet driven by a per-cycle DMA beat
   engine (it would affect the async/DMA-overlap cases).
-- Phase 2 is modelled strict-serialize, which the RTL confirms: the safe-to-start gauges
-  (`M2_R10_start_cnt`, `M2_R11_start_cnt`) ship at 100% of the upstream stage, so there is no
-  osCore∥SUC∥isCore overlap. the safe-to-start sweep computes the minimum safe gauge thresholds (the
-  headroom the apps leave unused); it does not change the timing model.
+- Phase 2 overlaps via the safe-to-start gauges. The app polls the R10 (osCore z) / R11 (SUC y)
+  gauges and releases the SUC / isCore once they reach `M2_R10_start_cnt` / `M2_R11_start_cnt`
+  (read from the ELF, `set_s2s`). The model starts each downstream stage at its gauge fraction of
+  the upstream window (`t_suc_start = r10_cnt/r10_total · osCore + fill`, likewise isCore off the
+  SUC) and ends at `max(osCore, SUC, isCore)`. Full-serialize start_cnts (== gauge totals, the
+  conservative `main` default) reduce this to strict osCore→SUC→isCore, so `main` is unchanged; a
+  tiled app that paces the gauges low overlaps the stages, which strict-serialize over-predicted by
+  ~40% (main-tiled dModel=384, r10=11/r11=25: P2 454k→296k vs vsim 318k). The safe-to-start sweep
+  still reports the *minimum safe* thresholds independently (see below).
 - Accelerator modes: Mamba P1/P2, OSGEMM/ISGEMM (cycle-stepped), and SIMD/FFT/einFFT
   (busy = streamer beat count).
 - Layout verification: the golden-free AGU audit (bounds + producer→consumer + writer

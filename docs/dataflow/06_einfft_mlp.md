@@ -19,9 +19,10 @@
 > with the OS-core dataflow specialisation in
 > `chisel-ssm/src/test/scala/datagen/DataGeneratorEinfftMlp.scala::einfftLinearOS`.
 
-`einfft` (un-tiled, PASS) and `einfft-tiled` (N-axis tiled; `nb_tiles`
-constrained by `N_t >= 2`, see §6.2) implement the **2-layer EinFFT
-MLP** — the MLP block that follows the EinFFT projection. The math is
+`einfft` (un-tiled, PASS) and `einfft-tiled` (N-axis tiled; any `nb_tiles`
+dividing `N_full`, the four matmuls run as two concat OSGEMMs, see §6.2)
+implement the **2-layer EinFFT MLP** — the MLP block that follows the
+EinFFT projection. The math is
 
 ```
 Layer 1 (with ReLU)
@@ -107,16 +108,18 @@ DMA'd into TCDM before the four OSGEMMs run. With `L=16, D=192`
 **`einfft-tiled`** tiles the N (= D/4 output-channel) axis at the
 **OS-core level only**. Per (layer, branch):
 
-- The four 4-OSGEMM-per-tile loops fire with `N_t = N_full / nb_tiles`
-  and the weight DMA is double-buffered against the next tile's compute.
-- Each tile's 4 OSGEMMs write a TILE-sized ConvFormat scratch
-  (`rr/ii/ri/ir`, each `L × dPerB_tile`), and the SIMD widen / SUB /
-  ADD-with-bias / narrow chain runs **immediately for that tile** (per
-  side, at tile bounds) before the next tile's OSGEMM. Output tiles are
-  spilled to L3 as they are produced. Consequently the scratch, the BF16
-  staging, and the output buffers only ever hold ONE tile — the TCDM
-  footprint scales as `~1/nb_tiles` in those buffers, which is what lets
-  large `(L, dModel)` fit (see §6.5).
+- The four matmuls per tile run as **two concat OSGEMMs** that share an
+  activation — `x_re·[W_re|W_im]=[rr|ri]` and `x_im·[W_re|W_im]=[ir|ii]`,
+  each walking `N_cat = 2·N_t` real output tiles (see §6.2). The weight DMA
+  packs `W_re|W_im` adjacently and is double-buffered against the next tile.
+- Each tile's two OSGEMMs write two TILE-sized ConvFormat scratches
+  (`out_A=[rr|ri]`, `out_B=[ir|ii]`; `rr/ri/ir/ii` are each `L × dPerB_tile`
+  halves), and the SIMD widen / SUB / ADD-with-bias / narrow chain runs
+  **immediately for that tile** (per side, at tile bounds) before the next
+  tile's OSGEMM. Output tiles are spilled to L3 as they are produced.
+  Consequently the scratch, the BF16 staging, and the output buffers only
+  ever hold ONE tile — the TCDM footprint scales as `~1/nb_tiles` in those
+  buffers, which is what lets large `(L, dModel)` fit (see §6.5).
 - The earlier "SIMD degrades at short per-tile bounds" caveat applies
   only to *tiny absolute* bounds (~12 fp8 cycles, the `L=16` default).
   At realistic params the per-tile bound is far above that and the fuse
@@ -127,14 +130,31 @@ This program PASSES at `nb_tiles = 1` (per-tile fuse degenerates to the
 un-tiled `einfft` chain, plus a one-iteration tile loop and one-tile
 weight ping-pong).
 
-### `nb_tiles` constraint: `N_t >= 2`
+### `nb_tiles` constraint and the concat OSGEMM
 
-Each per-tile OSGEMM must walk `N_t = N_full / nb_tiles >= 2`. The
-datagen rejects shapes that would violate this. With `dPerB = 48`
-(`dModel=192`), `N_full = 2`, so only `nb_tiles = 1` is possible;
-`dModel >= 384` (`N_full = 4`) allows up to `nb_tiles = 2`. See
-[chisel-ssm/docs/memory_layouts/02_gemm_layouts.md §2.4](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)
-for the underlying OSGEMM `N >= 2` requirement.
+The OS-core needs `N >= 2` per launch (see
+[chisel-ssm/docs/memory_layouts/02_gemm_layouts.md §2.4](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)),
+and the natural per-tile `N_t = N_full / nb_tiles` is only 1 at `dModel=96`
+(`N_full=1`) or whenever `nb_tiles = N_full`. Rather than pad with zeros,
+the four matmuls are paired by **shared activation** and run as two
+concatenated-weight OSGEMMs:
+
+```
+out_A = x_re · [W_re | W_im]  →  [rr | ri]      (N_cat = 2·N_t, all real)
+out_B = x_im · [W_re | W_im]  →  [ir | ii]
+```
+
+So every OSGEMM walks `N_cat = 2·N_t ≥ 2` with **no wasted compute** (the
+4-matmul MAC count is unchanged) and **half the launches**. The only hard
+requirement becomes `N_full % nb_tiles == 0` (i.e. `nb_tiles ≤ N_full`).
+`flattenB` is N-tile-major, so `[W_re|W_im]` is just `W_re`'s tile bytes
+followed by `W_im`'s — the C side DMAs them into adjacent halves of the
+weight buffer. ConvFormat is d3-outer, so `rr/ir` are the first
+`seqLen·dPerB_tile` bytes of `out_A/out_B` and `ri/ii` the second; the SIMD
+fuse just points its readers at the right halves. Verified `96/128/1`,
+`192/128/1`, `192/128/2`, `384/128/2`; at `dModel=192` the concat is ~0.4%
+fewer simbacore cycles than the old 4-launch path, and `dModel=96` runs at
+the true minimal MAC count (≈2× fewer OSGEMM cycles than a zero-pad).
 
 ## 6.3 Un-tiled dataflow (`einfft`)
 
@@ -200,17 +220,16 @@ Two structural constraints push the tiling onto **N**:
    streamed input.
 
 The tiled version then pipelines `nb_tiles` weight DMAs against the
-per-tile compute, with each weight tile reused across two matmuls
-(`W_re` across rr + ir, `W_im` across ii + ri). This is the same axis
-[`osgemm-tiled`](01_oscore_kernels.md) picks.
+per-tile compute. The combined `[W_re|W_im]` tile is reused across both
+concat OSGEMMs (`out_A` with `x_re`, `out_B` with `x_im`). This is the same
+axis [`osgemm-tiled`](01_oscore_kernels.md) picks.
 
 The tiled program applies the ConvFormat-throughout strategy at the
-OS-core level (per-tile OSGEMM writing a TILE-sized ConvFormat scratch)
-and runs the SIMD fuse per tile at tile bounds, so scratch / BF16
-staging / output stay one tile in size. It works correctly when
-`N_t = N_full / nb_tiles >= 2`. At the default-shape `dModel=192`,
-`dPerB=48`, `N_full=2`, that caps `nb_tiles` at 1; see §6.2 for the
-underlying HW limitation and the datagen assertion that enforces it.
+OS-core level (per-tile concat OSGEMM writing a TILE-sized ConvFormat
+scratch) and runs the SIMD fuse per tile at tile bounds, so scratch / BF16
+staging / output stay one tile in size. It works for any
+`N_t = N_full / nb_tiles ≥ 1`; the concat keeps every OSGEMM at `N ≥ 2`
+(which the OS-core requires) without wasting compute — see §6.2.
 
 ## 6.5 What stays FULL, what's per-branch
 
@@ -221,7 +240,7 @@ underlying HW limitation and the datagen assertion that enforces it.
 | `b_{1,2}_{re,im}_bcast[0..3]`       | `4 · L · (D/4) · BF16`   | **FULL** pre-expanded biases (conv-walk order); loaded once at boot        |
 | `l1_re/im[0..3]`, `l2_re/im[0..3]`  | `4 · L · (D/4)` each     | **FULL**, SIMD narrow writes into them in ConvFormat per branch            |
 | `W_re_branch`, `W_im_branch`        | `(D/4)²` each            | **per-branch**, re-DMA'd at every branch iteration                         |
-| `rr / ii / ri / ir`                 | `L · (D/4)`              | **per-branch scratch** (un-tiled); **per-TILE** `L · (D/4)/nb_tiles` in `einfft-tiled` |
+| `rr / ii / ri / ir`                 | `L · (D/4)`              | **per-branch scratch** (un-tiled, 4 bufs); in `einfft-tiled` packed as `out_A=[rr\|ri]`, `out_B=[ir\|ii]` (2 bufs), **per-TILE** `L · (D/4)/nb_tiles` each half |
 | `bf16_a`, `bf16_b`                  | `L · (D/4) · BF16` each  | **per-branch staging** (un-tiled); **per-TILE** in `einfft-tiled`           |
 
 In `einfft-tiled` the scratch, BF16 staging, and output buffers are
@@ -330,7 +349,10 @@ also shrinks the footprint enough for `L=512, dModel=192` to fit.
   IS-core's K (reduction) axis the *same* `dInner` CSR; tiling N would wrongly
   shrink the IS reduction. Everything stays resident, so the app is
   footprint-bound (`dModel=192` fits up to `L=512`).
-- `dModel ≥ 192` (OSGEMM needs `N = dPerB/Nu ≥ 2`).
+- `dModel ≥ 192` (OSGEMM needs `N = dPerB/Nu ≥ 2`). Unlike `einfft-tiled`, the concat
+  trick can't lift this here: the dual-core split is by complex side, so a core's two
+  matmuls don't share an activation. `dModel=96` would need the RTL `N=1` fix
+  ([memory_layouts/02 §2.4](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)).
 - `seqLen ≥ 2·seqLenUnroll` (`M ≥ 2`): the folded narrow reads the IS-core psum
   directly, and the degenerate single-seq-tile case (`M=1`) mis-orders it.
 

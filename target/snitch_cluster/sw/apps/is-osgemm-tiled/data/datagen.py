@@ -36,6 +36,17 @@ class DataGenerator(DataGeneratorBase):
         self.emit_combined_mode()
         self.build_osgemm_data()
         self.build_isgemm_data()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        import importlib.util
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen
+        comment = run_model_from_datagen(mod.build_report, app_dir)
+        self.lines_params.append(comment)
 
     def emit_combined_mode(self):
         """Compute IS_OSGEMM mode value = OSGEMM | ISGEMM (both cores, oscore output to mem)."""

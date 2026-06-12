@@ -198,13 +198,19 @@ def run_model(model_fn, app_dir: str):
 def run_model_from_datagen(model_fn, app_dir: str):
     """Called from datagen to run the memory model, write report, and check OOM.
     Returns C source lines (comment + L1_TCDM_PEAK_BYTES define) for data.h."""
-    params_path = os.path.join(app_dir, "params_in.hjson")
+    params_path = os.environ.get("PARAMS_IN") or os.path.join(app_dir, "params_in.hjson")
     params = read_params_in(params_path)
     report = model_fn(params)
     report_path = os.path.join(app_dir, "memory_report.txt")
     report.write(report_path)
     peak = report.overall_peak()
-    oom_tag = " *** L1 TCDM OOM ***" if peak > TCDM_BYTES else ""
+    oom = peak > TCDM_BYTES
+    oom_tag = " *** L1 TCDM OOM ***" if oom else ""
     print(f"Expected L1 TCDM usage: {peak} B ({peak // 1024} KiB){oom_tag}", file=sys.stderr)
-    report.check_oom()
+    if oom:
+        print(report.format(), file=sys.stderr)
+        raise SystemExit(
+            f"{report.app_name}: L1 TCDM footprint {peak / 1024:.2f} KiB exceeds budget "
+            f"{TCDM_BYTES // 1024} KiB — refusing to build (would overflow TCDM and crash)."
+        )
     return f"// L1 TCDM peak: {peak / 1024:.2f} KiB — see memory_report.txt\n" f"#define L1_TCDM_PEAK_BYTES {peak}u"

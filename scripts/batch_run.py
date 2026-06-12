@@ -34,6 +34,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -86,27 +87,32 @@ def _pick(d, *keys):
 
 
 class BatchRun:
-    def __init__(self, config_path=None):
+    def __init__(self, config_path=None, no_redo=False, skip_lock=False):
+        self.cli_no_redo = no_redo
         self.root = repo_root()
         self.cluster = os.path.join(self.root, "target", "snitch_cluster")
         # Only ONE batch run may run at a time: concurrent batch runs share each
         # app's build dir, the chisel-ssm/sbt datagen cache and the root
         # report.json -- running two corrupts builds and results. Take an
-        # exclusive lock that the OS releases automatically if we die.
-        self._lock_fd = open(os.path.join(self.root, ".batch_run.lock"), "w")
-        try:
-            fcntl.lockf(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            held = open(os.path.join(self.root, ".batch_run.lock")).read().strip()
-            sys.exit(
-                f"Another batch run is already running (PID {held or '?'}). "
-                f"Refusing to start a second one -- it would corrupt the "
-                f"shared params_in.hjson and report. Lock: {self.root}/.batch_run.lock"
-            )
-        self._lock_fd.seek(0)
-        self._lock_fd.truncate()
-        self._lock_fd.write(str(os.getpid()))
-        self._lock_fd.flush()
+        # exclusive lock that the OS releases automatically if we die. --remodel
+        # skips it: it neither builds, vsims, nor touches params_in, and the report
+        # is rewritten atomically, so it is safe alongside a live run.
+        self._lock_fd = None
+        if not skip_lock:
+            self._lock_fd = open(os.path.join(self.root, ".batch_run.lock"), "w")
+            try:
+                fcntl.lockf(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                held = open(os.path.join(self.root, ".batch_run.lock")).read().strip()
+                sys.exit(
+                    f"Another batch run is already running (PID {held or '?'}). "
+                    f"Refusing to start a second one -- it would corrupt the "
+                    f"shared params_in.hjson and report. Lock: {self.root}/.batch_run.lock"
+                )
+            self._lock_fd.seek(0)
+            self._lock_fd.truncate()
+            self._lock_fd.write(str(os.getpid()))
+            self._lock_fd.flush()
 
         if config_path is None:
             config_path = os.path.join(self.root, "batch_run_config.hjson")
@@ -119,6 +125,12 @@ class BatchRun:
         self.timeout = int(self.cfg.get("timeout", 0))
         # Build (podman make) wall-clock cap; 0 disables
         self.build_timeout = int(self.cfg.get("build_timeout", 0))
+        # Global default for `force`; an individual param-set may override it with its
+        # own `force` key. `force: false` (or --no-redo) => fully skip a job whose last
+        # run already produced a result: no build, no vsim, no memsim -- the report just
+        # keeps its last stored row verbatim. build_fail / timeout / no_result always rerun.
+        self.force = bool(self.cfg.get("force", True))
+        self.cached_jobs = []
 
         # The single, persistent report lives at the repo root and accumulates
         # across batch runs; each run's logs/elfs go in their own timestamped dir.
@@ -145,6 +157,7 @@ class BatchRun:
         self._build_seq = 0
 
         self.jobs = self._build_job_list()  # ordered list per lane
+        self._mark_cached()  # tag jobs whose vsim should be reused (still built + memsim'd)
         self.status = {
             "rundir": self.rundir,
             "config_path": self.config_path,
@@ -159,12 +172,18 @@ class BatchRun:
                 self.status["jobs"][job["id"]] = {
                     "app": job["app"],
                     "tag": job["tag"],
+                    "name": job["name"],
+                    "overrides": dict(job["overrides"]),
                     "params": job["all_params"],
                     "seqLen": job["seqLen"],
                     "dModel": job["dModel"],
                     "n_tiles": job["n_tiles"],
                     "log": job["id"] + ".log",
-                    "state": "queued",
+                    # Cached = fully skipped this run (no build/vsim/memsim); the merge
+                    # keeps the stored row verbatim. Start it `done` so it never renders
+                    # as queued -- nothing will run for it.
+                    "cached": job["cached"],
+                    "state": "done" if job["cached"] else "queued",
                     "rc": None,
                 }
         self._write_status()
@@ -189,6 +208,13 @@ class BatchRun:
             lane = []
             for overrides in param_sets:
                 overrides = dict(overrides)
+                # `force` is a scheduling directive, not a workload param: pull it out
+                # before validation/datagen so it never reaches params/data.h. None =
+                # inherit the global `force`.
+                force = overrides.pop("force", None)
+                # `name` is an optional user-defined label for the report's Name column;
+                # like `force` it is display-only, so pull it out before validation/datagen.
+                name = overrides.pop("name", None)
                 missing = [k for k in base if k not in overrides]
                 if missing:
                     missing_errors.append(
@@ -208,6 +234,8 @@ class BatchRun:
                         "id": jid,
                         "app": app,
                         "tag": tag,
+                        "name": name,  # optional user-defined label for the report
+                        "force": force,  # None => inherit global; else per-set override
                         "overrides": overrides,
                         "all_params": dict(eff),
                         "seqLen": _pick(eff, "seqLen", "dim0"),
@@ -222,6 +250,45 @@ class BatchRun:
                 "the app's params_in.hjson (no silent inheritance).\n" + "\n".join(missing_errors)
             )
         return lanes
+
+    def _job_force(self, job):
+        """Effective force for one job: --no-redo on the CLI forces it off for every
+        job; otherwise the param-set's own `force` if it set one, else the global
+        config `force`."""
+        if self.cli_no_redo:
+            return False
+        return self.force if job["force"] is None else bool(job["force"])
+
+    def _mark_cached(self):
+        """Tag jobs that should be fully skipped rather than rerun (sets job["cached"]).
+
+        A job is cached iff its effective force is false AND its last recorded run in the
+        persistent report.json reached state `done` with a real error count (PASS or
+        ERRORS/OOM). force=true jobs (the default) are never cached. build_fail, timeout
+        and no_result (state `done` but no error line) always rerun.
+
+        Cached jobs are skipped completely: no .elf build, no vsim, no memsim model. The
+        report merge keeps their last stored row verbatim (re-stamped as reused on this run)."""
+        report = {}
+        report_path = os.path.join(self.report_dir, "report.json")
+        if os.path.exists(report_path):
+            try:
+                with open(report_path) as f:
+                    report = json.load(f).get("jobs", {})
+            except (OSError, json.JSONDecodeError):
+                report = {}
+
+        kept, cached = [], []
+        for lane in self.jobs:
+            for job in lane:
+                prev = report.get(job["id"], {})
+                produced_result = prev.get("state") == "done" and prev.get("errors") is not None
+                job["cached"] = (not self._job_force(job)) and produced_result
+                (cached if job["cached"] else kept).append(job["id"])
+        self.cached_jobs = cached
+        # Stashed for the end-of-run summary (the live render clears the screen, so a
+        # print here would be wiped immediately).
+        self.no_redo_summary = (kept, cached)
 
     # --- status helpers ---
     def _write_status(self):
@@ -401,8 +468,17 @@ class BatchRun:
         if not os.path.exists(csv) or not os.path.exists(plotter):
             return
         png = os.path.splitext(csv)[0] + ".png"  # <jid>.timeline.png
+        # Hand the plotter the real app + overrides so the title is readable
+        # `key=value` params, not the crammed underscore tag from the filename.
+        info = self.status["jobs"].get(jid, {})
+        cmd = [sys.executable, plotter, "--csv", csv, "-o", png]
+        if info.get("app"):
+            cmd += ["--name", info["app"]]
+        overrides = info.get("overrides") or {}
+        if overrides:
+            cmd += ["--params", "   ".join(f"{k}={v}" for k, v in sorted(overrides.items()))]
         with open(os.path.join(self.rundir, jid + ".plot.log"), "w") as f:
-            p = self._spawn([sys.executable, plotter, "--csv", csv, "-o", png], f)
+            p = self._spawn(cmd, f)
             try:
                 p.wait(timeout=(self.timeout or 120))
             except subprocess.TimeoutExpired:
@@ -413,7 +489,7 @@ class BatchRun:
 
     def run_sim(self, jid, elf):
         """Run the memsim model + one vsim; the vsim is gated by the parallelism
-        semaphore.
+        semaphore. (Cached/force:false jobs are skipped before they reach here.)
 
         The staged .elf is only needed for the duration of these runs, so it is
         deleted afterwards (pass/fail/timeout/abort) to keep the out folder small."""
@@ -465,6 +541,15 @@ class BatchRun:
             if self.aborted.is_set():
                 return
             jid, app = job["id"], job["app"]
+            elf_cache = os.path.join(os.path.dirname(self.rundir), ".elf_cache")
+            if job["cached"]:
+                # force:false reuses the EXPENSIVE vsim, but memsim is sub-second host-side, so never
+                # cache it: re-run it every batch on the persisted .elf -> the Model columns track the
+                # current binary. No rebuild, no vsim. (Bootstrap the .elf_cache with `--remodel`.)
+                cached_elf = os.path.join(elf_cache, jid + ".elf")
+                if os.path.exists(cached_elf):
+                    self.run_memsim(jid, cached_elf)
+                continue
             self.set_state(jid, "building")
             params_path = self.write_temp_params(job)
             rc = self.build(app, params_path, os.path.join(self.rundir, jid + ".build.log"))
@@ -475,6 +560,10 @@ class BatchRun:
             # Stage the elf before the next build overwrites build/<app>.elf.
             staged = os.path.join(self.rundir, jid + ".elf")
             shutil.copy2(self.built_elf(app), staged)
+            # Persist it (keyed on the stable job id) so future force:false runs can re-run the fast
+            # memsim model on it without rebuilding -> the Model columns never go stale.
+            os.makedirs(elf_cache, exist_ok=True)
+            shutil.copy2(staged, os.path.join(elf_cache, jid + ".elf"))
             # Dispatch the sim asynchronously and move on to the next build.
             t = threading.Thread(target=self.run_sim, args=(jid, staged), daemon=True)
             with self.sim_threads_lock:
@@ -524,6 +613,12 @@ class BatchRun:
         print("\nBatch run complete.")
         print(f"  Logs:   {self.rundir}")
         print(f"  Report: {os.path.join(self.report_dir, 'report.md')}")
+        kept, cached = self.no_redo_summary
+        if cached:
+            print(f"  force:false: ran {len(kept)} job(s); fully skipped {len(cached)} cached "
+                  f"job(s) (no build/vsim/memsim -- kept stored row).")
+            for jid in cached:
+                print(f"    skipped {jid}")
 
     def _render(self):
         # Merge this batch run's current results into the single persistent report,
@@ -533,14 +628,121 @@ class BatchRun:
         sys.stdout.write(batch_run_report.render_report(self.report_dir))
         sys.stdout.flush()
 
+    def _probe_elf_config(self, elf):
+        """Read the (seqLen, dModel) an elf was built for, straight out of memsim's --acc line, so a
+        build/<app>.elf can be matched to the right job without trusting the (churned) build dir."""
+        try:
+            env = {**os.environ, "MEMSIM_ACC": "1"}
+            out = subprocess.run([MEMSIM_BIN, elf], cwd=self.cluster, env=env,
+                                 capture_output=True, text=True, timeout=60).stderr
+        except Exception:
+            return None
+        m = re.search(r"seqLen=(\d+) dModel=(\d+)", out)
+        return (m.group(1), m.group(2)) if m else None
+
+    def remodel(self):
+        """--remodel: re-run ONLY the fast memsim model on every cached/buildable elf and refresh the
+        report's Model columns, reusing the stored vsim (no build, no vsim). Seeds .elf_cache from each
+        app's current build/<app>.elf, matched to a job by the config the elf embeds."""
+        elf_cache = os.path.join(os.path.dirname(self.rundir), ".elf_cache")
+        os.makedirs(elf_cache, exist_ok=True)
+        jobs = [j for lane in self.jobs for j in lane]
+        # Mark EVERY job cached up front: the merge then keeps each stored row's vsim verbatim and only
+        # refreshes the Model columns for jobs we actually re-memsim below (else a non-cached job with no
+        # fresh log this run would get its existing row blanked).
+        for j in jobs:
+            self.status["jobs"][j["id"]]["cached"] = True
+            self.status["jobs"][j["id"]]["state"] = self.status["jobs"][j["id"]].get("state", "done")
+        by_app = {}
+        for j in jobs:
+            by_app.setdefault(j["app"], []).append(j)
+        # Seed: probe each app's build elf once; cache it under the matching job's id.
+        for app, applist in by_app.items():
+            be = self.built_elf(app)
+            if not os.path.exists(be):
+                continue
+            cfg = self._probe_elf_config(be)
+            if not cfg:
+                continue
+            # Only seed when EXACTLY ONE job matches the elf's (seqLen, dModel): otherwise we can't tell
+            # which config the single build/ elf actually is -> don't risk caching it under the wrong id.
+            matches = [j for j in applist if (str(j.get("seqLen")), str(j.get("dModel"))) == cfg]
+            if len(matches) != 1:
+                continue
+            dst = os.path.join(elf_cache, matches[0]["id"] + ".elf")
+            if not os.path.exists(dst):
+                shutil.copy2(be, dst)
+        # memsim every job that now has a cached elf; mark it cached so the merge keeps the stored vsim.
+        n = 0
+        for j in jobs:
+            jid = j["id"]
+            ce = os.path.join(elf_cache, jid + ".elf")
+            if not os.path.exists(ce):
+                continue
+            self.status["jobs"][jid]["cached"] = True
+            self.status["jobs"][jid]["state"] = self.status["jobs"][jid].get("state", "done")
+            self.run_memsim(jid, ce)
+            n += 1
+        self._write_status()
+        self._render()
+        print(f"\n--remodel: re-ran memsim on {n} cached elf(s); report Model columns refreshed (vsim reused).")
+        print(f"  Report: {os.path.join(self.report_dir, 'report.md')}")
+
+    def prune(self):
+        """--prune: drop report.json rows whose job id is no longer in the current config -- dead
+        configs left over from renamed params (e.g. a new key changing the app__tag). The merge keeps
+        such rows forever by design ('prune by hand'); this is that hand. Backs up report.json first."""
+        cur_ids = {j["id"] for lane in self.jobs for j in lane}
+        report_path = os.path.join(self.report_dir, batch_run_report.REPORT_JSON)
+        rep = batch_run_report._read_json(report_path) or {"jobs": {}}
+        jobs = rep.get("jobs", {})
+        orphans = [jid for jid in jobs if jid not in cur_ids]
+        if not orphans:
+            print("--prune: no orphaned rows; nothing to do.")
+            return
+        shutil.copy2(report_path, report_path + ".bak")
+        for jid in orphans:
+            del jobs[jid]
+        batch_run_report._write_json_atomic(report_path, rep)
+        with open(os.path.join(self.report_dir, batch_run_report.REPORT_MD), "w") as f:
+            f.write(batch_run_report.render_report(self.report_dir))
+        print(f"--prune: removed {len(orphans)} orphaned row(s); kept {len(jobs)}. Backup: {report_path}.bak")
+
 
 def main():
     ap = argparse.ArgumentParser(description="Run a batch of simulations")
     ap.add_argument(
         "config", nargs="?", default=None, help="batch-run config (.hjson); default: <repo-root>/batch_run_config.hjson"
     )
+    ap.add_argument(
+        "--no-redo",
+        action="store_true",
+        help="force every job to force:false: fully skip configs that already produced a "
+        "result (PASS or errors) -- no build, no vsim, no memsim; the report keeps their last "
+        "stored row. New configs and ones whose last run was build_fail/timeout/no_result still "
+        "run. Overrides per-config `force`.",
+    )
+    ap.add_argument(
+        "--remodel",
+        action="store_true",
+        help="re-run ONLY the fast memsim model on every cached/buildable elf and refresh the report's "
+        "Model columns (reusing the stored vsim). No build, no vsim. Seeds .elf_cache from the apps' "
+        "current build/ elfs. Use after changing the memsim binary to refresh numbers in seconds.",
+    )
+    ap.add_argument(
+        "--prune",
+        action="store_true",
+        help="drop report.json rows whose config is no longer in the batch config (dead 'orphan' rows "
+        "left over from renamed params), then re-render. Backs up report.json first. No build/vsim/memsim.",
+    )
     args = ap.parse_args()
-    BatchRun(args.config).run()
+    br = BatchRun(args.config, no_redo=args.no_redo, skip_lock=args.remodel or args.prune)
+    if args.prune:
+        br.prune()
+    elif args.remodel:
+        br.remodel()
+    else:
+        br.run()
 
 
 if __name__ == "__main__":
