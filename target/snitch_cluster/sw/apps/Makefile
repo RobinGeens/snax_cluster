@@ -26,6 +26,7 @@ SUBDIRS += suc-async
 SUBDIRS += P2-async-OS-no-IS
 SUBDIRS += batchnorm
 SUBDIRS += fft-3way-tiled
+SUBDIRS += fft-3way-tiled-async
 # SUBDIRS += fft-3way
 # SUBDIRS += osgemm
 # SUBDIRS += isgemm

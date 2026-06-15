@@ -102,10 +102,28 @@ int main(int argc, char** argv) {
         // fullness plot. Path = <timeline>.fifo.csv (strip a trailing .csv, append .fifo.csv) so
         // plot_timeline.py can find it next to the timeline CSV. Engine (P1/P2), cyc_gemm
         // (osgemm/isgemm) and cyc_simd (SIMD) invocations all contribute rows; -1 = port idle/absent.
-        std::string fifo_path = timeline_path;
-        if (fifo_path.size() >= 4 && fifo_path.compare(fifo_path.size() - 4, 4, ".csv") == 0)
-            fifo_path.resize(fifo_path.size() - 4);
-        fifo_path += ".fifo.csv";
+        std::string base = timeline_path;
+        if (base.size() >= 4 && base.compare(base.size() - 4, 4, ".csv") == 0) base.resize(base.size() - 4);
+
+        // Safe-to-start hazard-vs-gate sweep (gate R10|R11, gate value, stale-read count), for the
+        // schedule plot's S2S subplot. Path = <timeline>.s2s.csv. Empty if the sweep didn't run.
+        const auto& sw10 = world.s2s_sweep_r10();
+        const auto& sw11 = world.s2s_sweep_r11();
+        if (!sw11.empty()) {
+            std::string s2s_path = base + ".s2s.csv";
+            FILE* sf = std::fopen(s2s_path.c_str(), "w");
+            if (sf) {
+                std::fprintf(sf, "gate,value,stale,optimal,total\n");
+                for (const auto& p : sw10)
+                    std::fprintf(sf, "R10,%ld,%ld,%ld,%ld\n", p.first, p.second, world.s2s_opt_r10(), world.s2s_total_r10());
+                for (const auto& p : sw11)
+                    std::fprintf(sf, "R11,%ld,%ld,%ld,%ld\n", p.first, p.second, world.s2s_opt_r11(), world.s2s_total_r11());
+                std::fclose(sf);
+                std::fprintf(stderr, "memsim: wrote S2S sweep (%zu+%zu points) to %s\n", sw10.size(), sw11.size(), s2s_path.c_str());
+            }
+        }
+
+        std::string fifo_path = base + ".fifo.csv";
         const auto& ftrace = world.fifo_trace();
         if (!ftrace.empty()) {
             FILE* ff = std::fopen(fifo_path.c_str(), "w");

@@ -27,7 +27,7 @@ def align64(value: int) -> int:
 
 
 class DataGenerator(DataGeneratorBase):
-    APP_NAME = "fft-3way-tiled"
+    APP_NAME = "fft-3way-tiled-async"
 
     def __init__(self, **kwargs):
         super().__init__(self.APP_NAME, **kwargs)
@@ -68,6 +68,16 @@ class DataGenerator(DataGeneratorBase):
         L2_padded = self.kwargs["L2_padded"]
         L3_padded = self.kwargs["L3_padded"]
         nb_d = self.kwargs["nb_tiles_A"]  # outer dModel-slice count
+        # l3-tiling: partition3 contracts m3 (the L3 axis), so split that contraction into
+        # nb_l3 K-tiles and accumulate them. (Increment 2a: stages 1-4 still run full/untiled;
+        # only the partition3 K-reduction is split — see docs/dataflow/05_fft.md.)
+        l3_tile = self.kwargs.get("l3_tile", L3)
+        assert L3 % l3_tile == 0, f"L3 ({L3}) must be divisible by l3_tile ({l3_tile})"
+        nb_l3 = L3 // l3_tile
+        # partition3 output N-tiling: its output psum is the full-L term (2*L*dM BF16). Slice the
+        # N (batch = dM*L1*L2) into nb_ntile chunks so only one chunk's psum is resident, then
+        # requant (standard ISGEMM_SQ) + scatter per chunk. Keeps the full psum out of TCDM.
+        nb_ntile = self.kwargs.get("nb_ntile", 1)
 
         # dModel is the independent batch axis of every partition: slice it and run
         # the full kernel per slice. dM = channels per slice.
@@ -82,8 +92,19 @@ class DataGenerator(DataGeneratorBase):
         K_1 = L1_padded // dInnerUnroll
         K_2 = 2 * L2_padded // dInnerUnroll
         K_3 = 2 * L3_padded // dInnerUnroll
-        N_1 = dM * L2 * L3
-        N_2 = dM * L1 * L3
+        # partition3 K-reduction split into nb_l3 invocations (accumulate in BF16, requant on last).
+        assert K_3 % nb_l3 == 0, f"K_3 ({K_3}) must be divisible by nb_l3 ({nb_l3})"
+        K_3t = K_3 // nb_l3
+        # Stages 1-4 treat m3 (the L3 axis) as a batch factor and run on ONE l3-tile at a time,
+        # on CONTIGUOUS tile-local buffers gathered by DMA. On those buffers the descriptors are
+        # exactly the un-tiled ones with L3 -> L3t, L -> Lt (l3_tile must be a multiple of
+        # seqLenUnroll). The gather, not re-striding, handles the chip-layout m3 interleave —
+        # see memory note fft3way_cmul_mu_l3_conflation.
+        assert l3_tile % seqLenUnroll == 0, f"l3_tile ({l3_tile}) must be a multiple of {seqLenUnroll}"
+        L3t = l3_tile
+        Lt = L1 * L2 * L3t
+        N_1 = dM * L2 * L3t
+        N_2 = dM * L1 * L3t
         N_3 = dM * L1 * L2
         assert L1 * L2 * L3 == L
         assert L1 % seqLenUnroll == 0, f"L1 ({L1}) must be a multiple of {seqLenUnroll}"
@@ -100,13 +121,20 @@ class DataGenerator(DataGeneratorBase):
         assert downsized_N_1 * b_in_width == N_1 * b_array_width
         assert downsized_N_2 * b_in_width == N_2 * b_array_width
         assert downsized_N_3 * b_in_width == N_3 * b_array_width
+        # partition3 N-tile (output batch chunk)
+        assert N_3 % nb_ntile == 0, f"N_3 ({N_3}) must be divisible by nb_ntile ({nb_ntile})"
+        assert downsized_N_3 % nb_ntile == 0, f"downsized_N_3 ({downsized_N_3}) must be divisible by nb_ntile"
+        N_3t = N_3 // nb_ntile
+        downsized_N_3t = downsized_N_3 // nb_ntile
 
         cd_array_width = seqLenUnroll * BF16
         assert cd_array_width == b_in_width, "Memory layout mismatch"
 
         psum_bounds_and_strides_1 = ([M_1 * N_1, K_1], [cd_array_width // 8, 0])
         psum_bounds_and_strides_2 = ([M_2 * N_2, K_2], [cd_array_width // 8, 0])
-        psum_bounds_and_strides_3 = ([M_3 * N_3, K_3], [cd_array_width // 8, 0])
+        # partition3 psum walks ONE N-tile's output (M_3*N_3t), K_3t contraction steps per
+        # invocation; the nb_l3 invocations read-accumulate into the same psum (stride-0 K).
+        psum_bounds_and_strides_3 = ([M_3 * N_3t, K_3t], [cd_array_width // 8, 0])
 
         # Per-slice descriptors: identical to un-tiled fft-3way with `dModel -> dM`.
         streamers = {
@@ -125,30 +153,30 @@ class DataGenerator(DataGeneratorBase):
             "R7_2": (
                 [L2, seqLenUnroll, L1 // seqLenUnroll, dM],
                 [
-                    (L3 * FP8 // 8 // BANK_BYTES) * seqLenUnroll * BANK_BYTES,
+                    (L3t * FP8 // 8 // BANK_BYTES) * seqLenUnroll * BANK_BYTES,
                     BANK_BYTES,
-                    seqLenUnroll * L2 * L3 * dM * FP8 // 8,
-                    # d-slice within one bank-transposed M-tile (= L only when L1 == seqLenUnroll).
-                    seqLenUnroll * L2 * L3 * FP8 // 8,
+                    seqLenUnroll * L2 * L3t * dM * FP8 // 8,
+                    # d-slice within one bank-transposed M-tile (= Lt only when L1 == seqLenUnroll).
+                    seqLenUnroll * L2 * L3t * FP8 // 8,
                 ],
-                [seqLenUnroll * BANK_BYTES, L * dM * FP8 // 8],
+                [seqLenUnroll * BANK_BYTES, Lt * dM * FP8 // 8],
             ),
             "R13_2": (
                 [L2, seqLenUnroll, L1 // seqLenUnroll, dM],
                 [4 * BANK_BYTES, L2 * 4 * BANK_BYTES, seqLenUnroll * L2 * 4 * BANK_BYTES, 0],
             ),
             "W3_2": (
-                [2 * L * dM * FP8 // (2 * suc_serial_width_BC)],
+                [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
                 [4 * BANK_BYTES],
             ),
             # Step 2B: SIMD NOOP deinterleave re/im → __flattenColMajor.
             "R7_2B": (
-                [L * dM * FP8 // (2 * suc_serial_width_BC), 2],
+                [Lt * dM * FP8 // (2 * suc_serial_width_BC), 2],
                 [8 * BANK_BYTES, 2 * BANK_BYTES],
                 [BANK_BYTES, 4 * BANK_BYTES],
             ),
             "W3_2B": (
-                [2 * L * dM * FP8 // (2 * suc_serial_width_BC)],
+                [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
                 [4 * BANK_BYTES],
             ),
             # Step 3: partition 2.
@@ -165,39 +193,52 @@ class DataGenerator(DataGeneratorBase):
             # Step 4: hadamard 2 (CMul with twiddles2). Cycle order (inner→outer): k2, k1, d.
             "R7_4": (
                 [L2, L1, dM, 1],
-                [BANK_BYTES, (L3 // (BANK_BYTES // (FP8 // 8))) * L2 * BANK_BYTES, L * FP8 // 8, 0],
-                [L2 * BANK_BYTES, L * dM * FP8 // 8],
+                [BANK_BYTES, (L3t // (BANK_BYTES // (FP8 // 8))) * L2 * BANK_BYTES, Lt * FP8 // 8, 0],
+                [L2 * BANK_BYTES, Lt * dM * FP8 // 8],
             ),
             "R13_4": (
                 [L2, L1, dM, 1],
                 [4 * BANK_BYTES, 0, 0, 0],
             ),
             "W3_4": (
-                [2 * L * dM * FP8 // (2 * suc_serial_width_BC)],
+                [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
                 [4 * BANK_BYTES],
             ),
             # Step 4B: SIMD NOOP deinterleave re/im → __flattenColMajor.
             "R7_4B": (
-                [L * dM * FP8 // (2 * suc_serial_width_BC), 2],
+                [Lt * dM * FP8 // (2 * suc_serial_width_BC), 2],
                 [8 * BANK_BYTES, 2 * BANK_BYTES],
                 [BANK_BYTES, 4 * BANK_BYTES],
             ),
             "W3_4B": (
-                [2 * L * dM * FP8 // (2 * suc_serial_width_BC)],
+                [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
                 [4 * BANK_BYTES],
             ),
-            # Step 5: partition 3.
+            # Step 5: partition 3. L3 holds the full [re(all m3) | im(all m3)] K order (the re/im
+            # halves of each l3-tile staged to their own regions). The IS-core can't contract the
+            # whole K=2*L3_padded in one ISGEMM_SQ (hangs for 2*L3>~32), so K-tile into nb_l3 chunks
+            # of K_3t and accumulate (NO_REQUANT, requant on the last). Because both weight3 and the
+            # gathered h2 are in [re|im] order, contiguous K-chunks pair correctly (base ptrs in C).
             "R11_5": (
-                [2 * L3 * 2 * L3_padded * FP8 // iscore_serial_width],
+                [2 * L3 * 2 * L3_padded * FP8 // iscore_serial_width // nb_l3],
                 [iscore_serial_width // 8],
             ),
             "R12_5": (
-                [downsized_N_3, M_3, K_3],
-                [b_in_width // 8, 0, downsized_N_3 * b_in_width // 8],
+                [downsized_N_3t, M_3, K_3t],
+                [b_in_width // 8, 0, downsized_N_3t * b_in_width // 8],
             ),
             "R13_5": psum_bounds_and_strides_3,
             "W3_5": psum_bounds_and_strides_3,
         }
+        # partition3 K-chunk base-pointer offsets (contiguous in the [re|im] order).
+        weight3_kchunk_bytes = (2 * L3 * 2 * L3_padded * FP8 // 8) // nb_l3
+        h2_kchunk_bytes = K_3t * downsized_N_3t * b_in_width // 8
+
+        # H2 staging: each l3-tile's noop2 output is [re(tile m3) | im(tile m3)] = two equal
+        # K-blocks; stage the re half to the re region and the im half to the im region of L3.
+        h2_ktile_bytes = K_3t * downsized_N_3 * b_in_width // 8   # one l3-tile's H2 (re+im)
+        h2_half_bytes = h2_ktile_bytes // 2                       # one re or im K-block
+        h2_im_region = (2 * L * dM * FP8 // 8) // 2               # start of the im region in L3
 
         # ---------- Buffer sizes ------------------------------------------------
         # Weights/twiddles depend on L only (broadcast over d) → FULL, loaded once.
@@ -230,9 +271,28 @@ class DataGenerator(DataGeneratorBase):
         in_slice_chunk = dM * L2 * L3 * seqLenUnroll * FP8 // 8  # one K-tile of a slice
         in_ktile_stride = dModel * L2 * L3 * seqLenUnroll * FP8 // 8  # one full N-sweep in L3
 
-        # Two ping-pong slots, each sized to the largest per-slice buffer
-        # (partition_out, BF16). Every step reads one slot, writes the other.
-        slot_size = align64(2 * L * dM * BF16 // 8)
+        # --- l3-tile gather of input + twiddles into contiguous tile-local buffers (from DRAM) ---
+        # in_tile: per k1-tile, per d, copy the tile's m3-block (L3t*L2*Mu) out of the [d][L2*L3][Mu]
+        # chip layout. Loop k1-tiles in C; each is a 2-D DMA over d.
+        in_gather_chunk = L3t * L2 * seqLenUnroll * FP8 // 8      # one d's m3-block in one k1-tile
+        in_gather_d_stride = L2 * L3 * seqLenUnroll * FP8 // 8    # full-L3 d stride in dft_in
+        in_gather_dst_ktile = dM * L3t * L2 * seqLenUnroll * FP8 // 8  # one k1-tile in in_tile
+        in_tile_bytes = len_in_slice // nb_l3                     # Lt*dM
+        # twiddles1 (k1, j=m3*L2+m2), 2 bytes/entry (cos,sin): gather the tile's m3 j-block per k1.
+        tw1_entry = 2 * FP8 // 8
+        tw1_gather_chunk = L3t * L2 * tw1_entry
+        tw1_gather_src_stride = L2 * L3 * tw1_entry
+        tw1_tile_bytes = L1 * L3t * L2 * tw1_entry               # 2*Lt
+        # twiddles2 (l2, l3), 2 bytes/entry: gather the tile's L3t columns per l2 row.
+        tw2_gather_chunk = L3t * tw1_entry
+        tw2_gather_src_stride = L3 * tw1_entry
+        tw2_tile_bytes = L2 * L3t * tw1_entry
+        full_h2_bytes = 2 * L * dM * FP8 // 8                     # assembled gemm3 input
+
+        # Tile-local psum/scratch (1/nb_l3 of the full slot).
+        slot_size = align64(2 * L * dM * BF16 // 8)              # full partition3 psum (gemm3 out)
+        slot_size_tile = align64(2 * Lt * dM * BF16 // 8)        # gemm1/2 psum per l3-tile
+        hsize_tile = slot_size_tile // 2                          # FP8 cmul/noop scratch per tile
 
         specs = [
             ("weight1", len_weight1),
@@ -256,8 +316,40 @@ class DataGenerator(DataGeneratorBase):
             "out_block_slice": out_block_slice,
             "out_nblk": out_nblk,
             "slot_size": slot_size,
+            "nb_l3": nb_l3,
+            "l3_tile": l3_tile,
+            "h2_ktile_bytes": h2_ktile_bytes,
+            # l3-tile gather + tile-local buffer sizes
+            "in_gather_chunk": in_gather_chunk,
+            "in_gather_d_stride": in_gather_d_stride,
+            "in_gather_dst_ktile": in_gather_dst_ktile,
+            "in_tile_bytes": in_tile_bytes,
+            "tw1_gather_chunk": tw1_gather_chunk,
+            "tw1_gather_src_stride": tw1_gather_src_stride,
+            "tw1_tile_bytes": tw1_tile_bytes,
+            "tw2_gather_chunk": tw2_gather_chunk,
+            "tw2_gather_src_stride": tw2_gather_src_stride,
+            "tw2_tile_bytes": tw2_tile_bytes,
+            "full_h2_bytes": full_h2_bytes,
+            "slot_size_tile": slot_size_tile,
+            "hsize_tile": hsize_tile,
+            # partition3 N-tiling + H2-staged-through-L3 (re/im split) + full-K gather
+            "nb_ntile": nb_ntile,
+            "ntile_n_off": downsized_N_3t * b_in_width // 8,   # N-offset of one N-tile in the L3 H2
+            "p3_ntile_bytes": slot_size // nb_ntile,           # one N-tile's psum (BF16, resident)
+            "out_ntile_chunk": out_block_slice // nb_ntile,    # one N-tile's cols per output row-block
+            "h2_half_bytes": h2_half_bytes,                    # one l3-tile's re (or im) K-block
+            "h2_im_region": h2_im_region,                      # start of im region in the L3 H2
+            "weight3_kchunk_bytes": weight3_kchunk_bytes,      # partition3 K-chunk weight offset
+            "h2_kchunk_bytes": h2_kchunk_bytes,                # partition3 K-chunk h2 offset
+            "h2_gather_chunk": downsized_N_3t * b_in_width // 8,    # N-tile's N-run per K-step
+            "h2_gather_src_stride": downsized_N_3 * b_in_width // 8,  # full-N K-stride in L3 H2
+            "h2_gather_kreps": K_3,                            # full contraction in one gather
+            "h2_ntile_bytes": full_h2_bytes // nb_ntile,       # the gathered per-N-tile h2 (TCDM)
         }
         scalars = {**lengths, **deltas, **slice_scalars}
+
+        # TCDM peak + OOM guard: see memory_model.py (run from run() via _run_memory_model).
 
         test_data = {
             **{

@@ -40,6 +40,13 @@ void AccelEngine::sample_fifo() {
         setR(P_R10, r10_); setW(P_W2, w2_);
         if (sw_en_) { setR(P_R2, r2sw_); setR(P_R3, r3sw_); if (p_[P_R5].enabled) setR(P_R5, r5sw_); }
         if (en_isc_) { setR(P_R11, r11_); setR(P_R12, r12_); if (r13_en_) setR(P_R13, r13_); setW(P_W3, w3_); }
+    } else if (kind_ == 3) {  // osgemm: standalone osCore array
+        setR(P_R0, r0_); setR(P_R1, r1_); setW(P_W0, w0_);
+    } else if (kind_ == 4) {  // isgemm: standalone isCore array (output drain only)
+        setW(P_W3, w3_);
+    } else if (kind_ == 5) {  // SIMD: any enabled reader/writer ports
+        for (int p = 0; p < 14; p++) if (simd_r_en_[p]) setR(p, rd_[p]);
+        for (int p = 14; p < 18; p++) if (simd_w_en_[p - 14]) setW(p, wr_[p - 14]);
     } else if (kind_ == 2) {  // P1 / IS_OSGEMM: osCore -> conv -> isCore
         setR(P_R0, r0_); setR(P_R1, r1_);
         if (w0p1_en_) setW(P_W0, w0_);
@@ -77,10 +84,13 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
 
     const long Mu = 16, Nu = 24;
     M_i_ = seqLen_ / Mu; osN_ = (dInner_ >= Nu) ? dInner_ / Nu : 0;
-    running_ = false; kind_ = 0;
+    running_ = false; kind_ = 0; is_simd_ = false;
+    if (!en_os_ && !en_suc_ && !en_isc_) { configure_simd(); return; }  // SIMD: no GEMM subcore (kind_=5)
     if (M_i_ <= 0 || osN_ <= 0) return;
     if (!en_suc_) {                                  // P1 / IS_OSGEMM (osCore -> conv -> isCore)
         if (en_os_ && en_isc_) configure_p1();
+        else if (en_os_) configure_os();             // osgemm: standalone osCore (kind_=3)
+        else if (en_isc_) configure_is();            // isgemm: standalone isCore (kind_=4)
         return;
     }
     kind_ = 1;                                       // P2 (osCore -> SUC -> isCore)
@@ -95,6 +105,7 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
     // osCore disabled (SUC-only): z is preloaded, so every z word is already "written" (no hazard).
     Wz_ = w0_.total_beats(); zwr_.assign(Wz_ + 1, en_os_ ? 0 : 1);
 
+    r7_fifo_d_ = snax_streamer_depth(P_R7);  // R7 req+data FIFO depth, from the one streamer-depth source
     for (int i = 0; i < 4; i++) { r7ts_[i] = p_[P_R7].t_stride[i]; r7eb_[i] = p_[P_R7].t_bound[i] ? p_[P_R7].t_bound[i] : 1; }
     if (p_[P_R7].t_stride[0] == 0 && p_[P_R7].t_bound[0] > 1) r7eb_[0] = 1;
     for (int l = 0; l < NCH7; l++) { issued_[l] = landed_[l] = 0; pend7_[l] = 0; }
@@ -238,8 +249,152 @@ bool AccelEngine::step_p1() {
     return running_;
 }
 
+// kind_=3: standalone osCore GEMM (osgemm). R0,R1 -> array(K=dModel) -> W0, stepped on the one shared
+// fabric with the live DMA beat engine, so the async oscore-in ring's refill DMA contends by arbitration
+// (replaces cyc_gemm + its scalar dma_cycles). GEMM readers are residue-pinned (conflict-free), so the
+// only cross effect is DMA superbank preemption.
+void AccelEngine::configure_os() {
+    kind_ = 3;
+    K_os_ = dModel_;
+    n_tiles_os_ = M_i_ * osN_;
+    r0_.configure(p_[P_R0], 2, 1, snax_streamer_depth(P_R0), T_R0);
+    r1_.configure(p_[P_R1], 4, 1, snax_streamer_depth(P_R1), T_R1);
+    w0_.configure(p_[P_W0], 1, 1, T_W0); w0_.depth = snax_streamer_depth(P_W0);
+    Wz_ = w0_.total_beats();
+    wbpt_os_ = Wz_ / std::max(1L, n_tiles_os_); if (wbpt_os_ < 1) wbpt_os_ = 1;
+    as_os_ = tiles_os_ = 0; os_owed_ = 0;
+    cap_ = (uint64_t)n_tiles_os_ * K_os_ * 8 + 500000;
+    cyc_ = 0; g_r10_ = g_r11_ = g_iscore_ = 0;
+    suc_started_ = isc_started_ = false; rel_r10_ = rel_r11_ = false;
+    res_ = EngineResult{}; dma_.clear(); fabric_ = Fabric{};
+    running_ = true;
+}
+
+bool AccelEngine::step_os() {
+    if (!running_) return false;
+    if (cyc_ >= cap_) { running_ = false; res_.busy = cyc_; return false; }
+    cyc_++;
+    r0_.land_reads(); if (r0_.done) r0_.reset();
+    r1_.land_reads(); if (r1_.done) r1_.reset();
+    // Drip one output group per cycle into W0's FIFO (backpressure: a full W0 stalls the array).
+    if (os_owed_ > 0 && w0_.fifo_occ < w0_.depth) { w0_.push(1); os_owed_--; }
+    if (tiles_os_ < n_tiles_os_ && r0_.fifo_occ > 0 && r1_.fifo_occ > 0
+        && ((as_os_ + 1) % K_os_ != 0 || os_owed_ == 0)) {
+        r0_.pop(); r1_.pop();
+        if (++as_os_ % K_os_ == 0) { tiles_os_++; os_owed_ += wbpt_os_; g_r10_++;
+            if (rec_fires) res_.r10_fire.push_back((uint32_t)cyc_); }
+    }
+    if (tiles_os_ == n_tiles_os_ && w0_.written >= Wz_) {
+        res_.busy = cyc_; res_.osc_end = cyc_; running_ = false; sample_fifo(); return false;
+    }
+    fabric_.begin_cycle(dma_.step(cyc_));
+    r0_.propose(fabric_); r1_.propose(fabric_); w0_.propose(fabric_);
+    bool g[64]; fabric_.arbitrate(g);
+    int gi = 0;
+    r0_.commit(fabric_, g, gi); r1_.commit(fabric_, g, gi); w0_.commit(fabric_, g, gi);
+    sample_fifo();
+    return running_;
+}
+
+// kind_=4: standalone isCore GEMM (isgemm). Input readers are conflict-free (gran>=lanes), so the array
+// is fed at 1/cycle; only the W3 output drain (and any concurrent psum-ring DMA on W3's superbank) is
+// stepped on the shared fabric. n_out_tiles = M_i*dFinal, K_i = osN. (Mirrors cyc_gemm's 0-reader path.)
+void AccelEngine::configure_is() {
+    kind_ = 4;
+    K_is_ = osN_;
+    n_tiles_is_ = M_i_ * dFinal_;
+    w3_.configure(p_[P_W3], 4, 1, T_W3); w3_.depth = snax_streamer_depth(P_W3);
+    wbpt_is_ = w3_.total_beats() / std::max(1L, n_tiles_is_); if (wbpt_is_ < 1) wbpt_is_ = 1;
+    as_is_ = tiles_is_ = 0; is_owed_ = 0;
+    cap_ = (uint64_t)n_tiles_is_ * std::max(1L, K_is_) * 8 + 500000;
+    cyc_ = 0; g_r10_ = g_r11_ = g_iscore_ = 0;
+    suc_started_ = isc_started_ = false; rel_r10_ = rel_r11_ = false;
+    res_ = EngineResult{}; dma_.clear(); fabric_ = Fabric{};
+    running_ = (n_tiles_is_ > 0 && K_is_ > 0);
+}
+
+bool AccelEngine::step_is() {
+    if (!running_) return false;
+    if (cyc_ >= cap_) { running_ = false; res_.busy = cyc_; return false; }
+    cyc_++;
+    if (is_owed_ > 0 && w3_.fifo_occ < w3_.depth) { w3_.push(1); is_owed_--; }
+    if (tiles_is_ < n_tiles_is_ && ((as_is_ + 1) % K_is_ != 0 || is_owed_ == 0)) {
+        if (++as_is_ % K_is_ == 0) { tiles_is_++; is_owed_ += wbpt_is_; g_iscore_++; }
+    }
+    if (tiles_is_ == n_tiles_is_ && w3_.written >= w3_.total_beats()) {
+        res_.busy = cyc_; res_.isc_end = cyc_; running_ = false; sample_fifo(); return false;
+    }
+    fabric_.begin_cycle(dma_.step(cyc_));
+    w3_.propose(fabric_);
+    bool g[64]; fabric_.arbitrate(g);
+    int gi = 0; w3_.commit(fabric_, g, gi);
+    sample_fifo();
+    return running_;
+}
+
+// kind_=5: SIMD pass (SimdCore). The enabled reader ports feed the core and the enabled writer ports
+// drain it, all on the one shared fabric with the live DMA beat engine so strided-gather bank conflicts
+// AND any concurrent ring DMA emerge (replaces cyc_simd + its scalar dma_cycles). Readers/writers run to
+// their own beat totals; the pass ends when all have completed. perf counter stays 0 (SIMD is outside the
+// MambaCore counter) — set by advance_to.
+static const int PORT_NCH_SIMD[18] = {2, 4, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 4, 4, 1, 1, 1, 4};
+void AccelEngine::configure_simd() {
+    kind_ = 5; is_simd_ = true;
+    long maxbeats = 0; bool any = false;
+    for (int p = 0; p < 14; p++) {
+        simd_r_en_[p] = false; simd_r_beats_[p] = simd_r_pops_[p] = 0;
+        if (!p_[p].enabled) continue;
+        rd_[p].configure(p_[p], PORT_NCH_SIMD[p], 1, snax_streamer_depth(p), p);
+        long b = 1; for (int d = 0; d < 4; d++) b *= p_[p].t_bound[d] ? p_[p].t_bound[d] : 1;
+        simd_r_en_[p] = true; simd_r_beats_[p] = b; if (b > maxbeats) maxbeats = b; any = true;
+    }
+    for (int p = 14; p < 18; p++) {
+        simd_w_en_[p - 14] = false;
+        if (!p_[p].enabled) continue;
+        wr_[p - 14].configure(p_[p], PORT_NCH_SIMD[p], 1, p); wr_[p - 14].depth = snax_streamer_depth(p);
+        simd_w_en_[p - 14] = true;
+        long b = wr_[p - 14].total_beats(); if (b > maxbeats) maxbeats = b; any = true;
+    }
+    cap_ = (uint64_t)maxbeats * 8 + 500000;
+    cyc_ = 0; g_r10_ = g_r11_ = g_iscore_ = 0;
+    res_ = EngineResult{}; dma_.clear(); fabric_ = Fabric{};
+    running_ = any;
+}
+
+bool AccelEngine::step_simd() {
+    if (!running_) return false;
+    if (cyc_ >= cap_) { running_ = false; res_.busy = cyc_; return false; }
+    cyc_++;
+    for (int p = 0; p < 14; p++) {                                   // core consumes one beat per reader
+        if (!simd_r_en_[p]) continue;
+        rd_[p].land_reads();
+        if (simd_r_pops_[p] < simd_r_beats_[p] && rd_[p].fifo_occ > 0) { rd_[p].pop(); simd_r_pops_[p]++; }
+    }
+    for (int p = 14; p < 18; p++) {                                  // core produces into each writer FIFO
+        if (!simd_w_en_[p - 14]) continue;
+        CycWriter& wp = wr_[p - 14];
+        if (wp.written + wp.fifo_occ < wp.total_beats() && wp.fifo_occ < wp.depth) wp.push(1);
+    }
+    sample_fifo();
+    bool done = true;
+    for (int p = 0; p < 14; p++) if (simd_r_en_[p] && simd_r_pops_[p] < simd_r_beats_[p]) done = false;
+    for (int p = 14; p < 18; p++) if (simd_w_en_[p - 14] && wr_[p - 14].written < wr_[p - 14].total_beats()) done = false;
+    if (done) { res_.busy = cyc_; running_ = false; return false; }
+    fabric_.begin_cycle(dma_.step(cyc_));
+    for (int p = 0; p < 14; p++) if (simd_r_en_[p] && simd_r_pops_[p] < simd_r_beats_[p]) rd_[p].propose(fabric_);
+    for (int p = 14; p < 18; p++) if (simd_w_en_[p - 14] && wr_[p - 14].written < wr_[p - 14].total_beats()) wr_[p - 14].propose(fabric_);
+    bool g[64]; fabric_.arbitrate(g);
+    int gi = 0;
+    for (int p = 0; p < 14; p++) if (simd_r_en_[p] && simd_r_pops_[p] < simd_r_beats_[p]) rd_[p].commit(fabric_, g, gi);
+    for (int p = 14; p < 18; p++) if (simd_w_en_[p - 14] && wr_[p - 14].written < wr_[p - 14].total_beats()) wr_[p - 14].commit(fabric_, g, gi);
+    return running_;
+}
+
 bool AccelEngine::step() {
     if (kind_ == 2) return step_p1();
+    if (kind_ == 3) return step_os();
+    if (kind_ == 4) return step_is();
+    if (kind_ == 5) return step_simd();
     if (!running_) return false;
     if (cyc_ >= cap_) { running_ = false; res_.busy = cyc_; return false; }
     cyc_++;
@@ -284,7 +439,7 @@ bool AccelEngine::step() {
         }
     }
     bool room7 = true;
-    for (int l = 0; l < NCH7; l++) if (agu7_ - issued_[l] >= ADDR_D) room7 = false;
+    for (int l = 0; l < NCH7; l++) if (agu7_ - issued_[l] >= r7_fifo_d_) room7 = false;
     if (room7) agu7_++;
     if (k7_ == 0 && !have_bc_) {
         long avail = landed_[0];
@@ -338,7 +493,7 @@ bool AccelEngine::step() {
     fabric_.begin_cycle(dma_.step(cyc_));
     if (en_os_) { r0_.propose(fabric_); r1_.propose(fabric_); w0_.propose(fabric_); }
     for (int l = 0; l < NCH7; l++)
-        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < DATA_D)
+        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < r7_fifo_d_)
             fabric_.post(r7bank(issued_[l], l), (T_R7 << 4) | l, (landed_[l] - consumed7_ <= 1) ? 1 : 0);
     if (suc_rel) r10_.propose(fabric_);
     w2_.propose(fabric_);
@@ -356,7 +511,7 @@ bool AccelEngine::step() {
         if (w0_.written > pw && off >= 0 && off < Wz_) zwr_[off] = 1;
     }
     for (int l = 0; l < NCH7; l++)
-        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < DATA_D)
+        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < r7_fifo_d_)
             if (g[gi++]) { issued_[l]++; pend7_[l] = 1; }
     if (suc_rel) { long off = word_off(r10_.ts, r10_.ti); long pp = r10_.pending_push; r10_.commit(fabric_, g, gi);
                    if (r10_.pending_push > pp && off >= 0 && off < Wz_ && !zwr_[off]) res_.stale_z++; }

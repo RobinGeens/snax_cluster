@@ -101,7 +101,8 @@ class DataGenerator(DataGeneratorBase):
                     (L3 * FP8 // 8 // BANK_BYTES) * seqLenUnroll * BANK_BYTES,
                     BANK_BYTES,
                     seqLenUnroll * L2 * L3 * dModel * FP8 // 8,
-                    L * FP8 // 8,
+                    # d-slice within one bank-transposed M-tile (= L only when L1 == seqLenUnroll).
+                    seqLenUnroll * L2 * L3 * FP8 // 8,
                 ],
                 [seqLenUnroll * BANK_BYTES, L * dModel * FP8 // 8],
             ),

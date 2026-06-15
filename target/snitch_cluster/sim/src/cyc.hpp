@@ -16,15 +16,18 @@
 // (engine P1/P2, cyc_gemm, cyc_simd) feed the same .fifo.csv plot.
 using FifoRow = std::array<int16_t, 18>;
 
-// Per-port streamer FIFO depth, taken verbatim from the simbacore streamer config
-// (hw/chisel/.../snax/streamer/StreamParamGen.scala, tagName snax_simbacore_). Both
-// addressBufferDepth and dataBufferDepth equal this value for every port. Index is the
-// streamer port: readers R0..R13 = 0..13, writers W0..W3 = 14..17. The depths are
-// heterogeneous (e.g. osCore weight R1 = 3, isCore weight R12 = 6), so a uniform depth
-// over-hides contention on the shallow ports.
+// Per-port streamer FIFO depth — the SINGLE source of truth for every streamer depth in the model
+// (CycReader data_depth=addr_depth=fd, CycWriter.depth, and the R7 hand-path r7_fifo_d_). Values are
+// verbatim from the cluster config cfg/snax_simbacore_cluster.hjson:
+//   data_reader_params.fifo_depth = [8,3,8,1,6,3,2,4,1,6,7,2,6,4]   (R0..R13)
+//   data_writer_params.fifo_depth = [4,8,3,4]                       (W0..W3)
+// (addressBufferDepth and dataBufferDepth are both this value per port — StreamParamGen mirrors the
+// hjson.) Index = streamer port: readers R0..R13 = 0..13, writers W0..W3 = 14..17. The depths are
+// heterogeneous (osCore weight R1 = 3, dt_BC R7 = 4, isCore weight R12 = 6), so a uniform depth
+// over-hides contention on the shallow ports. KEEP THIS ARRAY IN SYNC WITH THE HJSON.
 inline int snax_streamer_depth(int port_idx) {
-    static const int D[18] = {8, 3, 8, 1, 6, 3, 2, 4, 1, 6, 7, 2, 6, 4,  // R0..R13
-                              4, 8, 3, 4};                                // W0..W3
+    static const int D[18] = {8, 3, 8, 1, 6, 3, 2, 4, 1, 6, 7, 2, 6, 4,  // R0..R13  (reader fifo_depth)
+                              4, 8, 3, 4};                                // W0..W3   (writer fifo_depth)
     return (port_idx >= 0 && port_idx < 18) ? D[port_idx] : 4;
 }
 
@@ -248,30 +251,10 @@ struct CycWriter {
     long total_beats() const { return (long)eb[0] * eb[1] * eb[2] * eb[3]; }
 };
 
-// Cycle-stepped GEMM invocation (osCore or isCore): the array consumes one group from
-// each input reader per cycle (stalling if a reader's FIFO is empty from a bank
-// conflict), accumulates K_i steps, and emits one output tile every K_i steps into the
-// writer's FIFO; the writer drains to TCDM through the same Fabric. Returns the
-// MambaCore-busy cycle count (perf counter = array active + output drain), both produced
-// by stepping. dma_mask = banks a concurrent DMA owns. n_out_tiles = M_i*N_i; K_i =
-// reduction steps per tile.
-struct GemmResult { uint64_t busy; uint64_t end; };
-// fifo_out (optional): if non-null, every stepped cycle appends one FifoRow with the reader/writer
-// FIFO occupancies placed at their REAL port indices (reader_ports[i] for in_readers[i], writer_port
-// for out_writer), -1 elsewhere — so single-GEMM invocations also feed the .fifo.csv plot.
-GemmResult cyc_gemm(const Agu* in_readers, const int* rd_nch, const int* rd_nsp, int n_readers,
-                    const Agu& out_writer, int w_nch, int w_nsp,
-                    long n_out_tiles, long K_i, long dma_cycles = 0,
-                    const int* reader_ports = nullptr, int writer_port = -1,
-                    std::vector<FifoRow>* fifo_out = nullptr);
-
-// Per-cycle SIMD pass (SimdCore): the enabled reader ports (R0..R13) feed the core and the enabled
-// writer ports (W0..W3) drain it, all stepped on ONE shared 32-bank fabric so strided-gather bank
-// conflicts emerge (unlike GEMM's conflict-free per-port readers). Replaces the old max-of-beats
-// formula. port_nch = per-port channel count (PORT_NCH). Returns the busy-cycle count; appends the
-// per-cycle FIFO occupancy to fifo_out when non-null. Div/Sqrt iterative back-pressure not modeled.
-uint64_t cyc_simd(const Agu* ports, const int* port_nch, long dma_cycles = 0,
-                  std::vector<FifoRow>* fifo_out = nullptr);
+// NOTE: the standalone cyc_gemm (osgemm/isgemm) and cyc_simd steppers were removed — every accelerator
+// mode (osCore/isCore/SUC-P2/P1/SIMD) is now stepped by the single AccelEngine on ONE shared fabric with
+// the live DmaEngine, so DMA<->streamer contention emerges from arbitration uniformly (no per-app scalar
+// dma_cycles, no per-port private fabrics). See cyc_engine.{hpp,cpp}.
 
 // Bank-conflict probe (used by test/suc_grid_test.cpp): drive a reader (e.g. captured R7)
 // per-cycle with a consumer that pops one beat every `consume_period` cycles, for `n_beats`

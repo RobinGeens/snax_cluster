@@ -161,7 +161,7 @@ class DataGeneratorBase(ABC):
         self.format_vector(
             "int32_t",
             f"M{mode_id}_test_samples_{tensor_name}",
-            [random.randint(0, tensor_size - 1) for _ in range(nb_test_samples)],
+            sorted(random.randint(0, tensor_size - 1) for _ in range(nb_test_samples)),
         )
 
     def enable_channel(self, streamer_name: str, mode_id: int):

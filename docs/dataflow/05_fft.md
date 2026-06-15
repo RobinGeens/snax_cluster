@@ -207,3 +207,35 @@ HW-vs-Scala-model FP8 rounding floor: many FFT outputs are near-zero and land on
 FP8 rounding boundaries, so a few round-to-zero or flip ±1 LSB. The 2-way
 `fft-tiled` shows the same floor (~1/50); `einfft` (no DFT-matmul rounding) hits
 0/100. It is independent of `nb_tiles_A`, so prefer the largest `dM` that fits.
+
+## `fft-3way-tiled-async` (l3-streamed, for long sequences)
+
+`fft-3way-tiled` keeps every partition tile (so `LxD_tile`) resident, for a total of  `~9·L·D_tile` + `twiddles1 (2·L)`
+This app streams the `L3` axis to fit much longer sequences
+
+The key structural fact: `m3` (the `L3` axis) is a batch factor for partitions 1&2
+(they run independently per `m3`) but the contraction axis of partition 3. So:
+
+1. Stages 1–4 run per `l3`-tile (`l3_tile` channels of `m3`, must be a multiple of
+   `seqLenUnroll`). Their input + twiddles are DMA-gathered from DRAM into contiguous
+   tile-local buffers, on which the unchanged `L3=l3_tile` descriptors are correct.
+2. Each tile's reordered output is staged to L3 with its re/im halves split into the
+   full-K order. Partition 3 contracts the complex `m3` axis, whose K dimension is
+   stacked `[re(all m3) | im(all m3)]`. A tile produces `[re(tile m3) | im(tile m3)]`, so
+   concatenating tiles would scramble K (`[re t0|im t0|re t1|im t1]`). Instead the noop2
+   output's re half goes to the L3 re region (`+ lt·h2_half`) and its im half to the im
+   region (`+ h2_im_region + lt·h2_half`), so L3 ends up as the correct
+   `[re t0|re t1|…|im t0|im t1|…]`.
+3. Partition 3 N-tiles its output batch (`N_3 = dM·L1·L2`) into `nb_ntile` chunks. Each
+   chunk gathers its full-K `H2` `N`-run back from L3 into a small TCDM buffer, then
+   K-tiles the contraction into `nb_l3` chunks of `K=2·L3_padded/nb_l3` and accumulates. The K-tiling is required because the
+   IS-core hangs if a single `ISGEMM_SQ` is given the full `K=2·L3_padded` once `2·L3 > ~32`
+   (e.g. `K=96` at `L3=32`). Because both `weight3` and the gathered `H2` are now in `[re|im]`
+   order, contiguous K-chunks pair correctly. Then scatter the chunk to the L3 output.
+
+So only one `l3`-tile of stages-1–4 scratch, one gathered `N`-tile of `H2`, and one `N`-tile
+of the partition-3 psum are ever resident. Peak ≈ `weights + in_tile + tw1_tile + tw2_tile +
+P_tile + 2·H_tile + h2_ntile + P3_ntile` (all in `memory_model.py`).
+
+**Factorisation limits.** `L1` is a multiple of 16; `L3 ≤ 32` (`2·L3 ≤ 64`, one square tile), l3-tiled at `l3_tile=16`. **`L2 ≤ 16`:
+`L2 > 16` in is unsupported.

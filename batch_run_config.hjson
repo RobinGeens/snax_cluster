@@ -2,9 +2,9 @@
     // Max number of vsim runs allowed to execute at the same time
     max_parallel: 8
     // Per-run wall-clock cap in seconds. 0 = no timeout
-    timeout: 10800
+    timeout: 0
     // Per-build  wall-clock cap in seconds. 0 = no timeout
-    build_timeout: 7200
+    build_timeout: 21600
     // Global default for `force`
     force: true
 
@@ -26,17 +26,17 @@
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
-                    nb_tiles: 16
+                    nb_tiles: 16 // power of 2. 8 too small
                     bc_pad_banks: 4
                     safe_to_start_r10: 11
-                    safe_to_start_r11: 8350
+                    safe_to_start_r11: 3000 // 8350 // Let's try to start sooner
                 }
                 {
                     name: IN main C
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
-                    nb_tiles: 12
+                    nb_tiles: 16
                     bc_pad_banks: 0
                     safe_to_start_r10: 9
                     safe_to_start_r11: 1990
@@ -49,8 +49,8 @@
                     dtRank: 24
                     nb_tiles: 11
                     bc_pad_banks: 4
-                    safe_to_start_r10: -1
-                    safe_to_start_r11: -1
+                    safe_to_start_r10: 5
+                    safe_to_start_r11: 4200
                 }
             ]
         }
@@ -148,33 +148,22 @@
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
-                    nb_tiles: 8
+                    nb_tiles: 16
                     bc_pad_banks: 4
-                    safe_to_start_r10: 50
-                    safe_to_start_r11: 4200
-                }
-                {
-                    name: IN P2 C
-                    force: false
-                    seqLen: 192
-                    dModel: 384
-                    dtRank: 8
-                    nb_tiles: 32
-                    bc_pad_banks: 0
-                    safe_to_start_r10: 50
-                    safe_to_start_r11: 1990
+                    safe_to_start_r10: 12
+                    safe_to_start_r11: 6000
                 }
                 // Sizes D
                 {
                     name: IN P2 D
                     force: false
                     seqLen: 48
-                    dModel: 504
+                    dModel: 480
                     dtRank: 24
-                    nb_tiles: 21
-                    bc_pad_banks: 0
+                    nb_tiles: 10
+                    bc_pad_banks: 4
                     safe_to_start_r10: 3
-                    safe_to_start_r11: 590
+                    safe_to_start_r11: 2200
                 }
             ]
         }
@@ -215,7 +204,7 @@
                 { // out proj
                     name: IN P2 out proj A
                     force: false
-                    seqLen: 784 // 2x (kernel does 2x this L -> 3k total)
+                    seqLen: 400 // 4x (kernel does 2x this L -> 3k total)
                     dModel: 192
                     dInner: 96
                     dtRank: 24
@@ -279,10 +268,10 @@
                     seqLen: 768
                     dModel: 192
                     dtRank: 24
-                    nb_tiles: 16
+                    nb_tiles: 8
                     nb_l_tiles: 4
                     nb_slots: 2
-                    safe_to_start_r10: 20
+                    safe_to_start_r10: 40
                     safe_to_start_r11: 0 // not used
                 }
 
@@ -302,9 +291,9 @@
                     dModel: 192
                     dtRank: 24
                     nb_tiles: 8
-                    nb_l_tiles: 128
-                    nb_slots: 4
-                    bc_pad_banks: 0
+                    nb_l_tiles: 16 // L_tile=512; 128 (L_tile=64) thrashes the ring -> timeout
+                    nb_slots: 2
+                    bc_pad_banks: 4
                     safe_to_start_r10: 0 // not used
                     safe_to_start_r11: 0 // not used
                 }
@@ -318,7 +307,7 @@
                     nb_tiles: 8
                     nb_l_tiles: 4
                     nb_slots: 2
-                    bc_pad_banks: 0
+                    bc_pad_banks: 4
                     safe_to_start_r10: 0 // not used
                     safe_to_start_r11: 0 // not used
                 }
@@ -410,6 +399,17 @@
         {
             app: fft-tiled
             params: [
+
+                // Sizes A
+                {
+                    name: IN fft A
+                    seqLen: 4096,
+                    dModel: 96
+                    L1: 64,
+                    L2: 64,
+                    nb_tiles: 16,
+                    nb_tiles_B: 2
+                }
                 // Sizes B
                 // { // OOM
                 //     seqLen: 1024,
@@ -444,10 +444,20 @@
         {
             app: fft-3way-tiled
             params: [
+                // Cityscapes
+                {
+                    name: CS fft A
+                    seqLen: 32768
+                    dModel: 1, // 96
+                    L1: 32,
+                    L2: 32,
+                    L3: 32,
+                    nb_tiles_A: 1
+                }
                 {
                     name: CS fft B
                     seqLen: 8192,
-                    dModel: 96, // x2
+                    dModel: 48, // x4
                     L1: 32,
                     L2: 16,
                     L3: 16,
@@ -461,6 +471,37 @@
                     L2: 16,
                     L3: 16,
                     nb_tiles_A: 8
+                }
+            ]
+        }
+        {
+            app: fft-3way-tiled-async
+            params: [
+                // l3-streamed: fits long sequences (L1=64 needs the per-block L1_padded fix)
+                // L2 must stay <= seqLenUnroll (16): L2>16 in the fft-3way stage descriptors is
+                // unsupported (gemm2/cmul2 produce garbage). Push the size onto L1 (any mult of 16)
+                // and l3-tile L3. So 64k = L1=128, L2=16, L3=32.
+                {
+                    name: CS fft A 32k
+                    seqLen: 32768
+                    dModel: 1
+                    L1: 64,
+                    L2: 16,
+                    L3: 32,
+                    nb_tiles_A: 1
+                    l3_tile: 16
+                    nb_ntile: 4
+                }
+                {
+                    name: CS fft A 64k
+                    seqLen: 65536
+                    dModel: 1
+                    L1: 128,
+                    L2: 16,
+                    L3: 32,
+                    nb_tiles_A: 1
+                    l3_tile: 16
+                    nb_ntile: 8
                 }
             ]
             // {

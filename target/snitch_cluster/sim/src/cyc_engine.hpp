@@ -62,6 +62,12 @@ class AccelEngine {
     int r7bank(long st, int lane) const;       // dt_BC bank for SUC R7 lane at temporal step st
     void configure_p1();                        // set up the P1 / IS_OSGEMM pipeline
     bool step_p1();                             // one cycle of the P1 pipeline on the shared fabric
+    void configure_os();                        // kind_=3: standalone osCore (osgemm) array
+    bool step_os();                             // one cycle of the osCore-only array on the shared fabric
+    void configure_is();                        // kind_=4: standalone isCore (isgemm) array
+    bool step_is();                             // one cycle of the isCore-only array on the shared fabric
+    void configure_simd();                      // kind_=5: SIMD readers->core->writers
+    bool step_simd();                           // one cycle of the SIMD pass on the shared fabric
 
     // ---- config / shape ----
     static const int NPORT = 18;  // 14 readers (R0..R13) + 4 writers (W0..W3)
@@ -90,7 +96,13 @@ class AccelEngine {
     long osc_elem_ = 0, sw_elem_ = 0;   // elements osCore produced / switchCore produced (on-chip)
 
     // ---- SUC: R7 dt_BC (manual per-lane) + R10(z) -> scan -> W2(y) ----
-    static const int NCH7 = 4, RPR = 4, ADDR_D = 4, DATA_D = 8, delaySU = 4;
+    static const int NCH7 = 4, RPR = 4, delaySU = 4;   // R7 lanes, BC-refresh groups, SUC FMA delay
+    // R7's request + data FIFO depth, taken from the ONE streamer-depth source (snax_streamer_depth(R7)
+    // = fifo_depth[7] in snax_simbacore_cluster.hjson) and set in configure() — exactly like the generic
+    // CycReader (data_depth = addr_depth = fd) uses for every other reader. NOT a hardcoded constant: a
+    // too-deep value over-hides concurrent-DMA blocks on the SUC's critical dt_BC refresh (that was the
+    // old DATA_D=8, which summed responser+dataBuffer and under-counted suc-async DMA contention ~13%).
+    int r7_fifo_d_ = 4;
     int32_t r7ts_[4] = {0, 0, 0, 0};
     int r7eb_[4] = {1, 1, 1, 1};
     long issued_[NCH7] = {0}, landed_[NCH7] = {0};
@@ -114,6 +126,15 @@ class AccelEngine {
     CycWriter w3_;
     long as_is_ = 0, tiles_is_ = 0;
     long is_owed_ = 0;  // isCore output groups computed but not yet pushed into W3 (back-pressure)
+
+    // ---- SIMD (kind_=5): arbitrary enabled reader/writer ports -> implicit SimdCore -> writers ----
+    // Generic per-port streamers (indexed by port), distinct from the named GEMM/SUC members above so a
+    // SIMD pass can drive any subset of R0..R13 / W0..W3 on the one shared fabric with the live DMA.
+    CycReader rd_[14];
+    CycWriter wr_[4];
+    bool simd_r_en_[14] = {false}, simd_w_en_[4] = {false};
+    long simd_r_beats_[14] = {0}, simd_r_pops_[14] = {0};
+    bool is_simd_ = false;       // this invocation is a SIMD pass (perf counter stays 0)
 
     // ---- control / time ----
     bool running_ = false, suc_started_ = false, isc_started_ = false;

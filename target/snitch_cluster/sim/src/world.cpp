@@ -251,15 +251,24 @@ void SimWorld::run_invocation(uint64_t at) {
 
     accel_start_ = at;
     if (is_simd) {
-        // SIMD pass (SimdCore): no GEMM subcore runs. The enabled reader ports feed the core and the
-        // enabled writers drain it, stepped per cycle on ONE shared fabric (cyc_simd) so strided-gather
-        // bank conflicts + the W-drain tail emerge — was a max-of-beats formula. Records the FIFO plot.
-        std::vector<FifoRow> ff;
-        long dma_ov = (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0;
-        uint64_t busy = cyc_simd(ports_, PORT_NCH, dma_ov, trace_on_ ? &ff : nullptr);
-        t_oscore_done_ = t_suc_done_ = at;
-        accel_end_                   = at + busy;
-        append_fifo(ff, accel_start_);
+        // SIMD pass (SimdCore): no GEMM subcore runs. The enabled reader/writer ports are stepped by the
+        // single engine on the ONE shared fabric with the live DMA beat engine, so strided-gather bank
+        // conflicts AND any concurrent ring DMA emerge (was cyc_simd + a scalar dma_cycles prefetch tail).
+        // perf counter stays 0 (SIMD is outside the MambaCore counter); accel_end_ from advance_to.
+        engine_.configure(ports_, cfg_, r10_start_cnt_, r11_start_cnt_, 0);
+        engine_.rec_fires = false;
+        engine_.rec_fifo  = trace_on_;
+        engine_active_ = engine_used_ = engine_.active();
+        if (engine_active_) {
+            accel_end_     = accel_start_ + 1000000000ULL;  // sentinel until advance_to completes it
+            t_oscore_done_ = t_suc_start_ = t_suc_done_ = accel_start_;
+            if (dma_busy_until_ > accel_start_ && dma_busy_addr_) {
+                long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;
+                engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
+            }
+        } else {  // degenerate (no enabled ports)
+            t_oscore_done_ = t_suc_done_ = accel_end_ = at;
+        }
     } else if (en_suCore) {
         // Phase 2 with safe-to-start overlap. The app releases the SUC when the R10 (osCore z)
         // gauge reaches r10_start_cnt, and the isCore when the R11 (SUC y) gauge reaches
@@ -313,32 +322,46 @@ void SimWorld::run_invocation(uint64_t at) {
             if (en_isCore) rec(TR_ISCORE, t_isc_start, t_isc_done, isc_dur_);
         }
     } else if (en_osCore && !en_isCore) {
-        // OSGEMM: cycle-stepped osCore array (R0=A, R1=B) draining through W0. The busy-cycle
-        // count and the post-compute output drain are produced by stepping the array + writer.
-        // (R0/R1/W0 = the fixed osCore hardware ports; num_channel 2/4/1 from StreamParamGen.)
-        Agu rd[2]   = {ports_[0], ports_[1]};
-        int nch[2]  = {2, 4}, nsp[2] = {1, 1}, rports[2] = {0, 1};  // R0,R1 -> W0
-        std::vector<FifoRow> ff;
-        GemmResult g   = cyc_gemm(rd, nch, nsp, 2, ports_[14], 1, 1, (long)M_i * osN, (long)cfg_.dModel,
-                                 (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0,
-                                 rports, 14, trace_on_ ? &ff : nullptr);
-        t_oscore_done_ = t_suc_done_ = at;
-        accel_end_                   = at + g.end;
-        append_fifo(ff, accel_start_);
-        // ideal = array MAC-group count; g.end adds the output drain -> util<1.
-        rec(TR_OSCORE, at, accel_end_, (uint64_t)M_i * osN * cfg_.dModel);
+        // OSGEMM: standalone osCore array (R0=A, R1=B -> array(K=dModel) -> W0), now stepped by the single
+        // engine on the shared fabric with the live DMA beat engine — so the async oscore-in ring's refill
+        // DMA contends by arbitration, exactly like the P2/SUC path (was cyc_gemm + a scalar dma_cycles
+        // prefetch tail that ignored mid-invocation refills). accel_end_/perf_/gauges come from advance_to.
+        engine_.configure(ports_, cfg_, r10_start_cnt_, r11_start_cnt_, 0);
+        engine_.rec_fires = true;
+        engine_.rec_fifo  = trace_on_;
+        engine_active_ = engine_used_ = engine_.active();
+        if (engine_active_) {
+            accel_end_     = accel_start_ + 1000000000ULL;  // sentinel until advance_to completes it
+            t_oscore_done_ = t_suc_start_ = t_suc_done_ = accel_start_;
+            if (dma_busy_until_ > accel_start_ && dma_busy_addr_) {  // prefetch tail in flight at start
+                long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;  // L3 beat period = 4
+                engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
+            }
+        } else {  // degenerate (M_i<=0 etc.): strict serialize from the stage duration
+            t_oscore_done_ = t_suc_done_ = at;
+            accel_end_                   = at + osc_dur_;
+            rec(TR_OSCORE, at, accel_end_, (uint64_t)M_i * osN * cfg_.dModel);
+        }
     } else if (en_isCore && !en_osCore) {
-        // ISGEMM: cycle-stepped isCore array draining through W3. GEMM input readers are
-        // conflict-free (gran>=lanes), so the array is fed at 1/cycle; the W3 output drain is
-        // produced by stepping. n_out_tiles = M_i*dFinal, K_i = dInner/24. (W3 = ports_[17], 4ch.)
-        std::vector<FifoRow> ff;  // isgemm: no input readers, output drains through W3 (port 17)
-        GemmResult g = cyc_gemm(nullptr, nullptr, nullptr, 0, ports_[17], 4, 1, (long)M_i * cfg_.dFinal, (long)K_i,
-                                 (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0,
-                                 nullptr, 17, trace_on_ ? &ff : nullptr);
-        t_oscore_done_ = t_suc_done_ = at;
-        accel_end_                   = at + g.end;
-        append_fifo(ff, accel_start_);
-        rec(TR_ISCORE, at, accel_end_, (uint64_t)M_i * cfg_.dFinal * K_i);  // ideal = MACs; drain -> util<1
+        // ISGEMM: standalone isCore array draining through W3, now stepped by the single engine on the
+        // shared fabric with the live DMA beat engine — so the async psum-ring spill/reload DMA contends
+        // on W3's superbank by arbitration (was cyc_gemm + scalar dma_cycles). accel_end_/perf_ from advance_to.
+        engine_.configure(ports_, cfg_, r10_start_cnt_, r11_start_cnt_, 0);
+        engine_.rec_fires = true;
+        engine_.rec_fifo  = trace_on_;
+        engine_active_ = engine_used_ = engine_.active();
+        if (engine_active_) {
+            accel_end_     = accel_start_ + 1000000000ULL;  // sentinel until advance_to completes it
+            t_oscore_done_ = t_suc_start_ = t_suc_done_ = accel_start_;
+            if (dma_busy_until_ > accel_start_ && dma_busy_addr_) {
+                long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;
+                engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
+            }
+        } else {  // degenerate
+            t_oscore_done_ = t_suc_done_ = at;
+            accel_end_                   = at + isc_dur_;
+            rec(TR_ISCORE, at, accel_end_, (uint64_t)M_i * cfg_.dFinal * K_i);
+        }
     } else {
         // both-core chained (PHASE1, IS_OSGEMM): osCore -> switchCore conv -> isCore pipeline,
         // stepped per cycle on the shared fabric (cyc_phase1) — the slowest stage, the lead-in/drain
@@ -876,6 +899,17 @@ void SimWorld::verify_datapath() {
             // An app start_cnt releasing a consumer before its producer committed is a predicted
             // wrong-output fault (the gross iscore_out/SUC-y vsim failures) -> fail the run.
             if (app.z > 0 || app.y > 0) layout_pass_ = false;
+
+            // Full hazard-vs-gate sweep for the plot's safe-to-start subplot, recorded once (first P2
+            // tile; all tiles share the shape). ~100 R11 points + all R10 points, each a fresh co-sim.
+            if (s2s_sweep_r11_.empty() && en_isCore) {
+                long step10 = std::max(1L, r10_total / 100);
+                for (long r = 0; r <= r10_total; r += step10)
+                    s2s_sweep_r10_.push_back({r, run(r, r11_total).z});   // z-gate: isCore held at total
+                long step11 = std::max(1L, r11_total / 100);
+                for (long r = 0; r <= r11_total; r += step11)
+                    s2s_sweep_r11_.push_back({r, run(min_r10, r).y});     // y-gate: SUC at its z-safe point
+            }
         }
     }
 
@@ -912,7 +946,10 @@ void SimWorld::advance_to(uint64_t t) {
         engine_active_ = false;
         const auto& r = engine_.result();
         accel_end_ = accel_start_ + r.busy;
-        perf_      = (uint32_t)r.busy;
+        // SIMD (no GEMM subcore enabled) costs wall-clock (accel_end_) but does NOT tick the MambaCore
+        // perf counter, so perf_ stays 0 for a SIMD pass; GEMM/SUC modes report busy.
+        bool is_simd = !(((cfg_.mode >> 19) & 1) || ((cfg_.mode >> 18) & 1) || ((cfg_.mode >> 17) & 1));
+        perf_      = is_simd ? 0u : (uint32_t)r.busy;
         // Stage-activity bars for the timeline plot: the engine reports the REAL per-stage windows
         // (osc_end / suc_start..suc_end / isc_start..isc_end / sw_start..sw_end), relative to
         // accel_start_. `ideal` = conflict-free MAC-group count -> the plot's utilization line.

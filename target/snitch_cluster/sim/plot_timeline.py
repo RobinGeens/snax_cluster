@@ -44,8 +44,8 @@ PORT_NAMES = [f"R{i}" for i in range(14)] + [f"W{i}" for i in range(4)]
 # Row order + colour, top to bottom.
 ENGINES = [
     ("OSCORE", "#1f77b4"),
-    ("ISCORE", "#ff7f0e"),
     ("SUC", "#2ca02c"),
+    ("ISCORE", "#ff7f0e"),
     ("SWITCHCORE", "#9467bd"),
     ("DMA", "#7f7f7f"),
 ]
@@ -236,6 +236,78 @@ def draw_fifo(ax, path):
     return bw
 
 
+def s2s_csv_path(timeline_csv):
+    """Safe-to-start sweep CSV memsim writes next to the timeline CSV (main.cpp: strip a trailing
+    `.csv`, append `.s2s.csv`)."""
+    base = timeline_csv[:-4] if timeline_csv.endswith(".csv") else timeline_csv
+    return base + ".s2s.csv"
+
+
+def load_s2s_sweep(path):
+    """Read the S2S sweep CSV (`gate,value,stale,optimal,total`) into ({R10:[(v,stale)]}, opt, tot).
+
+    Two gates: R10 (z, osCore->SUC) and R11 (y, SUC->isCore). Each row is one gate value with the
+    predicted read-before-write count at that release point. optimal/total are repeated per row."""
+    curves = {"R10": [], "R11": []}
+    opt, tot = {}, {}
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            g = row["gate"]
+            curves[g].append((int(row["value"]), int(row["stale"])))
+            opt[g] = int(row["optimal"])
+            tot[g] = int(row["total"])
+    return curves, opt, tot
+
+
+# R10 (z-gate) and R11 (y-gate) live on the same y-axis (predicted stale reads) but on two very
+# differently scaled x-axes (R10 ~ tens of osCore tiles; R11 ~ thousands of y-elements). R11 is the
+# primary (bottom) axis, R10 a twinned top axis.
+S2S_C10, S2S_C11 = "#ff7f0e", "#1f4e79"
+
+
+def draw_s2s(ax, curves, opt, tot):
+    """Draw the safe-to-start hazard curves onto `ax`: y = predicted read-before-write count, x =
+    release gate. R11 (y, SUC->isCore) on the bottom axis, R10 (z, osCore->SUC) on a twinned top axis
+    (different scale, same y). Optimal release for each gate marked with a dashed vline. Returns True
+    if anything was drawn."""
+    r11 = curves.get("R11") or []
+    r10 = curves.get("R10") or []
+    if not r11 and not r10:
+        return False
+    handles = []
+    if r11:
+        x, y = zip(*r11)
+        (h,) = ax.plot(x, y, "-", color=S2S_C11, lw=1.8, label="R11 (y): SUC→isCore")
+        handles.append(h)
+        ax.fill_between(x, y, alpha=0.10, color=S2S_C11)
+        if "R11" in opt:
+            ax.axvline(opt["R11"], color=S2S_C11, ls="--", lw=1.3)
+            ax.text(opt["R11"], ax.get_ylim()[1], f" opt R11={opt['R11']}/{tot.get('R11','?')}",
+                    color=S2S_C11, fontsize=7.5, va="top", ha="left")
+        ax.set_xlim(0, tot.get("R11", x[-1]))
+        ax.set_xlabel("R11 (y) gate — SUC y-elements produced before isCore release", color=S2S_C11, fontsize=9)
+        ax.tick_params(axis="x", colors=S2S_C11)
+    ax.set_ylabel("predicted stale reads\n(read-before-write)", fontsize=9)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, linestyle=":", alpha=0.4)
+    if r10:
+        axt = ax.twiny()
+        x, y = zip(*r10)
+        (h,) = axt.plot(x, y, "-", color=S2S_C10, lw=1.8, label="R10 (z): osCore→SUC")
+        handles.append(h)
+        axt.fill_between(x, y, alpha=0.10, color=S2S_C10)
+        if "R10" in opt:
+            axt.axvline(opt["R10"], color=S2S_C10, ls="--", lw=1.3)
+            axt.text(opt["R10"], axt.get_ylim()[1], f"opt R10={opt['R10']}/{tot.get('R10','?')} ",
+                     color=S2S_C10, fontsize=7.5, va="top", ha="right")
+        axt.set_xlim(0, tot.get("R10", x[-1]))
+        axt.set_xlabel("R10 (z) gate — osCore z-tiles produced before SUC release", color=S2S_C10, fontsize=9)
+        axt.tick_params(axis="x", colors=S2S_C10)
+    ax.legend(handles=handles, loc="upper right", fontsize=8, framealpha=0.9,
+              title="safe-to-start sweep (per P2 tile)", title_fontsize=8)
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("elf", nargs="?", help="app .elf to run through memsim")
@@ -277,12 +349,21 @@ def main():
     # report already links, so no separate figure / report column is needed.
     fifo_path = fifo_csv_path(csv_path)
     have_fifo = os.path.exists(fifo_path)
+    # Safe-to-start sweep subplot (independent gate x-axes, NOT the cycle axis): added as the bottom
+    # row, full width, whenever memsim emitted the .s2s.csv.
+    s2s_path = s2s_csv_path(csv_path)
+    s2s_curves, s2s_opt, s2s_tot = load_s2s_sweep(s2s_path) if os.path.exists(s2s_path) else ({}, {}, {})
+    have_s2s = bool(s2s_curves.get("R10") or s2s_curves.get("R11"))
+
+    heights = [3.6] + ([3.2] if have_fifo else []) + ([3.0] if have_s2s else [])
+    fig = plt.figure(figsize=(13, sum(heights) + 0.4))
+    gs = fig.add_gridspec(len(heights), 1, height_ratios=heights, hspace=0.42)
+    ax = fig.add_subplot(gs[0, 0])
+    row = 1
+    ax_fifo = fig.add_subplot(gs[row, 0], sharex=ax) if have_fifo else None
     if have_fifo:
-        fig, (ax, ax_fifo) = plt.subplots(
-            2, 1, figsize=(13, 7.0), sharex=True, gridspec_kw={"height_ratios": [3.6, 3.2]})
-    else:
-        fig, ax = plt.subplots(figsize=(13, 3.6))
-        ax_fifo = None
+        row += 1
+    ax_s2s = fig.add_subplot(gs[row, 0]) if have_s2s else None  # own gate axes, not shared with cycle x
     yticks, ylabels = [], []
     for i, (name, color) in enumerate(ENGINES):
         y = len(ENGINES) - 1 - i  # OSCORE on top
@@ -367,7 +448,12 @@ def main():
             note += f"  ·  per-cycle occupancy averaged over {bw}-cycle bins for legibility"
         fig.text(0.01, 0.005, note, fontsize=7, color="0.45")
 
-    fig.tight_layout(rect=(0, 0.03, 1, 1) if bw else (0, 0, 1, 1))
+    if ax_s2s is not None:
+        draw_s2s(ax_s2s, s2s_curves, s2s_opt, s2s_tot)
+
+    # gridspec hspace is set explicitly (twiny top labels need the room); keep it rather than letting
+    # tight_layout recompute the row spacing — just reserve the bottom strip for the FIFO note.
+    fig.subplots_adjust(left=0.07, right=0.985, top=0.93, bottom=0.06 if (bw or ax_s2s is not None) else 0.04)
     fig.savefig(out, dpi=130)
     print(f"wrote {out}")
 

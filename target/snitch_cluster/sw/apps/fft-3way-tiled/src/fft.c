@@ -13,6 +13,12 @@
 
 static inline uint32_t align64(uint32_t x) { return (x + 63u) & ~63u; }
 
+static inline void dma_load_input_slice(uint8_t* dst, uint32_t s) {
+    snrt_dma_start_2d(dst, M6_dft_in + s * M6_in_slice_chunk, M6_in_slice_chunk,
+                      /*dst_stride=*/M6_in_slice_chunk, /*src_stride=*/M6_in_ktile_stride,
+                      /*repeat=*/M6_in_ktile_count);
+}
+
 int test() {
     int err = 0;
 
@@ -65,7 +71,7 @@ int test() {
         snrt_dma_start_1d(ptr_twiddles1, M6_twiddles1, M6_length_twiddles1);
         snrt_dma_start_1d(ptr_twiddles2, M6_twiddles2, M6_length_twiddles2);
         // Prologue: slice 0 input + zero the gemm1 psum (rest is prefetched per slice).
-        snrt_dma_start_1d(ptr_in, M6_dft_in, M6_length_in_slice);
+        dma_load_input_slice(ptr_in, 0);
         snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size);
         snrt_dma_wait_all();
     }
@@ -76,8 +82,8 @@ int test() {
     // the ~50 config writes/step behind the accelerator. The 6-write simbacore
     // MODE CSR stays serial (issued right before each start) to avoid retuning the
     // running core's mode. Helper macros keep the interleave readable.
-#define CFG_GEMM(W, IN_, N)                                                                                  \
-    set_isgemm_streamer_csr((uint32_t)(W), M6_R11_##N##_ss, M6_R11_##N##_tb, M6_R11_##N##_ts, (uint32_t)(IN_), \
+#define CFG_GEMM(W, IN_, N)                                                                                     \
+    set_isgemm_streamer_csr((uint32_t)(W), M6_R11_##N##_ss, M6_R11_##N##_tb, M6_R11_##N##_ts, (uint32_t)(IN_),  \
                             M6_R12_##N##_ss, M6_R12_##N##_tb, M6_R12_##N##_ts, (uint32_t)ptr_P, M6_W3_##N##_ss, \
                             M6_W3_##N##_tb, M6_W3_##N##_ts)
     for (uint32_t s = 0; s < M6_nb_d; s++) {
@@ -105,8 +111,7 @@ int test() {
         // DM zeros P for gemm2 and prefetches next slice's input, hidden behind reorder 1.
         if (snrt_is_dm_core()) {
             snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size);
-            if (s + 1 < M6_nb_d)
-                snrt_dma_start_1d(ptr_in, M6_dft_in + (s + 1) * M6_length_in_slice, M6_length_in_slice);
+            if (s + 1 < M6_nb_d) dma_load_input_slice(ptr_in, s + 1);
             snrt_dma_wait_all();
         }
         if (snrt_global_core_idx() == 0) {

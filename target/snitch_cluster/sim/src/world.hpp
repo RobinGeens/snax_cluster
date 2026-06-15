@@ -104,6 +104,10 @@ class SimWorld : public World {
     long s2s_opt_r11() const { return s2s_opt_r11_; }
     long s2s_total_r10() const { return s2s_total_r10_; }
     long s2s_total_r11() const { return s2s_total_r11_; }
+    // Full safe-to-start sweep curves (gate value, stale-read count) for the first P2 invocation,
+    // so plot_timeline.py can draw the hazard-vs-gate subplot. Empty if the sweep didn't run.
+    const std::vector<std::pair<long, long>>& s2s_sweep_r10() const { return s2s_sweep_r10_; }
+    const std::vector<std::pair<long, long>>& s2s_sweep_r11() const { return s2s_sweep_r11_; }
 
    private:
     void rec(int eng, uint64_t s, uint64_t e, uint64_t ideal) {
@@ -203,6 +207,7 @@ class SimWorld : public World {
     // Sweep optima (gauge units), captured by verify_datapath; -1 = sweep didn't run.
     long s2s_opt_r10_ = -1, s2s_opt_r11_ = -1;
     long s2s_total_r10_ = 0, s2s_total_r11_ = 0;
+    std::vector<std::pair<long, long>> s2s_sweep_r10_, s2s_sweep_r11_;  // (gate, stale) curves, first P2 tile
 
     // ---- layout verification state ----
     bool verify_       = false;                                           // run the integer layout cross-check

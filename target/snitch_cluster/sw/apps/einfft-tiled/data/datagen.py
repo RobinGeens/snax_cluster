@@ -29,7 +29,7 @@ from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 # Synthesized SIMD mode: SIMD_ADD_BF16 + doRelu. See einfft/datagen.py for the
 # SimbaCoreMode bit-layout sanity check (verified against M8_SIMD_ADD_BF16).
 _EN_ISCORE_REQUANT_BIT = 1 << 15
-_SIMD_MODE_ADD         = 1
+_SIMD_MODE_ADD = 1
 
 
 def _simd_add_bf16_relu_mode() -> int:
@@ -58,11 +58,13 @@ class DataGenerator(DataGeneratorBase):
 
     def _run_memory_model(self):
         import importlib.util
+
         app_dir = os.path.dirname(os.path.abspath(__file__))
         spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         from memory_model_base import run_model_from_datagen
+
         comment = run_model_from_datagen(mod.build_report, app_dir)
         self.lines_params.append(comment)
 
@@ -81,8 +83,9 @@ class DataGenerator(DataGeneratorBase):
                         for c in range(conv_unroll):
                             yield l2 * Mu + l1, d3 * Nu + d2 * conv_unroll + c
 
-    def _semi_expand_bias(self, bias_flat: list[int], nBranches: int, dPerB: int,
-                          seqLen: int, Mu: int, Nu: int, conv_unroll: int) -> list[int]:
+    def _semi_expand_bias(
+        self, bias_flat: list[int], nBranches: int, dPerB: int, seqLen: int, Mu: int, Nu: int, conv_unroll: int
+    ) -> list[int]:
         """Semi-expand bias: repeat each conv_unroll-wide column group
         (16/conv_unroll) times per BF16 cycle, and duplicate d2 groups L/Mu
         times per d3 block so R13 walks flat (no negative stride).
@@ -94,12 +97,12 @@ class DataGenerator(DataGeneratorBase):
         assert len(bias_flat) == nBranches * dPerB
         out: list[int] = []
         for branch in range(nBranches):
-            bb = bias_flat[branch * dPerB:(branch + 1) * dPerB]
+            bb = bias_flat[branch * dPerB : (branch + 1) * dPerB]
             for d3 in range(n_d3):
                 for _ in range(l2_count):
                     for d2 in range(groups_per_d3):
                         g = d3 * groups_per_d3 + d2
-                        group = bb[g * conv_unroll:(g + 1) * conv_unroll]
+                        group = bb[g * conv_unroll : (g + 1) * conv_unroll]
                         out.extend(group * repeat)
         expected = nBranches * n_d3 * l2_count * groups_per_d3 * 16
         assert len(out) == expected, f"{len(out)} != {expected}"
@@ -128,9 +131,9 @@ class DataGenerator(DataGeneratorBase):
         b_downsize_factor = b_in_width / b_array_width
 
         # OS-core MatmulDims (per branch, per matmul): A=(L, dPerB), B=(dPerB, dPerB), D=(L, dPerB)
-        M = seqLen // Mu                                  # 1 for L = Mu
+        M = seqLen // Mu  # 1 for L = Mu
         K = dPerB
-        N_full = dPerB // Nu                              # 2 for default
+        N_full = dPerB // Nu  # 2 for default
         downsized_K = int(K / b_downsize_factor)
         assert downsized_K == K / b_downsize_factor
         assert downsized_K * b_in_width == K * b_array_width
@@ -141,38 +144,33 @@ class DataGenerator(DataGeneratorBase):
             f"dPerB ({dPerB}) must be a multiple of dInnerUnroll * nb_tiles ({Nu} * {nb_tiles})"
         )
         N_t = N_full // nb_tiles
-        # OSGEMM requires N >= 2 (see chisel-ssm/docs/memory_layouts/02_gemm_layouts.md §2.4).
-        assert N_t >= 2, (
-            f"N_t = N_full / nb_tiles = {N_full} / {nb_tiles} = {N_t} < 2. "
-            f"OSGEMM requires N >= 2; for dPerB={dPerB} the cap is nb_tiles <= {N_full // 2}."
-        )
+        # Pair the four per-tile matmuls as two concat OSGEMMs so N_cat=2*N_t>=2.
+        # Rationale: docs/dataflow/06_einfft_mlp.md §6.2.
+        assert N_t >= 1, f"N_t = N_full / nb_tiles = {N_full} / {nb_tiles} = {N_t} < 1; need nb_tiles <= N_full."
+        N_cat = 2 * N_t  # concat OSGEMM N (rr|ri or ir|ii), all real
+        dInner_cat = N_cat * Nu  # CSR dInner for the concatenated OSGEMM
         dPerB_t = dPerB // nb_tiles
-        n_elems_tile = seqLen * dPerB_t                   # SIMD now operates per-tile (one N-tile at a time)
+        n_elems_tile = seqLen * dPerB_t  # SIMD operates per real sub-tile (rr/ri/ir/ii)
         assert n_elems_tile % 32 == 0
 
-        # ---- OSGEMM streamer config (one per-tile matmul) --------------------
+        # ---- OSGEMM streamer config (one concat matmul: [W_re|W_im], N_cat tiles) ----
         osgemm_streamers = {
             "R0": (
-                [K, M, N_t],
+                [K, M, N_cat],
                 [a_in_width // 8, K * a_in_width // 8, 0],
             ),
             "R1": (
-                [downsized_K, M, N_t],
+                [downsized_K, M, N_cat],
                 [b_in_width // 8, 0, downsized_K * b_in_width // 8],
             ),
             "W0": (
-                [(d_array_width // oscore_serial_width) * M * N_t],
+                [(d_array_width // oscore_serial_width) * M * N_cat],
                 [oscore_serial_width // 8],
             ),
         }
 
         # ---- SIMD streamer configs (PER-TILE: one N-tile per fuse) ----------
-        # The fuse now runs once per (side, tile) at tile bounds (n_elems_tile),
-        # so the OS-core scratch / BF16 staging / output only need to hold ONE
-        # tile. The old "short bounds under-run" caveat applies only to tiny
-        # absolute bounds (~12 fp8 cycles); per-tile bounds at realistic params
-        # are far above that. See docs/dataflow/06_einfft_mlp.md §6.4.
-        n_fp8_cycles  = n_elems_tile // 32
+        n_fp8_cycles = n_elems_tile // 32
         n_bf16_cycles = n_elems_tile // 16
 
         # R13 bias: 4-dim walk over mini-expanded bias (per tile = N_t d3 blocks).
@@ -180,46 +178,50 @@ class DataGenerator(DataGeneratorBase):
         # dim1: l2 repeat (stride=0 → AGU natively stays; NOT innermost, no workaround)
         # dim2: d2 group advance
         # dim3: d3 block advance (only N_t blocks belong to this tile)
-        groups_per_d3 = Nu // conv_unroll       # 6
-        group_bytes = 16 * BF16 // 8            # 32
+        groups_per_d3 = Nu // conv_unroll  # 6
+        group_bytes = 16 * BF16 // 8  # 32
         l2_count = seqLen // Mu
         dim1_bound = l2_count * groups_per_d3
-        r13_bias_tb = [Mu // (16 // conv_unroll),  # 4: l1-block repeat (repeater)
-                       dim1_bound,                  # l2*d2 flat walk within d3
-                       N_t,                         # d3 blocks in ONE tile
-                       1]
+        r13_bias_tb = [
+            Mu // (16 // conv_unroll),  # 4: l1-block repeat (repeater)
+            dim1_bound,  # l2*d2 flat walk within d3
+            N_t,  # d3 blocks in ONE tile
+            1,
+        ]
         r13_bias_ts = [0, group_bytes, dim1_bound * group_bytes, 0]
 
         simd_streamers = {
-            "R7_widen": ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
+            "R7_widen": ([n_fp8_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "W3_widen": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            "R7_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
+            "R7_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "R13_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "R13_bias": (r13_bias_tb, r13_bias_ts, [BANK_BYTES]),
-            "W3_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            "W3_fp8":   ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
+            "W3_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
+            "W3_fp8": ([n_fp8_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
         }
 
         streamers: dict = {**osgemm_streamers, **simd_streamers}
 
         # ---- Buffer sizes -----------------------------------------------------
-        len_x_branch    = seqLen * dPerB * FP8 // 8
-        len_out_branch  = seqLen * dPerB * FP8 // 8
-        len_w_branch    = dPerB * dPerB * FP8 // 8
+        len_x_branch = seqLen * dPerB * FP8 // 8
+        len_out_branch = seqLen * dPerB * FP8 // 8
+        len_w_branch = dPerB * dPerB * FP8 // 8
         assert len_w_branch % nb_tiles == 0
-        len_w_branch_tile = len_w_branch // nb_tiles
+        len_w_branch_tile = len_w_branch // nb_tiles  # per-matmul (W_re or W_im) weight tile
+        len_w_cat_tile = 2 * len_w_branch_tile  # combined [W_re | W_im] weight tile
         len_bias_branch = dPerB * BF16 // 8
-        len_d_tile      = seqLen * dPerB_t * FP8 // 8     # one per-tile OS-core scratch slot
-        len_bf16        = n_elems_tile * BF16 // 8        # per-tile BF16 staging
+        len_d_tile = seqLen * dPerB_t * FP8 // 8  # one real output sub-tile (rr/ri/ir/ii)
+        len_d_cat = seqLen * dInner_cat * FP8 // 8  # OS scratch per OSGEMM = [rr|ri] or [ir|ii]
+        len_bf16 = n_elems_tile * BF16 // 8  # per-tile BF16 staging
         len_bias_mini_branch = (dPerB // Nu) * l2_count * groups_per_d3 * 16 * BF16 // 8
         assert len_bias_mini_branch % nb_tiles == 0
         len_bias_mini_tile = len_bias_mini_branch // nb_tiles  # contiguous d3-major slice per tile
 
-        len_x          = nBranches * len_x_branch
-        len_w          = nBranches * len_w_branch
-        len_bias       = nBranches * len_bias_branch
-        len_bias_mini  = nBranches * len_bias_mini_branch
-        len_out        = nBranches * len_out_branch
+        len_x = nBranches * len_x_branch
+        len_w = nBranches * len_w_branch
+        len_bias = nBranches * len_bias_branch
+        len_bias_mini = nBranches * len_bias_mini_branch
+        len_out = nBranches * len_out_branch
 
         # ---- TCDM footprint sanity check --------------------------------------
         # (L3-staged) layout: only the CURRENT branch's slots live in TCDM.
@@ -229,17 +231,17 @@ class DataGenerator(DataGeneratorBase):
             return (v + 63) & ~63
 
         per_branch_resident = (
-            _align64(len_x_branch) * 2 +                    # x_re_b + x_im_b (FULL: reused by every N-tile)
-            _align64(len_bias_mini_branch) * 2 * 2 +        # b_re_pp[2] + b_im_pp[2] (FULL per branch)
-            _align64(len_d_tile) * 2 * 2 +                  # out_re_pp[2] + out_im_pp[2] (TILE, ping-pong)
-            _align64(len_w_branch_tile) * 2 * 2 +           # W_re_pp[2] + W_im_pp[2]
-            _align64(len_d_tile) * 4 +                      # rr, ii, ri, ir (TILE)
-            _align64(len_bf16) * 2                          # bf16_a, bf16_b (TILE)
+            _align64(len_x_branch) * 2  # x_re_b + x_im_b (FULL: reused by every N-tile)
+            + _align64(len_bias_mini_branch) * 2 * 2  # b_re_pp[2] + b_im_pp[2] (FULL per branch)
+            + _align64(len_d_tile) * 2 * 2  # out_re_pp[2] + out_im_pp[2] (TILE, ping-pong)
+            + _align64(len_w_cat_tile) * 2  # W_pp[2]: combined [W_re|W_im] ping-pong
+            + _align64(len_d_cat) * 2  # out_A=[rr|ri], out_B=[ir|ii]
+            + _align64(len_bf16) * 2  # bf16_a, bf16_b (TILE)
         )
         total_l1_bytes = per_branch_resident
-        assert total_l1_bytes <= self.TCDM_BYTES, (
-            f"einfft-tiled L1 footprint {total_l1_bytes} B exceeds TCDM budget {self.TCDM_BYTES} B."
-        )
+        assert (
+            total_l1_bytes <= self.TCDM_BYTES
+        ), f"einfft-tiled L1 footprint {total_l1_bytes} B exceeds TCDM budget {self.TCDM_BYTES} B."
         print(f"// einfft-tiled L1 usage (per-branch resident): {total_l1_bytes} B")
 
         # ---- Mini-expand bias per branch for streamer reuse -------------------
@@ -249,17 +251,15 @@ class DataGenerator(DataGeneratorBase):
             try:
                 flat = self._read_data_int(f"M{mode_id}_{name}.bin")
             except FileNotFoundError as e:
-                raise RuntimeError(
-                    f"Missing chisel-ssm output for {name}: {e}. Run the scala data generator first."
-                )
+                raise RuntimeError(f"Missing chisel-ssm output for {name}: {e}. Run the scala data generator first.")
             bias_mini[name] = self._semi_expand_bias(flat, nBranches, dPerB, seqLen, Mu, Nu, conv_unroll)
 
         # ---- Specs ------------------------------------------------------------
         specs = [
-            ("x_real",        len_x),
-            ("x_imag",        len_x),
-            ("x_2_real",      len_x),
-            ("x_2_imag",      len_x),
+            ("x_real", len_x),
+            ("x_imag", len_x),
+            ("x_2_real", len_x),
+            ("x_2_imag", len_x),
             ("weight_1_real", len_w),
             ("weight_1_imag", len_w),
             ("weight_2_real", len_w),
@@ -278,18 +278,21 @@ class DataGenerator(DataGeneratorBase):
         scalars = {
             **lengths,
             **deltas,
-            "nBranches":                 nBranches,
-            "dPerB":                     dPerB,
-            "dPerB_tile":                dPerB_t,
-            "length_x_branch":           len_x_branch,
-            "length_out_branch":         len_out_branch,
-            "length_w_branch":           len_w_branch,
-            "length_w_branch_tile":      len_w_branch_tile,
-            "length_d_tile":             len_d_tile,
-            "length_bf16":               len_bf16,
-            "length_bias_mini_branch":  len_bias_mini_branch,
-            "length_bias_mini_tile":    len_bias_mini_tile,
-            "SIMD_ADD_BF16_RELU":        _simd_add_bf16_relu_mode(),
+            "nBranches": nBranches,
+            "dPerB": dPerB,
+            "dPerB_tile": dPerB_t,
+            "length_x_branch": len_x_branch,
+            "length_out_branch": len_out_branch,
+            "length_w_branch": len_w_branch,
+            "length_w_branch_tile": len_w_branch_tile,
+            "length_w_cat_tile": len_w_cat_tile,
+            "length_d_tile": len_d_tile,
+            "length_d_cat": len_d_cat,
+            "dInner_cat": dInner_cat,
+            "length_bf16": len_bf16,
+            "length_bias_mini_branch": len_bias_mini_branch,
+            "length_bias_mini_tile": len_bias_mini_tile,
+            "SIMD_ADD_BF16_RELU": _simd_add_bf16_relu_mode(),
         }
 
         test_data = {

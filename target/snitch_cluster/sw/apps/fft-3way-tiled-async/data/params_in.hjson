@@ -1,8 +1,10 @@
 {
     seqLen: 32768
     dModel: 1
-    L1: 32
-    L2: 32
+    L1: 64
+    L2: 16
     L3: 32
     nb_tiles_A: 1
+    l3_tile: 16
+    nb_ntile: 4
 }

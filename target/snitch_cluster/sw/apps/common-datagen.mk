@@ -35,9 +35,9 @@ SBT_GEN_DIR  := $(CHISEL_SSM)/generated/data/$(APP_NAME)
 GENERATOR_ARGS := $(strip $(shell grep -E '^[[:space:]]*("[^"]+"|[A-Za-z0-9_]+)[[:space:]]*:' $(WORKLOAD_PARAMS) | sed -e 's://.*$$::' -e 's/[",{}]//g' -e 's/^[[:space:]]*//;s/[[:space:]]*$$//' -e 's/[[:space:]]*:[[:space:]]*/=/' | tr '\n' ' '))
 GENERATOR_ARGS += name=$(APP_NAME)
 
-# Only use L and D for data cache key
+# Only use data-shape args for the cache key
 DATAGEN_CACHE_DIR := $(CLUSTER_DIR)/.datagen_cache/$(APP_NAME)
-CACHE_ARGS        := $(filter-out nb_tiles% name=%,$(GENERATOR_ARGS))
+CACHE_ARGS        := $(filter-out nb_tiles% nb_l_tiles% nb_slots% safe_to_start% force% name=%,$(GENERATOR_ARGS))
 
 .PHONY: clean-cache cache-seed
 
