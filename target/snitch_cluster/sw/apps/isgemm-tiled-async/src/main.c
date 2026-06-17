@@ -34,6 +34,8 @@ int test_isgemm_tiled_async() {
             "\nStarting program: ISGeMM tiled async (seqLen=%d dInner=%d dModel=%d nb_l_tiles=%d nb_slots=%d "
             "nb_k_tiles=%d L_tile=%d)\n\n",
             dim0, dim1, dim2, nb_l_tiles, nb_slots, M4_nb_k_tiles, M4_L_tile);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_isgemm_streamer_csr((uint32_t)ptr_a[0], M4_R11_ss, M4_R11_tb, M4_R11_ts,  // A

@@ -35,6 +35,19 @@ class DataGenerator(DataGeneratorBase):
 
     def run(self):
         self.build_osgemm_data()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        import importlib.util
+
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model_osgemm_tiled",
+                                                      os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen  # type: ignore[import]
+
+        self.lines_params.append(run_model_from_datagen(mod.build_report, app_dir))
 
     def build_osgemm_data(self):
         mode_id = 3

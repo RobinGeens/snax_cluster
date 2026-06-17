@@ -66,6 +66,8 @@ int test() {
             "\nStarting program: tiled 3-way FFT (l3-stream, nb_d=%d, nb_l3=%d, seqLen=%d, dModel=%d, "
             "L1=%d, L2=%d, L3=%d)\n\n",
             M6_nb_d, M6_nb_l3, seqLen, dModel, L1, L2, L3);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
     }

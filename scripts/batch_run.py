@@ -9,14 +9,22 @@ PARAMS_IN env var, stages the .elf to a unique path, then launches the vsim. The
 tracked params_in.hjson is never modified. Each run gets its own log file.
 
 Scheduling:
-  * Builds are serialized globally (one `make` at a time) -- the per-app build
-    dir and chisel-ssm/sbt datagen cache are shared, so this is the natural
-    serialization point and also avoids podman/make races across apps.
+  * A build's slow part is the chisel-ssm/sbt datagen, and only its *first*
+    occurrence for a given data shape pays it -- the result is cached under
+    .datagen_cache/ and every later build of that shape just untars it. sbt is
+    memory-heavy and cannot run two at a time. So builds split into two lanes,
+    classified up front by replicating the makefile's datagen-cache check:
+      - Datagen lane: ONE serial worker for jobs whose data is NOT yet cached
+        (each runs at most one sbt). A slow datagen here no longer blocks others.
+      - Fast-build pool: `build_parallel` workers for jobs whose data IS cached
+        (guaranteed cache hit -> no sbt -> just compile). These run concurrently.
+    The two lanes run at the same time, so a 2-hour datagen for one shape no
+    longer stalls dozens of already-cached compiles.
+  * Builds of the SAME app are still serialized (shared per-app build dir +
+    generated/data dir); different apps build in parallel. So same-app cached
+    builds wait behind that app's slow datagen, but every other app proceeds.
   * Sims run concurrently, bounded by `max_parallel` (the OOM knob).
-  * A lane (one app's override list) does not wait for a run's sim to finish
-    before building the next override set -- the next run starts as soon as the
-    previous build is done.
-  * Different apps' lanes run concurrently => different programs in parallel.
+  * A build does not wait for its sim to finish before the next build starts.
 
 Results are merged into ONE persistent report at the repo root (<root>/report.md
 + report.json). The merge is self-cleaning per JOB (app__tag): rerunning a config
@@ -32,8 +40,10 @@ Usage (run from anywhere in the repo):
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
+import queue
 import re
 import shutil
 import signal
@@ -41,6 +51,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 
 import hjson
@@ -121,6 +132,9 @@ class BatchRun:
             self.cfg = hjson.load(f)
 
         self.max_parallel = int(self.cfg.get("max_parallel", 2))
+        # Number of concurrent fast (cache-hit) compiles. The serial datagen lane
+        # runs alongside these, so total concurrent builds peak at build_parallel+1.
+        self.build_parallel = int(self.cfg.get("build_parallel", 4))
         # Per-run wall-clock cap in seconds; 0 disables (default: none).
         self.timeout = int(self.cfg.get("timeout", 0))
         # Build (podman make) wall-clock cap; 0 disables
@@ -155,6 +169,11 @@ class BatchRun:
         # to kill an orphaned build. Guarded by procs_lock.
         self.build_containers = set()
         self._build_seq = 0
+        # Per-app build lock: all builds of one app (datagen lane + fast pool)
+        # share its generated/data + build dir, so only one may `make` at a time.
+        # Different apps build concurrently. _app_locks_guard guards lazy creation.
+        self._app_locks = defaultdict(threading.Lock)
+        self._app_locks_guard = threading.Lock()
 
         self.jobs = self._build_job_list()  # ordered list per lane
         self._mark_cached()  # tag jobs whose vsim should be reused (still built + memsim'd)
@@ -378,6 +397,48 @@ class BatchRun:
         for name in names:
             self._podman_rm(name)
 
+    # Scheduling keys that common-datagen.mk filters OUT of the datagen cache key
+    # (they affect data.h packing / safe-to-start, not the sbt golden data shape).
+    _CACHE_KEY_DROP = ("nb_tiles", "nb_l_tiles", "nb_slots", "safe_to_start", "force")
+
+    def _cache_args(self, job):
+        """Replicate common-datagen.mk's CACHE_ARGS: the job's effective params as
+        `key=value`, in params-file order, minus the scheduling keys. Used only to
+        decide which lane a job goes in -- the build's own make re-checks the cache
+        for correctness, so a misclassification only ever costs scheduling, never data."""
+        parts = [
+            f"{k}={v}"
+            for k, v in job["all_params"].items()
+            if not any(k.startswith(p) for p in self._CACHE_KEY_DROP)
+        ]
+        return " ".join(parts)
+
+    def _datagen_ready(self, job):
+        """True iff this job's sbt golden data is already cached -- i.e. its `make`
+        will hit .datagen_cache and run NO sbt. Mirrors the makefile check exactly
+        (md5(CACHE_ARGS) names the tar, and the stored .args must match), so it can
+        never report a hit where make would miss => the fast pool never spawns sbt."""
+        if not os.path.exists(self.params_path(job["app"])):
+            return True  # params-less app (e.g. nop): no datagen at all
+        cargs = self._cache_args(job)
+        cache_dir = os.path.join(self.cluster, ".datagen_cache", job["app"])
+        # The makefile names the tar md5("$CACHE_ARGS\n") (echo adds a newline) but
+        # writes the .args body with printf (no newline) -- mirror both exactly.
+        key = hashlib.md5((cargs + "\n").encode()).hexdigest()
+        tar = os.path.join(cache_dir, key + ".tar")
+        args_file = os.path.join(cache_dir, key + ".args")
+        if not os.path.exists(tar):
+            return False
+        try:
+            with open(args_file) as f:
+                return f.read() == cargs
+        except OSError:
+            return False
+
+    def _app_lock(self, app):
+        with self._app_locks_guard:
+            return self._app_locks[app]
+
     def build(self, app, params_path, blog):
         # PARAMS_IN points both make (WORKLOAD_PARAMS) and datagen.py at the
         # generated temp params file instead of the tracked params_in.hjson.
@@ -535,40 +596,89 @@ class BatchRun:
                     order.append(lane[i])
         return order
 
-    def build_worker(self):
-        """Single serial builder: build each job in fair order, dispatch its sim."""
-        for job in self._order:
+    def _process_job(self, job):
+        """Build one job, stage its elf, and dispatch its sim; or, for a force:false
+        cached job, just re-run the fast memsim. The make + elf-stage run under the
+        app's exclusive lock so concurrent same-app builds can't clobber each other's
+        generated/data dir or build/<app>.elf."""
+        if self.aborted.is_set():
+            return
+        jid, app = job["id"], job["app"]
+        elf_cache = os.path.join(os.path.dirname(self.rundir), ".elf_cache")
+        if job["cached"]:
+            # force:false reuses the EXPENSIVE vsim, but memsim is sub-second host-side, so never
+            # cache it: re-run it every batch on the persisted .elf -> the Model columns track the
+            # current binary. No rebuild, no vsim. (Bootstrap the .elf_cache with `--remodel`.)
+            cached_elf = os.path.join(elf_cache, jid + ".elf")
+            if os.path.exists(cached_elf):
+                self.run_memsim(jid, cached_elf)
+            return
+        self.set_state(jid, "building")
+        params_path = self.write_temp_params(job)
+        staged = os.path.join(self.rundir, jid + ".elf")
+        with self._app_lock(app):
             if self.aborted.is_set():
                 return
-            jid, app = job["id"], job["app"]
-            elf_cache = os.path.join(os.path.dirname(self.rundir), ".elf_cache")
-            if job["cached"]:
-                # force:false reuses the EXPENSIVE vsim, but memsim is sub-second host-side, so never
-                # cache it: re-run it every batch on the persisted .elf -> the Model columns track the
-                # current binary. No rebuild, no vsim. (Bootstrap the .elf_cache with `--remodel`.)
-                cached_elf = os.path.join(elf_cache, jid + ".elf")
-                if os.path.exists(cached_elf):
-                    self.run_memsim(jid, cached_elf)
-                continue
-            self.set_state(jid, "building")
-            params_path = self.write_temp_params(job)
             rc = self.build(app, params_path, os.path.join(self.rundir, jid + ".build.log"))
-            if rc != 0:
-                # On abort the build was killed: leave it queued, not build_failed.
-                self.set_state(jid, "queued" if self.aborted.is_set() else "build_failed", rc=rc)
-                continue
-            # Stage the elf before the next build overwrites build/<app>.elf.
-            staged = os.path.join(self.rundir, jid + ".elf")
-            shutil.copy2(self.built_elf(app), staged)
-            # Persist it (keyed on the stable job id) so future force:false runs can re-run the fast
-            # memsim model on it without rebuilding -> the Model columns never go stale.
-            os.makedirs(elf_cache, exist_ok=True)
-            shutil.copy2(staged, os.path.join(elf_cache, jid + ".elf"))
-            # Dispatch the sim asynchronously and move on to the next build.
-            t = threading.Thread(target=self.run_sim, args=(jid, staged), daemon=True)
-            with self.sim_threads_lock:
-                self.sim_threads.append(t)
-            t.start()
+            # Stage the elf while still holding the lock, before another same-app
+            # build can overwrite build/<app>.elf.
+            if rc == 0:
+                shutil.copy2(self.built_elf(app), staged)
+        if rc != 0:
+            # On abort the build was killed: leave it queued, not build_failed.
+            self.set_state(jid, "queued" if self.aborted.is_set() else "build_failed", rc=rc)
+            return
+        # Persist it (keyed on the stable job id) so future force:false runs can re-run the fast
+        # memsim model on it without rebuilding -> the Model columns never go stale.
+        os.makedirs(elf_cache, exist_ok=True)
+        shutil.copy2(staged, os.path.join(elf_cache, jid + ".elf"))
+        # Dispatch the sim asynchronously and move on to the next build.
+        t = threading.Thread(target=self.run_sim, args=(jid, staged), daemon=True)
+        with self.sim_threads_lock:
+            self.sim_threads.append(t)
+        t.start()
+
+    def build_worker(self):
+        """Two concurrent build lanes (see the module docstring's Scheduling note):
+        a serial datagen lane for not-yet-cached jobs (one sbt at a time) and a
+        `build_parallel`-wide pool for cache-hit compiles, so one slow datagen no
+        longer blocks dozens of already-cached builds. Returns once every build is
+        done (each having dispatched its own sim)."""
+        cached, ready, needs = [], [], []
+        for job in self._order:
+            if job["cached"]:
+                cached.append(job)
+            elif self._datagen_ready(job):
+                ready.append(job)
+            else:
+                needs.append(job)
+
+        # Fast pool: cheap memsim-only cached jobs + cache-hit compiles (no sbt).
+        pool_q = queue.Queue()
+        for job in cached + ready:
+            pool_q.put(job)
+
+        def pool_worker():
+            while not self.aborted.is_set():
+                try:
+                    job = pool_q.get_nowait()
+                except queue.Empty:
+                    return
+                self._process_job(job)
+
+        def datagen_worker():
+            # Serial: at most one sbt runs at a time across the whole batch.
+            for job in needs:
+                if self.aborted.is_set():
+                    return
+                self._process_job(job)
+
+        workers = [threading.Thread(target=pool_worker, daemon=True) for _ in range(max(1, self.build_parallel))]
+        workers.append(threading.Thread(target=datagen_worker, daemon=True))
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join()
 
     # --- driver ---
     def run(self):

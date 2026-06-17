@@ -9,31 +9,54 @@ bool Fabric::h_on = false;
 long Fabric::h_req[Fabric::NB] = {0};
 long Fabric::h_conf[Fabric::NB] = {0};
 long Fabric::h_portbank[18][Fabric::NB] = {{0}};
+long Fabric::h_portgrant[18] = {0};
+long Fabric::h_pair[18][18] = {{0}};
 void Fabric::hist_reset() {
     for (int b = 0; b < NB; b++) { h_req[b] = h_conf[b] = 0; for (int p = 0; p < 18; p++) h_portbank[p][b] = 0; }
+    for (int p = 0; p < 18; p++) { h_portgrant[p] = 0; for (int q = 0; q < 18; q++) h_pair[p][q] = 0; }
 }
 void Fabric::hist_dump(const char* tag) {
     if (!h_on) return;
-    // fabric tokens use the Q_* ids (cyc_phase1): osCore=R0(0),R1(1),W1(6),W0(9); isCore=R12(4),R13(5),W3(7),R11(8)
-    const int osP[] = {0, 1, 6, 9}, isP[] = {4, 5, 7, 8};
+    // fabric tokens are the cyc_engine ids (cyc_engine.cpp enum T_*): osCore=R0(0),R1(1),W0(2);
+    // SUC=R7/dtBC(3),R10/z(4),W2/y(5); isCore=R11(6),R12(7),W3(8),R13(12); switchCore=R2(9),R3(10),R5(11).
+    const int osP[] = {0, 1, 2}, sucP[] = {3, 4, 5}, isP[] = {6, 7, 8, 12};
     long tot_req = 0, tot_conf = 0;
-    fprintf(stderr, "[BANKHIST %s] bank: req conf | osCore isCore (which streams hit each bank)\n", tag);
+    fprintf(stderr, "[BANKHIST %s] bank: req conf | osCore SUC isCore (which streams hit each bank)\n", tag);
     for (int b = 0; b < NB; b++) {
         if (h_req[b] == 0) continue;
-        long os = 0, is = 0;
+        long os = 0, su = 0, is = 0;
         for (int p : osP) os += h_portbank[p][b];
+        for (int p : sucP) su += h_portbank[p][b];
         for (int p : isP) is += h_portbank[p][b];
         tot_req += h_req[b];
         tot_conf += h_conf[b];
-        const char* shared = (os > 0 && is > 0) ? " <-SHARED" : "";
-        fprintf(stderr, "  b%02d: %8ld %8ld | os=%-8ld is=%-8ld%s\n", b, h_req[b], h_conf[b], os, is, shared);
+        fprintf(stderr, "  b%02d: %8ld %8ld | os=%-8ld suc=%-8ld is=%-8ld\n", b, h_req[b], h_conf[b], os, su, is);
     }
     long pt[18] = {0};
     for (int p = 0; p < 18; p++) for (int b = 0; b < NB; b++) pt[p] += h_portbank[p][b];
-    fprintf(stderr, "[BANKHIST %s] per-port lane-reqs: R0=%ld R1=%ld R3=%ld R4=%ld R12=%ld R13=%ld W1=%ld W3=%ld R11=%ld W0=%ld\n",
-            tag, pt[0], pt[1], pt[2], pt[3], pt[4], pt[5], pt[6], pt[7], pt[8], pt[9]);
+    fprintf(stderr, "[BANKHIST %s] per-port lane-reqs: R0=%ld R1=%ld W0=%ld R7dtBC=%ld R10z=%ld W2y=%ld R11=%ld R12=%ld W3=%ld R13=%ld\n",
+            tag, pt[0], pt[1], pt[2], pt[3], pt[4], pt[5], pt[6], pt[7], pt[8], pt[12]);
+    // per-port stall = requests - grants (cycles a lane wanted a bank but lost arbitration) -> compare
+    // to the RTL [TCDM_STALL] per-port counters from sparse_interconnect_wrapper.sv.
+    const char* nm[18] = {"R0","R1","W0","R7dtBC","R10z","W2y","R11","R12","W3","R2","R3","R5","R13",
+                          "?13","?14","?15","?16","?17"};
+    fprintf(stderr, "[BANKHIST %s] per-port req/grant/stall (engine):\n", tag);
+    for (int p = 0; p < 18; p++) {
+        if (pt[p] == 0 && h_portgrant[p] == 0) continue;
+        fprintf(stderr, "  %-7s req=%-9ld grant=%-9ld stall=%-9ld (%.0f%%)\n", nm[p], pt[p], h_portgrant[p],
+                pt[p] - h_portgrant[p], pt[p] ? 100.0 * (pt[p] - h_portgrant[p]) / pt[p] : 0.0);
+    }
     fprintf(stderr, "[BANKHIST %s] total req=%ld conflicts=%ld (%.1f%% of requests lost arbitration)\n",
             tag, tot_req, tot_conf, tot_req ? 100.0 * tot_conf / tot_req : 0.0);
+    // who-loses-to-whom: for each port that lost any arbitration, list the winners it lost to.
+    fprintf(stderr, "[BANKHIST %s] loser -> winners (times `loser` lost a bank to `winner`):\n", tag);
+    for (int lp = 0; lp < 18; lp++) {
+        long lt = 0; for (int wp = 0; wp < 18; wp++) lt += h_pair[lp][wp];
+        if (lt == 0) continue;
+        fprintf(stderr, "  %-7s lost %-8ld to:", nm[lp], lt);
+        for (int wp = 0; wp < 18; wp++) if (h_pair[lp][wp] > 0) fprintf(stderr, " %s=%ld", nm[wp], h_pair[lp][wp]);
+        fprintf(stderr, "\n");
+    }
 }
 
 void CycReader::configure(const Agu& a, int nch, int nsp, int fd, int prt) {

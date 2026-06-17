@@ -1,0 +1,5 @@
+{
+    seqLen: 2048,
+    dModel: 192,
+    nb_tiles: 4,
+}

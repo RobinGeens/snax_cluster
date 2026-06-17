@@ -50,8 +50,14 @@ REPORT_MD = "report.md"
 # Status -> emoji. All chosen to render as double-width glyphs so the raw-text
 # table stays aligned in a terminal (markdown viewers ignore the padding).
 EMOJI = {
-    "PASS": "✅", "ERRORS": "❌", "OOM": "🔴", "RUNNING": "🟢",
-    "BUILDING": "🔨", "BUILD_FAIL": "🧱", "TIMEOUT": "🕒", "QUEUED": "🟡",
+    "PASS": "✅",
+    "ERRORS": "❌",
+    "OOM": "🔴",
+    "RUNNING": "🟢",
+    "BUILDING": "🔨",
+    "BUILD_FAIL": "🧱",
+    "TIMEOUT": "🕒",
+    "QUEUED": "🟡",
     "NO_RESULT": "❔",
 }
 # The Batch-run cell is just a marker (not the long timestamp): ✨ = from the most
@@ -93,8 +99,7 @@ def parse_log(path):
     sc = RE_SIMBACORE.findall(text)
     tot = RE_TOTAL.findall(text)
     l1 = RE_L1.findall(text)
-    return ((m[-1] if m else None), (sc[-1] if sc else None),
-            (tot[-1] if tot else None), (l1[-1] if l1 else None))
+    return ((m[-1] if m else None), (sc[-1] if sc else None), (tot[-1] if tot else None), (l1[-1] if l1 else None))
 
 
 def parse_model_agu_errors(path):
@@ -222,8 +227,13 @@ def merge_run_into_report(report_dir, rundir):
             # vsim was reused (no build/vsim), but the fast memsim model re-runs every batch on the
             # cached elf -> keep the stored vsim columns but refresh the Model columns from the FRESH
             # memsim log when present (else keep the stored row verbatim). Re-stamped -> renders 💾.
-            row = {**prev, "batch_run": stamp, "cached": True,
-                   "state": prev.get("state", job.get("state", "done")), "updated": now}
+            row = {
+                **prev,
+                "batch_run": stamp,
+                "cached": True,
+                "state": prev.get("state", job.get("state", "done")),
+                "updated": now,
+            }
             memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
             if os.path.exists(memsim_log):
                 m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
@@ -272,19 +282,27 @@ def merge_run_into_report(report_dir, rundir):
         plot_abs = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".timeline.png")
         log_rel = os.path.relpath(log_abs, report_dir)
         report["jobs"][jid] = {
-            "app": job["app"], "tag": job.get("tag", ""),
+            "app": job["app"],
+            "tag": job.get("tag", ""),
             "name": job.get("name"),
             "params": job.get("params", {}),
-            "seqLen": job.get("seqLen"), "dModel": job.get("dModel"),
+            "seqLen": job.get("seqLen"),
+            "dModel": job.get("dModel"),
             "n_tiles": job.get("n_tiles"),
-            "batch_run": stamp, "commit": commit,
+            "batch_run": stamp,
+            "commit": commit,
             "log": log_rel,
             "timeline": os.path.relpath(plot_abs, report_dir) if os.path.exists(plot_abs) else None,
             "state": job.get("state", "?"),
             "cached": cached,
-            "errors": errors, "simbacore": sc, "total": tot,
-            "model_errors": m_errors, "model_simbacore": m_sc, "model_total": m_tot,
-            "l1_kib": l1, "l1_oom": oom,
+            "errors": errors,
+            "simbacore": sc,
+            "total": tot,
+            "model_errors": m_errors,
+            "model_simbacore": m_sc,
+            "model_total": m_tot,
+            "l1_kib": l1,
+            "l1_oom": oom,
             "updated": now,
         }
     report["updated"] = now
@@ -346,18 +364,15 @@ def _plot_link(report_dir, plot_rel):
 
 def _md_table(headers, aligns, rows):
     """Markdown table, cells padded so the raw source also aligns in a terminal."""
-    widths = [max(_dw(h), *(_dw(r[i]) for r in rows)) if rows else _dw(h)
-              for i, h in enumerate(headers)]
+    widths = [max(_dw(h), *(_dw(r[i]) for r in rows)) if rows else _dw(h) for i, h in enumerate(headers)]
     rights = [a == "right" for a in aligns]
-    out = ["| " + " | ".join(_pad(h, widths[i], rights[i])
-                             for i, h in enumerate(headers)) + " |"]
+    out = ["| " + " | ".join(_pad(h, widths[i], rights[i]) for i, h in enumerate(headers)) + " |"]
     seps = []
     for i, w in enumerate(widths):
         seps.append(("-" * (w + 1) + ":") if rights[i] else (":" + "-" * (w + 1)))
     out.append("|" + "|".join(seps) + "|")
     for r in rows:
-        out.append("| " + " | ".join(_pad(c, widths[i], rights[i])
-                                     for i, c in enumerate(r)) + " |")
+        out.append("| " + " | ".join(_pad(c, widths[i], rights[i]) for i, c in enumerate(r)) + " |")
     return "\n".join(out)
 
 
@@ -406,16 +421,26 @@ def render_report(report_dir):
             batch_cell = CACHED_MARK
         else:
             batch_cell = CURRENT_MARK
-        row = (_fmt_col(e.get("name")), e["app"],
-               _fmt_col(e.get("seqLen")), _fmt_col(e.get("dModel")),
-               _fmt_col(e.get("n_tiles")), _fmt_other(e.get("params")),
-               batch_cell, commit_cell, status, e.get("errors") or "—",
-               _fmt_num(e.get("simbacore")), _fmt_num(e.get("total")),
-               e.get("model_errors") or "—",
-               _fmt_num(e.get("model_simbacore")), _fmt_num(e.get("model_total")),
-               _fmt_l1(e.get("l1_kib"), e.get("l1_oom")),
-               _log_link(report_dir, e.get("log")),
-               _plot_link(report_dir, e.get("timeline")))
+        row = (
+            _fmt_col(e.get("name")),
+            e["app"],
+            _fmt_col(e.get("seqLen")),
+            _fmt_col(e.get("dModel")),
+            _fmt_col(e.get("n_tiles")),
+            _fmt_other(e.get("params")),
+            batch_cell,
+            commit_cell,
+            status,
+            e.get("errors") or "—",
+            _fmt_num(e.get("simbacore")),
+            _fmt_num(e.get("total")),
+            e.get("model_errors") or "—",
+            _fmt_num(e.get("model_simbacore")),
+            _fmt_num(e.get("model_total")),
+            _fmt_l1(e.get("l1_kib"), e.get("l1_oom")),
+            _log_link(report_dir, e.get("log")),
+            _plot_link(report_dir, e.get("timeline")),
+        )
         rows.append((stale, row))
     # Fresh rows first (stale at the bottom); within each group by user-defined name
     # (row[0]), then app to keep unnamed rows deterministic.
@@ -423,22 +448,52 @@ def render_report(report_dir):
     rows = [r for _, r in rows]
 
     tally = " · ".join(f"{EMOJI.get(k, '')} {v} {k}" for k, v in sorted(counts.items()))
-    headers = ["Name", "App", "seqLen", "dModel", "n_tiles", "Params", "Run",
-               "Commit", "Status", "Errors", "SimbaCore", "Total",
-               "Model Err", "Model SimbaCore", "Model Total", "L1 TCDM", "Log", "Plot"]
-    aligns = ["left", "left", "right", "right", "right", "left", "left",
-              "left", "left", "right", "right", "right",
-              "right", "right", "right", "right", "left", "left"]
+    headers = [
+        "Name",
+        "App",
+        "seqLen",
+        "dModel",
+        "n_tiles",
+        "Params",
+        "Run",
+        "Commit",
+        "Status",
+        "Errors",
+        "SimbaCore",
+        "Total",
+        "Model Err",
+        "Model SimbaCore",
+        "Model Total",
+        "L1 TCDM",
+        "Log",
+        "Plot",
+    ]
+    aligns = [
+        "left",
+        "left",
+        "right",
+        "right",
+        "right",
+        "left",
+        "left",
+        "left",
+        "left",
+        "right",
+        "right",
+        "right",
+        "right",
+        "right",
+        "right",
+        "right",
+        "left",
+        "left",
+    ]
     head_note = f" · HEAD `{head}`" if head else ""
     return (
         "# SNAX batch-run report\n\n"
         f"_Updated {report.get('updated', '?')} · {len(jobs)} jobs{head_note} · {tally}_\n\n"
-        "_⚠️ = run predates current HEAD (numbers may be stale)._\n\n"
-        "_Run: ✨ = current batch run · 💾 = fully skipped this run (force:false; stored row kept verbatim) · ⏰ = earlier batch run (stale; sorted to the bottom)._\n\n"
-        "_❌ ERRORS = nonzero mismatch count (small values may be quantization noise, not a true fail) · 🔴 OOM = exceeded L1 TCDM budget._\n\n"
-        "_Errors/SimbaCore/Total = RTL vsim · Model Err/SimbaCore/Total = cycle-accurate memsim model (memsim) on the same .elf._\n\n"
-        "_Model Err = faults the model LOCATED = AGU/layout faults (bounds + producer→consumer) + safe-to-start stale reads (a consumer released before its producer committed → wrong output). 0 = clean; a large value = the model predicts this config produces wrong output (e.g. start_cnt too low)._\n\n"
-        + _md_table(headers, aligns, rows) + "\n"
+        + _md_table(headers, aligns, rows)
+        + "\n"
     )
 
 
@@ -452,13 +507,12 @@ def watch(report_dir, interval):
 
 def main():
     ap = argparse.ArgumentParser(description="Persistent batch-run report")
-    ap.add_argument("report_dir", nargs="?", default=".",
-                    help="directory holding report.json (default: cwd / repo root)")
-    ap.add_argument("--interval", type=float, default=3.0,
-                    help="refresh seconds (default 3)")
+    ap.add_argument(
+        "report_dir", nargs="?", default=".", help="directory holding report.json (default: cwd / repo root)"
+    )
+    ap.add_argument("--interval", type=float, default=3.0, help="refresh seconds (default 3)")
     ap.add_argument("--once", action="store_true", help="render once and exit")
-    ap.add_argument("--merge", metavar="RUNDIR",
-                    help="merge a specific batch-run folder into the report, then render")
+    ap.add_argument("--merge", metavar="RUNDIR", help="merge a specific batch-run folder into the report, then render")
     args = ap.parse_args()
 
     if args.merge:

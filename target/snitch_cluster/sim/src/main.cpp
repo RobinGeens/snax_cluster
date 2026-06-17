@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
         // schedule plot's S2S subplot. Path = <timeline>.s2s.csv. Empty if the sweep didn't run.
         const auto& sw10 = world.s2s_sweep_r10();
         const auto& sw11 = world.s2s_sweep_r11();
-        if (!sw11.empty()) {
+        if (!sw10.empty() || !sw11.empty()) {
             std::string s2s_path = base + ".s2s.csv";
             FILE* sf = std::fopen(s2s_path.c_str(), "w");
             if (sf) {

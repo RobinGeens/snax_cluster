@@ -138,6 +138,14 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
                      (uint32_t)p_[P_R0].base, sb(p_[P_R0].base), (uint32_t)p_[P_R1].base, sb(p_[P_R1].base),
                      (uint32_t)p_[P_R7].base, sb(p_[P_R7].base), (uint32_t)p_[P_R10].base, sb(p_[P_R10].base),
                      (uint32_t)p_[P_W0].base, sb(p_[P_W0].base), (uint32_t)p_[P_W2].base, sb(p_[P_W2].base));
+        std::fprintf(stderr, "  [LAYOUT] R11(y)=%08x  R12(isW)=%08x  R13(psum)=%08x  W3(out)=%08x  "
+                     "R2(sw)=%08x  R3(sw)=%08x\n",
+                     (uint32_t)p_[P_R11].base, (uint32_t)p_[P_R12].base, (uint32_t)p_[P_R13].base,
+                     (uint32_t)p_[P_W3].base, (uint32_t)p_[P_R2].base, (uint32_t)p_[P_R3].base);
+        std::fprintf(stderr, "  [ISCNT] M_i=%ld osN=%ld K_is=%ld dFinal=%u n_tiles_is=%ld | "
+                     "R11 groups=%d R12 groups=%d R13 groups=%d W3 beats=%ld | as_is_total=%ld\n",
+                     M_i_, osN_, K_is_, dFinal_, n_tiles_is_, r11_.total_read_groups(), r12_.total_read_groups(),
+                     r13_en_ ? r13_.total_read_groups() : 0, w3_.total_beats(), n_tiles_is_ * K_is_);
     }
     cap_ = (uint64_t)(n_tiles_os_ * K_os_ + iters_ + n_tiles_is_ * K_is_) * 8 + 500000;
     suc_started_ = isc_started_ = false;
@@ -161,24 +169,26 @@ void AccelEngine::configure_p1() {
     K_os_ = dModel_; K_is_ = osN_; iters_ = (long)seqLen_ * dInner_;  // iters_ = P (on-chip elements)
     n_tiles_os_ = M_i_ * osN_; n_tiles_is_ = M_i_ * dFinal_;
     if (dFinal_ <= 0) { running_ = false; return; }
-    r0_.configure(p_[P_R0], 2, 1, snax_streamer_depth(P_R0), 0);
-    r1_.configure(p_[P_R1], 4, 1, snax_streamer_depth(P_R1), 1);
+    r0_.configure(p_[P_R0], 2, 1, snax_streamer_depth(P_R0), T_R0);
+    r1_.configure(p_[P_R1], 4, 1, snax_streamer_depth(P_R1), T_R1);
     // osCore output writer: W0 when the osCore spills z to TCDM (IS_OSGEMM), else W1 (on-chip-style).
     w0p1_en_ = p_[P_W0].enabled;
     w1_en_ = p_[P_W1].enabled;
-    if (w0p1_en_) { w0_.configure(p_[P_W0], 1, 1, 8); w0_.depth = snax_streamer_depth(P_W0); }
-    if (w1_en_) { w1_.configure(p_[P_W1], 1, 1, 2); w1_.depth = snax_streamer_depth(P_W1); }
+    if (w0p1_en_) { w0_.configure(p_[P_W0], 1, 1, T_W0); w0_.depth = snax_streamer_depth(P_W0); }
+    if (w1_en_) { w1_.configure(p_[P_W1], 1, 1, T_W0); w1_.depth = snax_streamer_depth(P_W1); }
     long osw_beats = w0p1_en_ ? w0_.total_beats() : (w1_en_ ? w1_.total_beats() : 0);
     wbpt_os_ = (w0p1_en_ || w1_en_) ? osw_beats / std::max(1L, n_tiles_os_) : 0;
     p1sw_en_ = has_conv_ && p_[P_R3].enabled;
-    if (p1sw_en_) { r3c_.configure(p_[P_R3], 1, 1, snax_streamer_depth(P_R3), 3);
-                    r4c_.configure(p_[P_R4], 1, 1, snax_streamer_depth(P_R4), 4); }
-    r12_.configure(p_[P_R12], 4, 1, snax_streamer_depth(P_R12), 5);
+    if (p1sw_en_) { r3c_.configure(p_[P_R3], 1, 1, snax_streamer_depth(P_R3), T_R3);
+                    r4c_.configure(p_[P_R4], 1, 1, snax_streamer_depth(P_R4), T_R5); }
+    r12_.configure(p_[P_R12], 4, 1, snax_streamer_depth(P_R12), T_R12);
     r11p1_en_ = p_[P_R11].enabled;  // IS_OSGEMM isCore A
-    if (r11p1_en_) r11_.configure(p_[P_R11], 1, 1, snax_streamer_depth(P_R11), 9);
+    if (r11p1_en_) r11_.configure(p_[P_R11], 1, 1, snax_streamer_depth(P_R11), T_R11);
     r13_en_ = p_[P_R13].enabled;
-    if (r13_en_) r13_.configure(p_[P_R13], 1, 1, snax_streamer_depth(P_R13), 6);
-    w3_.configure(p_[P_W3], 4, 1, 7);
+    // isCore psum read-back: a 4-lane reader (Mu=16 BF16 = 32 B = 4 banks), same as the P2 path and the
+    // RTL (vsim TCDM ports 23-26). Was nch=1 -> under-modelled the dominant psum-RMW contention ~4x.
+    if (r13_en_) r13_.configure(p_[P_R13], 4, 1, snax_streamer_depth(P_R13), T_R13);
+    w3_.configure(p_[P_W3], 4, 1, T_W3);
     w3_.depth = snax_streamer_depth(P_W3);
     wbpt_is_ = w3_.total_beats() / std::max(1L, n_tiles_is_); if (wbpt_is_ < 1) wbpt_is_ = 1;
     as_os_ = tiles_os_ = as_is_ = tiles_is_ = 0; os_owed_ = is_owed_ = 0; osc_elem_ = sw_elem_ = 0;

@@ -94,6 +94,8 @@ int test_iosgemm_tiled() {
 
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: IS+OSGeMM tiled (nb_tiles=%d)\n\n", nb_tiles);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         start_cycles = snrt_mcycle();
     }
 

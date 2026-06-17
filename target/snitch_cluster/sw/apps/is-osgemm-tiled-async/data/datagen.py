@@ -42,6 +42,19 @@ class DataGenerator(DataGeneratorBase):
         self.emit_combined_mode()
         self.build_osgemm_async_data()
         self.build_isgemm_async_data()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        import importlib.util
+
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model_is_osgemm_tiled_async",
+                                                      os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen  # type: ignore[import]
+
+        self.lines_params.append(run_model_from_datagen(mod.build_report, app_dir))
 
     def emit_combined_mode(self):
         """IS_OSGEMM mode value = OSGEMM | ISGEMM. We always run the NO_REQUANT variant: osCore still

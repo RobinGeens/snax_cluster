@@ -144,6 +144,8 @@ int test_p2_async_no_is() {
             "\nStarting program: P2-async-OS-no-IS (L=%d, dModel=%d, nb_tiles=%d, nb_l_tiles=%d, L_tile=%u, "
             "nb_slots=%d, K_i=%u, no IS-core, oscore_in async)\n\n",
             seqLen, dModel, nb_tiles, nb_l_tiles, L_tile, nb_slots, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_streamer_phase2_noIS_lTile((uint32_t)ptr_oscore_in_base, (uint32_t)ptr_oscore_weight, (uint32_t)ptr_z,

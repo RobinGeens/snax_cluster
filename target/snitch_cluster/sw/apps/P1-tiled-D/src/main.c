@@ -60,6 +60,8 @@ int test_phase1_tiled() {
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: P1-tiled-D (L=%d, dModel=%d, nb_tiles=%d, K_i=%u, conv_out via L3)\n\n", seqLen,
                dModel, nb_tiles, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],

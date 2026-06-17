@@ -235,6 +235,8 @@ void SimWorld::run_invocation(uint64_t at) {
     osc_dur_       = en_osCore ? (uint64_t)M_i * osN * cfg_.dModel : 0;
     isc_dur_       = en_isCore ? (uint64_t)M_i * cfg_.dFinal * K_i : 0;
     phase2_        = en_suCore;  // SUC scan active <=> en_suCore (not the ports)
+    Fabric::h_on   = std::getenv("MEMSIM_BANKHIST") != nullptr;  // per-bank contention diag
+    if (Fabric::h_on && (en_suCore || en_osCore || en_isCore)) Fabric::hist_reset();  // scope to this invocation
 
     // SUC duration comes from the per-cycle R7 dt_BC fabric sim (cyc_suc_duration), which
     // includes the bank-conflict magnitude; the SUC compute-pipeline fill is modelled
@@ -901,14 +903,17 @@ void SimWorld::verify_datapath() {
             if (app.z > 0 || app.y > 0) layout_pass_ = false;
 
             // Full hazard-vs-gate sweep for the plot's safe-to-start subplot, recorded once (first P2
-            // tile; all tiles share the shape). ~100 R11 points + all R10 points, each a fresh co-sim.
-            if (s2s_sweep_r11_.empty() && en_isCore) {
+            // tile; all tiles share the shape). R10 (z, osCore->SUC) always; R11 (y, SUC->isCore)
+            // only when the isCore runs. ~100 points each, every point a fresh co-sim.
+            if (s2s_sweep_r10_.empty()) {
                 long step10 = std::max(1L, r10_total / 100);
                 for (long r = 0; r <= r10_total; r += step10)
                     s2s_sweep_r10_.push_back({r, run(r, r11_total).z});   // z-gate: isCore held at total
-                long step11 = std::max(1L, r11_total / 100);
-                for (long r = 0; r <= r11_total; r += step11)
-                    s2s_sweep_r11_.push_back({r, run(min_r10, r).y});     // y-gate: SUC at its z-safe point
+                if (en_isCore) {
+                    long step11 = std::max(1L, r11_total / 100);
+                    for (long r = 0; r <= r11_total; r += step11)
+                        s2s_sweep_r11_.push_back({r, run(min_r10, r).y}); // y-gate: SUC at its z-safe point
+                }
             }
         }
     }
@@ -982,9 +987,13 @@ void SimWorld::advance_to(uint64_t t) {
         }
         // Splice this invocation's per-cycle FIFO trace into the run-wide trace at its absolute cycle.
         append_fifo(engine_.result().fifo, accel_start_);
-        if (std::getenv("MEMSIM_ENGDBG"))
-            std::fprintf(stderr, "  [ENGDONE] busy=%llu stale_z=%ld stale_y=%ld\n",
-                         (unsigned long long)engine_.result().busy, engine_.result().stale_z, engine_.result().stale_y);
+        if (std::getenv("MEMSIM_ENGDBG")) {
+            const auto& rr = engine_.result();
+            std::fprintf(stderr, "  [ENGDONE] busy=%llu osc_end=%u suc(%u..%u) isc(%u..%u) | suc_span=%d isc_tail=%d\n",
+                         (unsigned long long)rr.busy, rr.osc_end, rr.suc_start, rr.suc_end, rr.isc_start, rr.isc_end,
+                         (int)rr.suc_end - (int)rr.suc_start, (int)rr.isc_end - (int)rr.suc_end);
+        }
+        if (Fabric::h_on) Fabric::hist_dump(phase2_ ? "P2-tile" : "engine");
     }
 }
 

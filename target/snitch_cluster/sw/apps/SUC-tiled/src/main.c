@@ -97,6 +97,8 @@ int test_suc_tiled() {
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: SUC-tiled (L=%d, dModel=%d, dInner=%d, nb_tiles=%d, K_i=%u, z from golden)\n\n",
                seqLen, dModel, dInner, nb_tiles, K_i);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_streamer_suc_tile((uint32_t)ptr_dt_in, (uint32_t)ptr_dt_weight_1[0], (uint32_t)ptr_dt_bias[0],

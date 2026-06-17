@@ -39,6 +39,8 @@ int test_is_osgemm_tiled_async() {
             "\nStarting program: IS+OSGeMM tiled async (seqLen=%d dModel=%d dInner=%d nb_l_tiles=%d nb_slots=%d "
             "nb_inv=%d L_tile=%d)\n\n",
             seqLen, dModel, dInner, nb_l_tiles, nb_slots, M4_nb_k_tiles, M4_L_tile);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_streamer_csr((uint32_t)ptr_a_os, M3_R0_ss, M3_R0_tb, M3_R0_ts, M3_R0_en,      // R0:  osCore A ring

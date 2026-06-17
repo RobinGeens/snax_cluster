@@ -26,6 +26,8 @@ int test_osgemm_async() {
             "\nStarting program: OSGeMM async (seqLen=%d dModel=%d dInner=%d nb_tiles=%d nb_l_tiles=%d nb_slots=%d "
             "L_tile=%d)\n\n",
             dim0, dim1, dim2, nb_tiles, nb_l_tiles, nb_slots, dim0 / nb_l_tiles);
+        printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
+               (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
         set_osgemm_streamer_csr((uint32_t)ptr_a, M3_R0_ss, M3_R0_tb, M3_R0_ts,   //

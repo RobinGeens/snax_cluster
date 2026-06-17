@@ -103,6 +103,15 @@ class DataGenerator(DataGeneratorBase):
         assert l3_tile % seqLenUnroll == 0, f"l3_tile ({l3_tile}) must be a multiple of {seqLenUnroll}"
         L3t = l3_tile
         Lt = L1 * L2 * L3t
+        # NOTE: L2 must be <= seqLenUnroll. L2>16 is blocked in MULTIPLE stages, not one (vsim,
+        # 2026-06-16): cmul1/hadamard1 is fine (0/25), but (a) gemm2 corrupts partition2 (11/25) —
+        # its B-reorder reads cmul1's chip layout (m2 innermost) via a generic contiguous downsizer
+        # that only realigns when the m2-block == one 16-tile; at L2=32 the m2-block spans 2 tiles and
+        # misaligns — and (b) cmul2/R7_4 (now fixed: k2 split into k2_low(16)+k2_high, spatial[0] and
+        # k1 strides de-conflated from L2 to seqLenUnroll; backward-compatible at L2=16). The cleaner
+        # path is L2-streaming (tile L2 into l2_tile=16, K-accumulate partition2 like l3-stream does
+        # for partition3) so every stage sees L2=16. Until then keep L2<=16; use balanced L1/L3.
+        assert L2 <= seqLenUnroll, f"L2 ({L2}) must be <= seqLenUnroll ({seqLenUnroll}); see note above"
         N_1 = dM * L2 * L3t
         N_2 = dM * L1 * L3t
         N_3 = dM * L1 * L2
@@ -190,15 +199,25 @@ class DataGenerator(DataGeneratorBase):
             ),
             "R13_3": psum_bounds_and_strides_2,
             "W3_3": psum_bounds_and_strides_2,
-            # Step 4: hadamard 2 (CMul with twiddles2). Cycle order (inner→outer): k2, k1, d.
+            # Step 4: hadamard 2 (CMul with twiddles2). Cycle order (inner→outer): k2_low, k2_high,
+            # k1, d. k2 (the partition2 M / bank-transpose axis) is split into k2_low (16, the
+            # within-matrix m1 walk) + k2_high (L2/16, jumping a whole m2-group of 128-byte matrices)
+            # so it crosses bank-transpose cells for L2 > 16. m3 (the 16-lane SIMD vector) is two
+            # groups of 8 one matrix (128 B) apart = spatial[0]; re/im = spatial[1]. See
+            # docs/dataflow/05_fft.md (L2-tiling note). seqLenUnroll == 16 here is the cell size, NOT L2.
             "R7_4": (
-                [L2, L1, dM, 1],
-                [BANK_BYTES, (L3t // (BANK_BYTES // (FP8 // 8))) * L2 * BANK_BYTES, Lt * FP8 // 8, 0],
-                [L2 * BANK_BYTES, Lt * dM * FP8 // 8],
+                [seqLenUnroll, L2 // seqLenUnroll, L1, dM],
+                [
+                    BANK_BYTES,                                          # k2_low: next m1 within m2-group
+                    L1 * L3t * dM * seqLenUnroll * FP8 // 8,             # k2_high: next m2-group (16 k2)
+                    (L3t // (BANK_BYTES // (FP8 // 8))) * seqLenUnroll * BANK_BYTES,  # k1: += L3 cols
+                    L1 * L3t * seqLenUnroll * FP8 // 8,                  # d: += L1*L3 cols (dM bound-1)
+                ],
+                [seqLenUnroll * BANK_BYTES, Lt * dM * FP8 // 8],         # m3 group-of-8 jump (matrix), re/im
             ),
             "R13_4": (
-                [L2, L1, dM, 1],
-                [4 * BANK_BYTES, 0, 0, 0],
+                [seqLenUnroll, L2 // seqLenUnroll, L1, dM],
+                [4 * BANK_BYTES, seqLenUnroll * 4 * BANK_BYTES, 0, 0],
             ),
             "W3_4": (
                 [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],

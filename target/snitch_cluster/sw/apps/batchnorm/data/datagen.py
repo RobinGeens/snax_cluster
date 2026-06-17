@@ -79,13 +79,19 @@ class DataGenerator(DataGeneratorBase):
         tests = {"out": L * D}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
+        self._run_memory_model()
 
-        # Single sequential pass (no tiling): x, scale, shift, out are all resident,
-        # so peak L1 = end of the last buffer.
-        peak = max(deltas[f"addr_{name}"] + lengths[f"length_{name}"] for name, _ in specs)
-        self.lines_params.append(
-            f"// L1 TCDM peak: {peak / 1024:.2f} KiB (x + scale + shift + out, all resident)\n"
-            f"#define L1_TCDM_PEAK_BYTES {peak}u")
+    def _run_memory_model(self):
+        import importlib.util
+
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model_batchnorm",
+                                                      os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen  # type: ignore[import]
+
+        self.lines_params.append(run_model_from_datagen(mod.build_report, app_dir))
 
 
 if __name__ == "__main__":

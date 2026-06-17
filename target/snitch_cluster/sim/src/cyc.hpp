@@ -49,6 +49,8 @@ struct Fabric {
     static long h_req[NB];                  // total lane-requests landing on each bank
     static long h_conf[NB];                 // requests that lost arbitration on each bank
     static long h_portbank[18][NB];         // per-port (R0..W3) request count per bank
+    static long h_portgrant[18];            // per-port grants won (per-streamer stall = reqs - grants)
+    static long h_pair[18][18];             // h_pair[loser][winner] = times `loser` lost a bank to `winner`
     static void hist_reset();
     static void hist_dump(const char* tag);
 
@@ -79,14 +81,16 @@ struct Fabric {
                     best      = i;
                 }
             }
-            if (best >= 0) { granted[best] = true; rr[b] = (uint8_t)(req_tok[best] + 1); }
+            if (best >= 0) { granted[best] = true; rr[b] = (uint8_t)(req_tok[best] + 1);
+                if (h_on) { int gp = req_tok[best] >> 4; if (gp >= 0 && gp < 18) h_portgrant[gp]++; } }
             if (h_on) {
-                int c = 0;
+                int c = 0, wp = (best >= 0) ? (req_tok[best] >> 4) : -1;
                 for (int i = 0; i < n_req; i++) {
                     if (req_bank[i] != b) continue;
                     c++;
                     int p = req_tok[i] >> 4;
                     if (p >= 0 && p < 18) h_portbank[p][b]++;
+                    if (i != best && p >= 0 && p < 18 && wp >= 0 && wp < 18) h_pair[p][wp]++;  // loser->winner
                 }
                 if (c > 0 && !(dma_owned & (1u << b))) { h_req[b] += c; if (c > 1) h_conf[b] += c - 1; }
             }

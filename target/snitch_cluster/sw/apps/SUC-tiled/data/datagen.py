@@ -48,6 +48,17 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         self.check_tiling_constraints()
         self.build_Phase1_data()
         self.build_Phase2_data()
+        self._run_memory_model()
+
+    def _run_memory_model(self):
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("memory_model_suc_tiled",
+                                                      os.path.join(app_dir, "memory_model.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from memory_model_base import run_model_from_datagen  # type: ignore[import]
+
+        self.lines_params.append(run_model_from_datagen(mod.build_report, app_dir))
 
 
 if __name__ == "__main__":
