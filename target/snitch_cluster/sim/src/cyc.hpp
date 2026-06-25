@@ -120,7 +120,9 @@ struct DmaEngine {
     uint32_t addr = 0, beats_left = 0;
     int period = 1, timer = 0;
 
-    int beat_period_l3 = 4;        // cycles/64B beat, L3<->TCDM (read-bound)
+    int beat_period_l3 = 1;        // cycles/64B beat, L3<->TCDM = calib dma_cost_per_beat_cc=1.0
+                                   // (512b bus, 1 beat/cyc; matches dma_submit's per-beat=1). Was 4 (4x
+                                   // too slow -> osCore ring refills fell progressively behind).
     int beat_period_tcdm = 1;      // cycles/64B beat, TCDM<->TCDM (bus-bound)
 
     void clear() { q.clear(); head = 0; done_cnt = 0; active = false; }

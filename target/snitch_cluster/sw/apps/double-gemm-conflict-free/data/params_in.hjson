@@ -1,0 +1,6 @@
+{
+    "seqLen": 64,
+    "dModel": 192,
+    "dInner": 96,
+    "nb_tiles": 2
+}

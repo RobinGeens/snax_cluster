@@ -37,7 +37,7 @@ GENERATOR_ARGS += name=$(APP_NAME)
 
 # Only use data-shape args for the cache key
 DATAGEN_CACHE_DIR := $(CLUSTER_DIR)/.datagen_cache/$(APP_NAME)
-CACHE_ARGS        := $(filter-out nb_tiles% nb_l_tiles% nb_slots% safe_to_start% force% name=%,$(GENERATOR_ARGS))
+CACHE_ARGS        := $(filter-out nb_tiles% nb_l_tiles% nb_slots% nb_dt_tiles% nb_dt_slots% safe_to_start% force% name=%,$(GENERATOR_ARGS))
 
 .PHONY: clean-cache cache-seed
 
@@ -56,8 +56,19 @@ cache-seed:
 
 # Step 1: ensure sbt golden data exists (from cache or fresh run).
 # Step 2: always run Python datagen to produce data.h (fast, encodes nb_tiles).
+#
+# The whole block is serialized with flock on a per-app lockfile. SBT_GEN_DIR is a single
+# dir shared by every build of this app, so without the lock a concurrent build (e.g. the
+# batch runner launching the same app at a different seqLen) would rm -rf / sbt / tar-extract
+# into SBT_GEN_DIR mid-flight — tarring a mixed dir and reading the wrong params.hjson into
+# data.h. That poisons the cache (tar keyed for one seqLen holding another's params) and makes
+# main.c compile with mismatched buffer sizes → TCDM overflow. The sanity check then refuses
+# any params.hjson whose seqLen/dModel disagree with the requested params, turning a silent
+# corruption into a loud build failure.
 $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 	@set -e; \
+	mkdir -p "$(DATAGEN_CACHE_DIR)"; \
+	exec 9>"$(DATAGEN_CACHE_DIR)/.datagen.lock"; flock 9; \
 	CACHE_KEY=$$(echo "$(CACHE_ARGS)" | md5sum | cut -d' ' -f1); \
 	CACHED="$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.tar"; \
 	ARGS_FILE="$(DATAGEN_CACHE_DIR)/$$CACHE_KEY.args"; \
@@ -70,7 +81,7 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 		echo "[DATAGEN CACHE] Miss ($(APP_NAME)) — running sbt"; \
 		echo "  Scala $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
 		rm -rf "$(SBT_GEN_DIR)"; \
-		cd $(CHISEL_SSM) && sbt "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
+		( cd $(CHISEL_SSM) && sbt "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)" ); \
 		if [ ! -f "$(DATA_CFG)" ]; then \
 			echo "[DATAGEN CACHE] ERROR: sbt produced no $(DATA_CFG) for $(APP_NAME) — check params_in.hjson" >&2; \
 			exit 1; \
@@ -79,8 +90,16 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 		tar cf "$$CACHED" -C "$(SBT_GEN_DIR)" .; \
 		printf '%s' "$(CACHE_ARGS)" > "$$ARGS_FILE"; \
 		echo "[DATAGEN CACHE] Stored $(APP_NAME) → $$CACHE_KEY"; \
-	fi
-	@echo "Generating data.h from $(DATA_CFG)"
-	@$(DATAGEN_PY) --swcfg $(DATA_CFG) > $@
+	fi; \
+	for kv in $$(echo "$(CACHE_ARGS)" | tr ' ' '\n' | grep -E '^(seqLen|dModel)='); do \
+		k=$${kv%%=*}; v=$${kv#*=}; \
+		got=$$(grep -E "^[[:space:]]*$$k[[:space:]]*:" "$(DATA_CFG)" | head -1 | sed -e 's/.*://' -e 's/[^0-9]//g'); \
+		if [ "$$got" != "$$v" ]; then \
+			echo "[DATAGEN CACHE] ERROR: $(APP_NAME) golden $$k=$$got but params_in.hjson wants $$k=$$v (poisoned cache?). Remove $$CACHED and rebuild." >&2; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "Generating data.h from $(DATA_CFG)"; \
+	$(DATAGEN_PY) --swcfg $(DATA_CFG) > $@
 
 endif

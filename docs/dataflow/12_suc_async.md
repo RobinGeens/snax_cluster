@@ -2,29 +2,55 @@
 
 > [README](README.md) · working principle of async tiling: [9. Async tiling](09_async_tiling.md)
 
-`suc-async` is the stand-alone SUC kernel (`M27_SUC_ONLY`), dInner-tiled, with **four** of its
-operands kept in async TCDM rings instead of full-`seqLen` buffers: the `BC` input, the `x` and
-`z` inputs, and the `y` output. Only the packed `dt` stays full-`seqLen` resident; the per-dInner
-weights/bias, `A` and `D` are tile-sized. The result is a TCDM footprint that is flat in `seqLen`
-— the point of the rings. See [09](09_async_tiling.md) for the ring mechanism itself (stride-0
-wrap, gauge pacing, lead margin); this page only covers what is specific to running four operands
-off one loop.
+The stand-alone SUC kernel (`M27_SUC_ONLY`), dInner-tiled, comes in two variants that differ only
+in how many operands are kept in async TCDM rings instead of full-`seqLen` buffers:
 
-## One loop, one gauge, four operands
+- **`suc-async`** rings **four** operands: the `BC` input, the `x` and `z` inputs, and the `y`
+  output. `dt` stays full-`seqLen` resident.
+- **`suc-async-dt`** rings **five**: the same four plus the `dt` input.
 
-All four rings are serviced by the single DM core from one refill loop (`suc_ring_loop`), paced by
+In both, the per-dInner weights/bias, `A` and `D` are tile-sized. The result is a TCDM footprint
+that is flat in `seqLen` — the point of the rings (in `suc-async`, flat apart from the resident
+`dt`). See [09](09_async_tiling.md) for the ring mechanism itself (stride-0 wrap, gauge pacing, lead
+margin); this page only covers what is specific to running several operands off one loop.
+
+Resident `dt` dominates the budget at large `seqLen` — e.g. 960 KiB at `seqLen=32768` — which is why
+`suc-async-dt` exists. It is needed only at the largest `seqLen`; at every smaller size the resident
+`dt` of plain `suc-async` is affordable, so the batch config uses `suc-async-dt` only for the
+`seqLen=32768` case.
+
+`dt` is the last operand to be ringed (only in `suc-async-dt`). Because a `dt` window
+(`seqLenUnroll·dtRank` FP8) is ~5× smaller than a `BC` window (`seqLenUnroll·2·dState`), `dt` uses a
+**coarser** ring: a slot spans `dt_group = nb_l_tiles / nb_dt_tiles` L-tiles, so `dt` refills only
+every `dt_group` ring visits (one larger DMA instead of a tiny one every visit). `nb_dt_tiles` and
+`nb_dt_slots` are the two knobs (`suc-async-dt` only).
+
+## One loop, one gauge, four or five operands
+
+All rings are serviced by the single DM core from one refill loop (`suc_ring_loop`), paced by
 one gauge — `R11_DELAY_GAUGE`, the SUC output count. Number the slot visits `r = 0, 1, …` with
-`r = (subtile r/nb_l_tiles, L-tile r%nb_l_tiles)`. Per visit the DM core does four transfers:
+`r = (subtile r/nb_l_tiles, L-tile r%nb_l_tiles)`. Per visit the DM core does four transfers (five
+in `suc-async-dt`):
 
 - **gather `x`** for the future visit `r + nb_slots`,
 - **gather `z`** for the future visit `r + nb_slots`,
 - **spill `y`** for the just-finished visit `r` (to its ConvFormat slot in L3),
-- **refill `BC`** for the future visit.
+- **refill `BC`** for the future visit,
+- **refill `dt`** (`suc-async-dt` only) — but only at a `dt`-tile boundary (every `dt_group` visits),
+  for the future `dt`-tile `r/dt_group + nb_dt_slots`.
 
 `x`/`z` are per-dInner-tile, so their future gather is guarded by `r + nb_slots < visits`; `y` is
-fully spilled to L3, so there is no separate post-loop spill stage. The first `nb_slots` slots of
-every ring are preloaded before the SUC is started, and the loop begins polling the gauge
-immediately after the (non-blocking) start — the critical-sequencing rule from [09](09_async_tiling.md).
+fully spilled to L3, so there is no separate post-loop spill stage. The first `nb_slots` (`nb_dt_slots`
+for `dt`) slots of every ring are preloaded before the SUC is started, and the loop begins polling the
+gauge immediately after the (non-blocking) start — the critical-sequencing rule from
+[09](09_async_tiling.md).
+
+The `dt` refill rides the *same* R11 gauge: at a visit `r` with `(r+1) % dt_group == 0`, the
+loop's existing top wait `gauge ≥ (r+1)·gauge_step` is exactly the `dt`-slot's safe-refill threshold
+`(r/dt_group + 1)·(dt_group·gauge_step)`, so the `dt` refill needs no extra wait — it is one gauge,
+two cursors at different strides (cf. the double-pacing note in [09](09_async_tiling.md), but here a
+single gauge drives both). `dt` is re-read across the broadcast passes (like `BC`), so its refill
+wraps with no end guard.
 
 ## Two slot granularities on the same schedule
 
@@ -46,32 +72,36 @@ four rings, but the slots are **not** the same shape:
 ## TCDM layout
 
 One sequentially-64B-aligned chain, all live during the per-dInner-tile compute loop (so the peak
-is their sum):
+is their sum). In `suc-async-dt`:
 
 ```
-dt PACKED (full L) → BC ring (nb_slots) → dt_w1 → dt_w2 → dt_bias → A → D
+dt ring (nb_dt_slots) → BC ring (nb_slots) → dt_w1 → dt_w2 → dt_bias → A → D
     → x ring (nb_slots) → z ring (nb_slots) → y ring (nb_slots)
 ```
 
-`dt` is the only full-`seqLen` term; `BC` and `x`/`z`/`y` are `nb_slots` slots each. (`memory_model.py`
-sizes and reports this and aborts on TCDM overflow.)
+In `suc-async` the leading `dt ring` is instead a full-`seqLen`-resident `dt` buffer; everything else
+is identical. With the `dt` ring, all operands are `seqLen`-flat: `dt` is `nb_dt_slots` slots of
+`dt_group` L-tiles each, `BC` and `x`/`z`/`y` are `nb_slots` slots each. (`memory_model.py` sizes and
+reports this and aborts on TCDM overflow.)
 
 ## Lead margin scales with the operand count
 
-Four transfers per visit is roughly 4× the DMA of the `BC`-only ring, so the *Sizing the ring* budget
-from [09](09_async_tiling.md) is tighter: the per-visit DMA must still fit inside
+Four transfers per visit (plus a small `dt` refill every `dt_group` visits) is several× the DMA of the
+`BC`-only ring, so the *Sizing the ring* budget from [09](09_async_tiling.md) is tighter: the per-visit
+DMA must still fit inside
 `nb_slots · tile_period`. The law is unchanged — tear iff `nb_slots × tile_period` is below the
 ~250 cc L3→TCDM latency — only the per-visit byte movement is larger, so small tiles need more
 slots while large tiles still hide it at `nb_slots = 2`. Measured at `dModel = 96`:
 
-| `seqLen` / `nb_l_tiles` / `nb_slots` | `L_tile` | result |
-|---|---|---|
-| 512 / 4 / 4 | 128 | pass |
-| 512 / 8 / 4 | 64  | pass |
-| 512 / 8 / 2 | 64  | tears (~20 % of `y` wrong) |
-| 512 / 16 / 2 | 32 | tears (~91 %) |
-| 3136 / 4 / 2 | 784 | pass |
+| `seqLen` / `nb_l_tiles` / `nb_slots` | `L_tile` | `nb_dt_tiles` / `nb_dt_slots` | result |
+|---|---|---|---|
+| 512 / 4 / 4 | 128 | 2 / 2 | pass |
+| 512 / 8 / 4 | 64  | — | pass (pre-dt-ring) |
+| 512 / 8 / 2 | 64  | — | tears (~20 % of `y` wrong) |
+| 512 / 16 / 2 | 32 | — | tears (~91 %) |
+| 3136 / 4 / 2 | 784 | 2 / 2 | pass |
 
 So at small `L_tile` (= 64) the four-operand ring needs `nb_slots = 4`, whereas the big-tile config
 (`L_tile = 784`) holds at `nb_slots = 2` — the standard `nb_slots`/`L_tile`/`dModel` trade-off, just
-shifted up by the extra per-visit DMA.
+shifted up by the extra per-visit DMA. The `dt` ring rides the same gauge with `nb_dt_slots · dt_group`
+L-tiles of absolute margin (≥ `BC`'s `nb_slots`), so it has not been the limiting ring in practice.

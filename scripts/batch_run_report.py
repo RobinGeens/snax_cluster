@@ -47,8 +47,10 @@ RE_MODEL_S2S = re.compile(r"stale_z=(\d+)\s+stale_y=(\d+)")
 REPORT_JSON = "report.json"
 REPORT_MD = "report.md"
 
-# Status -> emoji. All chosen to render as double-width glyphs so the raw-text
-# table stays aligned in a terminal (markdown viewers ignore the padding).
+# Pass if errors < ERROR_THRESHOLD
+ERROR_THRESHOLD = 5
+
+
 EMOJI = {
     "PASS": "✅",
     "ERRORS": "❌",
@@ -60,17 +62,13 @@ EMOJI = {
     "QUEUED": "🟡",
     "NO_RESULT": "❔",
 }
-# The Batch-run cell is just a marker (not the long timestamp): ✨ = from the most
-# recent (current) batch run, ⏰ = from an earlier run (stale, regardless of status;
-# sorted to the bottom). Both distinct from TIMEOUT's 🕒 and the commit ⚠️.
+
 STALE_MARK = "⏰"
 CURRENT_MARK = "✨"
-# 💾 = job fully skipped this batch (force:false / --no-redo): stored row kept verbatim.
 CACHED_MARK = "💾"
 _WIDE = set(EMOJI.values()) | {"🔴", STALE_MARK, CURRENT_MARK, CACHED_MARK}
 
-# Markdown link [text](url): when rendered, only `text` occupies columns, so the
-# table's width math must ignore the (often long) url part.
+# Markdown link [text](url)
 _LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 
 
@@ -165,7 +163,7 @@ def _display_status(state, errors, oom=False):
     if state == "done":
         if errors is None:
             return "NO_RESULT"
-        if errors == "0":
+        if errors.isdigit() and int(errors) < ERROR_THRESHOLD:
             return "PASS"
         # Nonzero error count: an OOM-predicted run gets the clearer OOM label;
         # otherwise ERRORS (a small count may be quantization noise, not a true fail).
@@ -229,6 +227,10 @@ def merge_run_into_report(report_dir, rundir):
             # memsim log when present (else keep the stored row verbatim). Re-stamped -> renders 💾.
             row = {
                 **prev,
+                # `name` is display-only (popped before the app__tag jid is computed),
+                # so renaming a config reuses the cached vsim under the same jid. Refresh
+                # it from the fresh job so a rename shows up in the report.
+                "name": job.get("name"),
                 "batch_run": stamp,
                 "cached": True,
                 "state": prev.get("state", job.get("state", "done")),
@@ -237,8 +239,8 @@ def merge_run_into_report(report_dir, rundir):
             memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
             if os.path.exists(memsim_log):
                 m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
-                # Only OVERWRITE the stored Model columns when the fresh memsim actually produced a
-                # SimbaCore number; a timeout / unparseable / config-mismatch run must NOT blank the row.
+                # Only overwrite the stored Model columns when the fresh memsim actually produced a
+                # SimbaCore number; a timeout / unparseable / config-mismatch run must not blank the row.
                 if m_sc is not None:
                     agu = parse_model_agu_errors(memsim_log)
                     stale = parse_model_s2s_stale(memsim_log)
@@ -252,8 +254,7 @@ def merge_run_into_report(report_dir, rundir):
             continue
         log_abs = os.path.join(rundir, job["log"])
         errors, sc, tot, sim_l1 = parse_log(log_abs)
-        # The cycle-accurate memsim model runs alongside the vsim into its own log;
-        # scrape the same markers for the Model error/SimbaCore/Total columns.
+        # memsim runs alongside the vsim into its own log. Scrape the same markers
         memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
         m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
         # Model Err = the faults the model LOCATED, not its binary exit code (which a
@@ -442,8 +443,7 @@ def render_report(report_dir):
             _plot_link(report_dir, e.get("timeline")),
         )
         rows.append((stale, row))
-    # Fresh rows first (stale at the bottom); within each group by user-defined name
-    # (row[0]), then app to keep unnamed rows deterministic.
+    # Fresh rows first (stale at the bottom). Sort by user-define name, then app name
     rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][1]))
     rows = [r for _, r in rows]
 

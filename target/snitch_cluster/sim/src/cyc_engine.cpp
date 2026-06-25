@@ -81,6 +81,14 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
     en_isc_ = (cfg.mode >> 17) & 1;
     sw_mode_ = (cfg.mode >> 8) & 0x3;
     r10_cnt_ = r10_start_cnt; r11_cnt_ = r11_start_cnt;
+    if (std::getenv("MEMSIM_ENGDBG") && ((cfg.mode >> 18) & 1)) {
+        std::fprintf(stderr, "  [RELCNT] r10_cnt_=%ld r11_cnt_=%ld (app safe_to_start)\n", r10_cnt_, r11_cnt_);
+        auto bk = [](uint64_t a){ return (int)((a>>3)&31); };
+        const Agu& w = ports[P_R12];
+        std::fprintf(stderr, "  [R12BANK] base=%08x s_stride0=%d  lane banks=%d,%d,%d,%d  (gran-4 RTL wants 4 distinct residues)\n",
+                     (uint32_t)w.base, (int)w.s_stride[0],
+                     bk(w.base+0*w.s_stride[0]), bk(w.base+1*w.s_stride[0]), bk(w.base+2*w.s_stride[0]), bk(w.base+3*w.s_stride[0]));
+    }
 
     const long Mu = 16, Nu = 24;
     M_i_ = seqLen_ / Mu; osN_ = (dInner_ >= Nu) ? dInner_ / Nu : 0;
@@ -105,7 +113,13 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
     // osCore disabled (SUC-only): z is preloaded, so every z word is already "written" (no hazard).
     Wz_ = w0_.total_beats(); zwr_.assign(Wz_ + 1, en_os_ ? 0 : 1);
 
-    r7_fifo_d_ = snax_streamer_depth(P_R7);  // R7 req+data FIFO depth, from the one streamer-depth source
+    r7_fifo_d_ = snax_streamer_depth(P_R7);  // R7 addr FIFO (outstanding) = fifo_depth[7]
+    // RTL read-ahead = responser+dataBuffer = 2x, but modelling it as a FREE 8 over-hides the dt_BC
+    // 2-bank conflict (R7 pre-fills during the long osc_lead) AND triggers a big osCore-speedup cross-
+    // coupling artifact (-108k/P2). The faithful fix is read-ahead 8 BOUNDED by switchCore dt_BC
+    // production (R7 can't read what switchCore hasn't written) — until that's modelled, use 4 (closer:
+    // suc_span +6% & isCore tail preserved, vs free-8's -8% & broken tail).
+    r7_data_d_ = r7_fifo_d_;                 // TODO: = 2*r7_fifo_d_ once R7 reads are gated on sw_dt_
     for (int i = 0; i < 4; i++) { r7ts_[i] = p_[P_R7].t_stride[i]; r7eb_[i] = p_[P_R7].t_bound[i] ? p_[P_R7].t_bound[i] : 1; }
     if (p_[P_R7].t_stride[0] == 0 && p_[P_R7].t_bound[0] > 1) r7eb_[0] = 1;
     for (int l = 0; l < NCH7; l++) { issued_[l] = landed_[l] = 0; pend7_[l] = 0; }
@@ -130,6 +144,7 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
     w3_.configure(p_[P_W3], 4, 1, T_W3); w3_.depth = snax_streamer_depth(P_W3);
     wbpt_is_ = w3_.total_beats() / std::max(1L, n_tiles_is_); if (wbpt_is_ < 1) wbpt_is_ = 1;
     as_os_ = tiles_os_ = as_is_ = tiles_is_ = 0; os_owed_ = is_owed_ = 0;
+    serDesA_ = (long)Mu * 24 / 8; isc_aload_ = serDesA_; isc_since_a_ = 0;  // isCore A=y s2p fill (48 beats)
 
     if (std::getenv("MEMSIM_ENGDBG")) {
         auto sb = [](uint64_t b) { return (int)((b >> 6) & 3); };
@@ -478,11 +493,24 @@ bool AccelEngine::step() {
     // isCore output W3: same physical back-pressure as W0 (drip 1/cycle, hold a tile until its
     // predecessor has drained out of the array's output registers; a full W3 stalls the isCore).
     if (is_owed_ > 0 && w3_.fifo_occ < w3_.depth) { w3_.push(1); is_owed_--; }
-    if (isc_rel && tiles_is_ < n_tiles_is_ && r11_.fifo_occ > 0 && r12_.fifo_occ > 0
-        && ((as_is_ + 1) % K_is_ != 0 || is_owed_ == 0)) {
-        r11_.pop(); r12_.pop();
-        if (r13_en_ && r13_.fifo_occ > 0) r13_.pop();  // psum read-back, paced to array (never gates)
-        if (++as_is_ % K_is_ == 0) { tiles_is_++; is_owed_ += wbpt_is_; g_iscore_++; }
+    // isCore input-stationary K_M_N: each (k,m) A=y tile is serial-loaded over serDesA_ beats with the
+    // array IDLE (s2p fill), then reused for dFinal compute steps each reading B (R12) + psum (R13 RMW).
+    // The s2p idle is the VersaCore latency the array genuinely stalls on (address advances every
+    // serDesA_+dFinal cyc) -> isCore trails the SUC by what the dataflow dictates.
+    if (isc_rel && tiles_is_ < n_tiles_is_) {
+        if (isc_aload_ > 0) {                                // A=y s2p fill: array idle this cycle
+            isc_aload_--;
+        } else if (r11_.fifo_occ > 0 && r12_.fifo_occ > 0 && ((as_is_ + 1) % K_is_ != 0 || is_owed_ == 0)) {
+            // NOTE: a per-array-step `as_is_ < out_su_` gate (isCore downstream of SUC) was tried and
+            // REVERTED — it forces 1:1 lockstep, adding sustained fabric contention that wrongly inflates
+            // suc_span (22,034->24,561 vs verified-correct vsim 21,962). The correct isc_tail (~1,324)
+            // needs a PER-A-TILE production gate (burst produced backlog, only the last A-tile waits past
+            // suc_end), accounting for the K_M_N (k-outer) vs y-production (seq-major) transpose.
+            r11_.pop(); r12_.pop();
+            if (r13_en_ && r13_.fifo_occ > 0) r13_.pop();    // psum read-back, paced to array (never gates)
+            if (++as_is_ % K_is_ == 0) { tiles_is_++; is_owed_ += wbpt_is_; g_iscore_++; }
+            if (++isc_since_a_ == (long)dFinal_) { isc_since_a_ = 0; isc_aload_ = serDesA_; }  // next A-tile s2p
+        }
     }
 
     if (res_.osc_end == 0 && tiles_os_ == n_tiles_os_ && w0_.written >= Wz_) res_.osc_end = cyc_;
@@ -503,7 +531,7 @@ bool AccelEngine::step() {
     fabric_.begin_cycle(dma_.step(cyc_));
     if (en_os_) { r0_.propose(fabric_); r1_.propose(fabric_); w0_.propose(fabric_); }
     for (int l = 0; l < NCH7; l++)
-        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < r7_fifo_d_)
+        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < r7_data_d_)
             fabric_.post(r7bank(issued_[l], l), (T_R7 << 4) | l, (landed_[l] - consumed7_ <= 1) ? 1 : 0);
     if (suc_rel) r10_.propose(fabric_);
     w2_.propose(fabric_);
@@ -521,7 +549,7 @@ bool AccelEngine::step() {
         if (w0_.written > pw && off >= 0 && off < Wz_) zwr_[off] = 1;
     }
     for (int l = 0; l < NCH7; l++)
-        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < r7_fifo_d_)
+        if (issued_[l] < agu7_ && issued_[l] - consumed7_ < r7_data_d_)
             if (g[gi++]) { issued_[l]++; pend7_[l] = 1; }
     if (suc_rel) { long off = word_off(r10_.ts, r10_.ti); long pp = r10_.pending_push; r10_.commit(fabric_, g, gi);
                    if (r10_.pending_push > pp && off >= 0 && off < Wz_ && !zwr_[off]) res_.stale_z++; }

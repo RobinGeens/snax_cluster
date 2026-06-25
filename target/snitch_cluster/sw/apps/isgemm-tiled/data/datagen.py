@@ -5,6 +5,7 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 
+import inspect
 import pathlib
 import sys
 import os
@@ -27,7 +28,8 @@ class DataGenerator(DataGeneratorBase):
     def __init__(self, **kwargs):
         super().__init__(self.APP_NAME, **kwargs)
         # nb_tiles is not propagated by the Scala generator; read it from the local params hjson.
-        local_params_path = self.params_in_path(__file__)
+        # Resolve relative to the concrete (possibly subclassed) generator's file
+        local_params_path = self.params_in_path(inspect.getfile(type(self)))
         with local_params_path.open() as f:
             local_params = hjson.loads(f.read())
         for key, value in local_params.items():
@@ -75,11 +77,11 @@ class DataGenerator(DataGeneratorBase):
         psum_bounds_and_strides = (
             [
                 (seqLen // seqLenUnroll) * dModel,  # full output sweep
-                K_t,                                # K iterations within the per-tile invocation
+                K_t,  # K iterations within the per-tile invocation
             ],
             [
                 seqLenUnroll * BF16 // 8,
-                0,                                  # same buffer each K
+                0,  # same buffer each K
             ],
         )
 
@@ -90,9 +92,9 @@ class DataGenerator(DataGeneratorBase):
             ),
             "R12": (  # iscore weight. K-tiled; per-tile slice is contiguous.
                 [
-                    downsized_dModel,             # N
-                    seqLen // seqLenUnroll,       # M
-                    K_t,                          # K (per-tile)
+                    downsized_dModel,  # N
+                    seqLen // seqLenUnroll,  # M
+                    K_t,  # K (per-tile)
                 ],
                 [
                     b_in_width // 8,

@@ -2,7 +2,7 @@
     // Max number of vsim runs allowed to execute at the same time
     max_parallel: 8
     // Per-run wall-clock cap in seconds. 0 = no timeout
-    timeout: 40000
+    timeout: 60000 // suc-async 32k can take >12h
     // Per-build  wall-clock cap in seconds. 0 = no timeout
     build_timeout: 20000
     // Global default for `force`
@@ -29,46 +29,38 @@
                     nb_tiles: 16 // power of 2. 8 too small
                     bc_pad_banks: 4
                     safe_to_start_r10: 11
-                    safe_to_start_r11: 3000 // 8350 // Let's try to start sooner
+                    safe_to_start_r11: 6000 // 8350
                 }
-                {
-                    name: IN main C
-                    seqLen: 192
-                    dModel: 384
-                    dtRank: 24
-                    nb_tiles: 16
-                    bc_pad_banks: 0
-                    safe_to_start_r10: 9
-                    safe_to_start_r11: 1990
-                }
+                // {
+                //     name: IN main C
+                //     seqLen: 192
+                //     dModel: 384
+                //     dtRank: 24
+                //     nb_tiles: 16
+                //     bc_pad_banks: 0
+                //     safe_to_start_r10: 9
+                //     safe_to_start_r11: 1990
+                // }
                 // Sizes D
                 {
-                    name: IN main  D
+                    name: IN main D
+                    force: true
                     seqLen: 48
-                    dModel: 528 // 512 does NOT work
+                    dModel: 528
                     dtRank: 24
                     nb_tiles: 11
                     bc_pad_banks: 4
                     safe_to_start_r10: 5
-                    safe_to_start_r11: 4200
+                    safe_to_start_r11: 3000
                 }
             ]
         }
         {
             app: main-tiled-oscore
             params: [
-                // Sizes B
-                // { // OOM
-                //     seqLen: 800
-                //     dModel: 192
-                //     dtRank: 24
-                //     nb_tiles: 8
-                //     nb_l_tiles: 50
-                //     nb_slots: 2
-                // }
-                // Sizes C
                 {
                     name: IN main C
+                    force: true
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
@@ -76,27 +68,15 @@
                     nb_l_tiles: 12
                     nb_slots: 2
                     bc_pad_banks: 0
-                    safe_to_start_r10: 9
-                    safe_to_start_r11: 4000
+                    safe_to_start_r10: 8
+                    safe_to_start_r11: 6000
                 }
-                {
-                    name: IN main C
-                    seqLen: 192
-                    dModel: 384
-                    dtRank: 24
-                    nb_tiles: 16
-                    nb_l_tiles: 12
-                    nb_slots: 4
-                    bc_pad_banks: 4
-                    safe_to_start_r10: -1
-                    safe_to_start_r11: -1
-                }
+
             ]
         }
         {
             app: P1-tiled-D
             params: [
-                // Sizes A
                 {
                     name: IN P1 A
                     force: false
@@ -105,7 +85,6 @@
                     dtRank: 24
                     nb_tiles: 4
                 }
-                // Sizes B
                 {
                     name: IN P1 B
                     force: false
@@ -117,7 +96,6 @@
                 // // Sizes C (ImageNet) -> use main instead
                 // // Sizes D (ImageNet) -> use main instead
                 // Cityscapes
-                // Sizes C
                 {
                     name: CS P1 C
                     force: false
@@ -126,7 +104,6 @@
                     dtRank: 24
                     nb_tiles: 16 // dModel/24
                 }
-                // Sizes D
                 {
                     name: CS P1 D
                     force: false
@@ -140,42 +117,32 @@
         {
             app: P2-tiled-D
             params: [
-                // Sizes B
-                // {
-                //     seqLen: 784
-                //     dModel: 192
-                //     dtRank: 24
-                //     nb_tiles: 16
-                //     bc_pad_banks: 4
-                // }
-                // Sizes C
                 {
                     name: IN P2 C
-                    force: false
+                    force: true
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
                     nb_tiles: 16
                     bc_pad_banks: 4
-                    safe_to_start_r10: 12
+                    safe_to_start_r10: 9
                     safe_to_start_r11: 6000
                 }
-                // Sizes D
                 {
                     name: IN P2 D
-                    force: false
+                    force: true
                     seqLen: 48
                     dModel: 480
                     dtRank: 24
                     nb_tiles: 10
                     bc_pad_banks: 4
                     safe_to_start_r10: 3
-                    safe_to_start_r11: 2200
+                    safe_to_start_r11: 4000
                 }
             ]
         }
         {
-            app: is-osgemm-tiled
+            app: double-gemm-conflict-free
             params: [
                 // Cityscapes
                 // Sizes B
@@ -186,14 +153,14 @@
                     dModel: 192
                     dInner: 384
                     dtRank: 24
-                    nb_tiles: 8
+                    nb_tiles: 16
                 }
                 { // out proj
                     name: CS P2 out proj B
                     force: false
-                    seqLen: 512 // 8x (kernel does 2x this L -> 8k total)
-                    dModel: 192
-                    dInner: 384
+                    seqLen: 256 // 16x (kernel does 2x this L -> 8k total)
+                    dModel: 384
+                    dInner: 192
                     dtRank: 24
                     nb_tiles: 8
                 }
@@ -218,7 +185,7 @@
                 }
                 // Sizes D
                 { // out proj
-                    name: CS P2 proj D
+                    name: CS P2 out proj D
                     force: false
                     seqLen: 64 // x4
                     dModel: 1024
@@ -251,7 +218,7 @@
                 { // out proj
                     name: IN P2 out proj B
                     force: false
-                    seqLen: 384 // 2x (kernel does 2x this L -> 784)
+                    seqLen: 192 // 4x (kernel does 2x this L -> 784)
                     dModel: 384
                     dInner: 192
                     dtRank: 24
@@ -276,7 +243,7 @@
                 // Sizes B
                 {
                     name: IN SUC/in proj B
-                    force: true
+                    force: false
                     seqLen: 768
                     dModel: 192
                     dtRank: 24
@@ -297,14 +264,14 @@
                     nb_tiles: 11
                     nb_l_tiles: 4 // L_tile=128
                     nb_slots: 2
-                    safe_to_start_r10: -1
-                    safe_to_start_r11: -1
+                    safe_to_start_r10: 27
+                    safe_to_start_r11: 0 // not used
                 }
             ]
         }
         {
-            // SUC-only, no z-proj or out-proj
-            app: suc-async
+            // SUC-only with dt tiling. Only the largest seqLen needs to tile dt.
+            app: suc-async-dt
             params: [
                 // Cityscapes
                 // Sizes A
@@ -318,9 +285,18 @@
                     nb_l_tiles: 64 // L_tile=512
                     nb_slots: 2
                     bc_pad_banks: 4
+                    nb_dt_tiles : 32
+                    nb_dt_slots : 2
                     safe_to_start_r10: 0 // not used
                     safe_to_start_r11: 0 // not used
                 }
+            ]
+        }
+        {
+            // SUC-only, no dt tiling, no z-proj or out-proj
+            app: suc-async
+            params: [
+                // Cityscapes
                 // Sizes C
                 {
                     name: CS SUC C
@@ -332,8 +308,6 @@
                     nb_l_tiles: 4 // L_tile=512
                     nb_slots: 2
                     bc_pad_banks: 4
-                    safe_to_start_r10: 0 // not used
-                    safe_to_start_r11: 0 // not used
                 }
                 // Sizes B
                 {
@@ -346,13 +320,12 @@
                     nb_l_tiles: 16 // L_tile=512
                     nb_slots: 2
                     bc_pad_banks: 4
-                    safe_to_start_r10: 0 // not used
-                    safe_to_start_r11: 0 // not used
                 }
                 // ImageNet
                 // Sizes A
                 {
                     name: IN SUC A
+                    force: false
                     seqLen: 3136
                     dModel: 96
                     dtRank: 24
@@ -360,8 +333,6 @@
                     nb_l_tiles: 4
                     nb_slots: 2
                     bc_pad_banks: 4
-                    safe_to_start_r10: 0 // not used
-                    safe_to_start_r11: 0 // not used
                 }
 
             ]
@@ -379,30 +350,8 @@
                     dModel: 96 // N=1 -> concat [W_re|W_im] gives real N=2 (no waste)
                     nb_tiles: 1
                 }
-                // Sizes B
-                {
-                    name: IN einfft B
-                    force: false
-                    seqLen: 384
-                    dModel: 192
-                    nb_tiles: 2
-                }
-                // Sizes C
-                {
-                    name: IN einfft C
-                    force: false
-                    seqLen: 192
-                    dModel: 384
-                    nb_tiles: 2
-                }
-                // Sizes D
-                {
-                    name: IN einfft D
-                    force: false
-                    seqLen: 48
-                    dModel: 480
-                    nb_tiles: 5
-                }
+
+
                 // Cityscapes
                 // Sizes A -> plain einfft-tiled
                 {
@@ -410,18 +359,15 @@
                     force: false
                     seqLen: 512 // x64 -> 32768
                     dModel: 96
-                    nb_tiles: 2
+                    nb_tiles: 1
                 }
             ]
         }
         {
-            app: einfft-tiled-is-osgemm
+            app: einfft-double-conflictfree
             params: [
 
-                {
-                    seqLen: 784 // x4
-                    dModel: 96 // ! Must be >= 192 ?
-                }
+                // Sizes B
                 {
                     name: IN einfft B
                     force: false
@@ -432,7 +378,7 @@
                 {
                     name: IN einfft C
                     force: false
-                    seqLen: 192
+                    seqLen: 96 // x2
                     dModel: 384
                 }
                 // Sizes D
@@ -440,50 +386,43 @@
                     name: IN einfft D
                     force: false
                     seqLen: 48
-                    dModel: 480
+                    dModel: 576
                 }
                 // Cityscapes
+                // NOTE we reuse IN runs
                 // Sizes A -> plain einfft-tiled
                 // Sizes B
-                {
-                    name: CS einfft B
-                    force: false
-                    seqLen: 256 // x32 -> 8192
-                    dModel: 192
-                }
-                // Sizes C
-                {
-                    name: CS einfft C
-                    force: false
-                    seqLen: 128 // x16 -> 2048
-                    dModel: 384
-                }
-                // Sizes D
-                {
-                    name: CS einfft D
-                    force: false
-                    seqLen: 512
-                    dModel: 512
-                }
+                // {
+                //     name: CS einfft B
+                //     force: false
+                //     seqLen: 256 // x32 -> 8192
+                //     dModel: 192
+                // }
+                // // Sizes C
+                // {
+                //     name: CS einfft C
+                //     force: false
+                //     seqLen: 128 // x16 -> 2048
+                //     dModel: 384
+                // }
+                // // Sizes D
+                // {
+                //     name: CS einfft D
+                //     force: false
+                //     seqLen: 512
+                //     dModel: 512
+                // }
             ]
         }
         {
             app: fft-tiled
             params: [
 
-                // Sizes A
-                {
-                    name: IN fft A
-                    seqLen: 4096,
-                    dModel: 24, // x4
-                    L1: 64,
-                    L2: 64,
-                    nb_tiles: 16,
-                    nb_tiles_B: 2
-                }
+
                 // Sizes B
                 {
                     name: IN fft B
+                    force: false
                     seqLen: 1024,
                     dModel: 96, // x2
                     L1: 32,
@@ -494,6 +433,7 @@
                 // Sizes C
                 {
                     name: IN fft C
+                    force: false
                     seqLen: 256,
                     dModel: 384,
                     L1: 16,
@@ -505,9 +445,9 @@
                 // Sizes C
                 {
                     name: CS fft C
-                    force: false
+                    force: true
                     seqLen: 2048,
-                    dModel: 16, // x24
+                    dModel: 32, // 12
                     L1: 64,
                     L2: 32,
                     nb_tiles: 4,
@@ -516,7 +456,7 @@
                 // Sizes D
                 {
                     name: CS fft D
-                    force: false
+                    force: true
                     seqLen: 512,
                     dModel: 128, // x4
                     L1: 32,
@@ -529,34 +469,40 @@
         {
             app: fft-3way-tiled
             params: [
-                // Cityscapes
-                {
-                    name: CS fft A
-                    seqLen: 32768
-                    dModel: 1, // 96
-                    L1: 32,
-                    L2: 32,
-                    L3: 32,
-                    nb_tiles_A: 1
-                }
-                {
-                    name: CS fft B
-                    seqLen: 8192,
-                    dModel: 48, // x4
-                    L1: 32,
-                    L2: 16,
-                    L3: 16,
-                    nb_tiles_A: 8
-                }
                 {
                     name: IN fft A
+                    force: true
                     seqLen: 4096,
-                    dModel: 96, // x4
+                    dModel: 24, // x4
                     L1: 16,
                     L2: 16,
                     L3: 16,
+                    nb_tiles_A: 4
+                }
+                {
+                    name: CS fft B
+                    force: true
+                    seqLen: 8192,
+                    dModel: 8, // x24
+                    L1: 32,
+                    L2: 16,
+                    L3: 16,
                     nb_tiles_A: 8
                 }
+                { // L3>seqLenUnroll: l3-tiled on-chip (l3_tile=16 -> nb_l3=2)
+                    name: CS fft A
+                    force: true
+                    seqLen: 32768
+                    dModel: 1 // x 96
+                    L1: 64,
+                    L2: 16,
+                    L3: 32,
+                    nb_tiles_A: 1
+                    l3_tile: 16
+                }
+                // CS fft C (seqLen 2048, L3=8) is unsupported here: L3 < seqLenUnroll(=16)
+                // cannot be l3-tiled (l3_tile must be a multiple of seqLenUnroll). Run it as a
+                // 2-way FFT via the `fft-tiled` app instead.
             ]
         }
         {
@@ -564,6 +510,7 @@
             params: [
                 {
                     name: CS fft A
+                    force: true
                     seqLen: 32768
                     dModel: 1 // x 96
                     L1: 64,
@@ -574,7 +521,7 @@
                     nb_ntile: 4
                 }
                 // {
-                //     name: CS fft A 64k
+                //     name: CS  A 64k
                 //     seqLen: 65536
                 //     dModel: 1
                 //     L1: 64,
@@ -587,14 +534,15 @@
             ]
         }
         {
-            app: osgemm-tiled
+            app: isgemm-tiled
             params: [
                 // ImageNet
                 // Sizes D
                 {
                     name: IN fft D
+                    force: false
                     dim0: 48
-                    dim1: 512
+                    dim1: 528
                     dim2: 528
                     nb_tiles: 11
                 }
@@ -603,13 +551,13 @@
         {
             // Downsample (inter-stage patch-embed): a dense 3x3 stride-2 Conv2d, mapped as im2col GEMM
             //   seqLen = L_out (= L_in / 4, stride 2)   dModel = K = 9 * C_in (3x3 kernel)   dInner = N = C_out
-            app: is-osgemm-tiled
+            app: double-gemm-conflict-free
             params: [
                 // ImageNet
                 { // 96 -> 192
                     name: IN downsample A
                     force: false
-                    seqLen: 196 // 2x
+                    seqLen: 96 // 4x
                     dModel: 864 // = 9 * 96
                     dInner: 192
                     nb_tiles: 8
@@ -617,44 +565,25 @@
                 { // 192 -> 384
                     name: IN downsample B
                     force: false
-                    seqLen: 96 // 1x
+                    seqLen: 48 // 2x
                     dModel: 1728 // = 9 * 192
                     dInner: 384
-                    nb_tiles: 8
+                    nb_tiles: 16
                 }
+
+            ]
+        }
+        {
+            app: conv-downsample
+            params: [
                 { // 384 -> 512
                     name: IN downsample C
                     force: false
-                    seqLen: 24 // 1x
+                    seqLen: 16 // 2x
                     dModel: 3456 // = 9 * 384
                     dInner: 528
-                    nb_tiles: 11
-                }
-                // Cityscapes
-                { // 96 -> 192
-                    name: CS downsample A
-                    force: false
-                    seqLen: 128 // 32x
-                    dModel: 864 // = 9 * 96
-                    dInner: 192
-                    nb_tiles: 8
-                }
-                { // 192 -> 384
-                    name: CS downsample B
-                    force: false
-                    seqLen: 64 // 16x
-                    dModel: 1728 // = 9 * 192
-                    dInner: 384
-                    nb_tiles: 8
-                }
-                { // 384 -> 512
-                    name: CS downsample C
-                    force: false
-                    seqLen: 32 // 8x
-                    dModel: 3456 // = 9 * 384
-                    dInner: 528
-                    nb_tiles: 11
-                }
+                    nb_tiles: 18
+                },
             ]
         }
         {
@@ -690,65 +619,46 @@
                     nb_tiles: 3 // L_tile=16
                 }
                 // Cityscapes
-                {
-                    name: CS rms A
-                    force: false
-                    seqLen: 32768
-                    dModel: 96
-                    nb_tiles: 128 // L_tile=256
-                }
-                {
-                    name: CS rms B
-                    force: false
-                    seqLen: 8192
-                    dModel: 192
-                    nb_tiles: 64 // L_tile=128
-                }
-                {
-                    name: CS rms C
-                    force: false
-                    seqLen: 2048
-                    dModel: 384
-                    nb_tiles: 16 // L_tile=128
-                }
-                {
-                    name: CS rms D
-                    force: false
-                    seqLen: 512
-                    dModel: 512
-                    nb_tiles: 8 // L_tile=64
-                }
+                // {
+                //     name: CS rms A
+                //     force: false
+                //     seqLen: 32768
+                //     dModel: 96
+                //     nb_tiles: 128 // L_tile=256
+                // }
+                // {
+                //     name: CS rms B
+                //     force: false
+                //     seqLen: 8192
+                //     dModel: 192
+                //     nb_tiles: 64 // L_tile=128
+                // }
+                // {
+                //     name: CS rms C
+                //     force: false
+                //     seqLen: 2048
+                //     dModel: 384
+                //     nb_tiles: 16 // L_tile=128
+                // }
+                // {
+                //     name: CS rms D
+                //     force: false
+                //     seqLen: 512
+                //     dModel: 512
+                //     nb_tiles: 8 // L_tile=64
+                // }
             ]
         }
-        // ---- Stubs: no implementing app exists yet ----
-        // Residual (residual-tiled): no `residual` app in sw/apps. Sizes mirror the RMS rows.
-        // {
-        //     app: residual-tiled
-        //     params: [
-        //         // ImageNet
-        //         { name: IN residual A, seqLen: 3136, dModel: 96 }
-        //         { name: IN residual B, seqLen: 784,  dModel: 192 }
-        //         { name: IN residual C, seqLen: 192,  dModel: 384 }
-        //         { name: IN residual D, seqLen: 48,   dModel: 512 }
-        //         // Cityscapes
-        //         { name: CS residual A, seqLen: 32768, dModel: 96 }
-        //         { name: CS residual B, seqLen: 8192,  dModel: 192 }
-        //         { name: CS residual C, seqLen: 2048,  dModel: 384 }
-        //         { name: CS residual D, seqLen: 512,   dModel: 512 }
-        //     ]
-        // }
+
         {
-            // Segformer conv (Cityscapes): a dModel(D) -> Co=512 projection, run via the
-            // is-osgemm os-phase GEMM. dInner = Co = 512 padded to 528 (multiple of 24).
-            // seqLen/dModel/dInner = the (L, D, D2) run params from the sheet.
-            app: is-osgemm-tiled
+            app: double-gemm-conflict-free
             params: [
                 {
                     name: CS segformer A
                     force: false
                     seqLen: 128 // x256 -> 32768
                     dModel: 96
-                    dInner: 528 // Co=512 padded to mult of 24
+                    dInner: 528
                     dtRank: 24
                     nb_tiles: 11
                 }
@@ -782,11 +692,24 @@
                 {
                     name: CS segformer E
                     force: false
-                    seqLen: 64 // x512 -> 32768
+                    seqLen: 32 // x1024 -> 32768
                     dModel: 2048
                     dInner: 528
                     dtRank: 24
-                    nb_tiles: 11
+                    nb_tiles: 22
+                }
+            ]
+        }
+        {
+            // SegFormer head BatchNorm+ReLU
+            // Channels is always the same (512). SeqLen corresponds to layers A,B,C,D,A -> total = 76288 = 128 * 596
+            app: batchnorm
+            params: [
+                {
+                    name: CS batchnorm
+                    force: false
+                    seqLen: 128 // x596
+                    channels: 528
                 }
             ]
         }

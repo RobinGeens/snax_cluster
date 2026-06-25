@@ -1,0 +1,6 @@
+{
+    seqLen: 16
+    dModel: 3456   // K = kernel^2 * Cin = 9 * 384 (reduction, tiled)
+    dInner: 528
+    nb_tiles: 18   // tiles along the reduction K = dModel. K_tile = 192, K_t = 8.
+}

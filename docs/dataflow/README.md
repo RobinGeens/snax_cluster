@@ -10,7 +10,9 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 This folder describes, for every program under
 [target/snitch_cluster/sw/apps/](../../target/snitch_cluster/sw/apps/), the
@@ -41,6 +43,8 @@ design.
 | `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel | ??? |
 | `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | ??? |
 | `is-osgemm-tiled-async` | Both async rings live at once (A-input refill + PSUM spill/reload), double-paced | [9](09_async_tiling.md) |
+| `double-gemm-conflict-free` | `is-osgemm-tiled`'s parallel OS+IS GEMMs with a bank-partitioned skip-128 layout (OS → banks 0-15, IS → banks 16-31), eliminating cross-core bank contention | [20](20_double_gemm_conflict_free.md) |
+| `conv-downsample` | 3×3 stride-2 Conv2d (SiMBA downsample) as an im2col GEMM, IS-core tiled over the reduction axis `dModel = 9·Cin` | [21](21_conv_downsample.md) |
 
 ### SIMD / normalization
 
@@ -63,7 +67,8 @@ design.
 | `P2-tiled-D` | P2 alone, dInner-tiled | [4](04_mamba_main.md) |
 | `suc-only` | Stand-alone SUC probe / `BC` bank-conflict demo | [4](04_mamba_main.md) |
 | `SUC-tiled` | SUC only, dInner-tiled | [4](04_mamba_main.md) |
-| `SUC-async` | SUC only, async rings on `BC`, `x`, `z`, `y` (`dt` full) | [12](12_suc_async.md) |
+| `suc-async` | SUC only, async rings on `BC`, `x`, `z`, `y` (`dt` full) | [12](12_suc_async.md) |
+| `suc-async-dt` | `suc-async` plus an async `dt` ring; for the largest `seqLen` | [12](12_suc_async.md) |
 | `P2-async-OS-no-IS` | P2 minus the IS-core; `oscore_in` async input ring | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
 
 ### FFT
@@ -82,6 +87,7 @@ design.
 | `einfft` | Un-tiled 2-layer EinFFT MLP (OS-core matmuls + SIMD fuse) | [6](06_einfft_mlp.md) |
 | `einfft-tiled` | Same, OS-core **N-axis** tiled (per-tile SIMD fuse) | [6](06_einfft_mlp.md) |
 | `einfft-tiled-is-osgemm` | Splits the 4 matmuls by complex side across OS + IS cores (`IS_OSGEMM`) | [6](06_einfft_mlp.md#69-dual-core-variant-einfft-tiled-is-osgemm) |
+| `einfft-double-conflictfree` | Same, with the skip-128 bank partition (OS real side → banks 0-15, IS imag side → banks 16-31) so the two cores' GEMM streamers never collide | [20](20_double_gemm_conflict_free.md#the-same-partition-applied-to-einfft-mlp) |
 
 ### VMamba SS2D
 

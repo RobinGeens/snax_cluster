@@ -97,12 +97,14 @@ class AccelEngine {
 
     // ---- SUC: R7 dt_BC (manual per-lane) + R10(z) -> scan -> W2(y) ----
     static const int NCH7 = 4, RPR = 4, delaySU = 4;   // R7 lanes, BC-refresh groups, SUC FMA delay
-    // R7's request + data FIFO depth, taken from the ONE streamer-depth source (snax_streamer_depth(R7)
-    // = fifo_depth[7] in snax_simbacore_cluster.hjson) and set in configure() — exactly like the generic
-    // CycReader (data_depth = addr_depth = fd) uses for every other reader. NOT a hardcoded constant: a
-    // too-deep value over-hides concurrent-DMA blocks on the SUC's critical dt_BC refresh (that was the
-    // old DATA_D=8, which summed responser+dataBuffer and under-counted suc-async DMA contention ~13%).
-    int r7_fifo_d_ = 4;
+    // R7 dt_BC FIFOs, split exactly as the RTL (and cyc_suc_duration ADDR_D/DATA_D): the request-side
+    // ADDRESS FIFO = fifo_depth[7] (snax_simbacore_cluster.hjson) bounds OUTSTANDING requests -> this is
+    // what exposes concurrent-DMA blocks on the SUC's critical refresh (keep it shallow). The response-
+    // side DATA read-ahead = responser + dataBuffer = 2x that (how far landed data leads the consumer) ->
+    // buffering, deeper. The earlier flat DATA_D=8 regressed suc-async because it ALSO deepened the
+    // outstanding window; splitting addr(4)/data(8) keeps DMA exposure while matching RTL buffering.
+    int r7_fifo_d_ = 4;   // addr FIFO (outstanding requests) = fifo_depth[7]
+    int r7_data_d_ = 8;   // data read-ahead = responser + dataBuffer = 2 * fifo_depth[7]
     int32_t r7ts_[4] = {0, 0, 0, 0};
     int r7eb_[4] = {1, 1, 1, 1};
     long issued_[NCH7] = {0}, landed_[NCH7] = {0};
@@ -126,6 +128,12 @@ class AccelEngine {
     CycWriter w3_;
     long as_is_ = 0, tiles_is_ = 0;
     long is_owed_ = 0;  // isCore output groups computed but not yet pushed into W3 (back-pressure)
+    // isCore is input-stationary (VersaCore K_M_N): A=y (R11) serial-loaded once per (k,m) tile over
+    // serDesA_ beats (Mu*Ku fp8 / 8 B/beat = 48) with the ARRAY IDLE, then reused for dFinal output
+    // columns; B=weight (R12) + psum (R13/W3 RMW) every compute step. isc_aload_ = remaining A-load
+    // beats; isc_since_a_ = compute steps into the current A-tile (reload at dFinal). (StaticVersaCoreParams
+    // serDesFactorA; VersaCore.scala address advances every serDesA_+dFinal cycles.)
+    long serDesA_ = 0, isc_aload_ = 0, isc_since_a_ = 0;
 
     // ---- SIMD (kind_=5): arbitrary enabled reader/writer ports -> implicit SimdCore -> writers ----
     // Generic per-port streamers (indexed by port), distinct from the named GEMM/SUC members above so a

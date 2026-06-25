@@ -208,7 +208,7 @@ void SimWorld::run_invocation(uint64_t at) {
     // form. beat_period_l3 = measured L3 rate (~4 cyc/64B beat). MEMSIM_DMA_PERIOD overrides the period;
     // =0 disables the engine (debug only -> falls back to the dma_cycles approximation).
     dma_engine_on_ = true;
-    inv_dma_.beat_period_l3 = 4;
+    inv_dma_.beat_period_l3 = 1;  // calib dma_cost_per_beat_cc=1.0 (was 4)
     if (const char* e = std::getenv("MEMSIM_DMA_PERIOD")) {
         int p = atoi(e);
         if (p > 0) inv_dma_.beat_period_l3 = p;
@@ -307,7 +307,10 @@ void SimWorld::run_invocation(uint64_t at) {
                 // DMA still in flight at invocation start (the dma_ov prefetch tail): ground its real
                 // superbank for the remaining cycles, so initial DMA contention emerges like live DMA.
                 if (dma_busy_until_ > accel_start_ && dma_busy_addr_) {
-                    long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;  // L3 beat period = 4
+                    long ovb = (long)(dma_busy_until_ - accel_start_);  // L3 beat period = 1 (calib per-beat=1)
+                    if (std::getenv("MEMSIM_ENGDBG"))
+                        std::fprintf(stderr, "  [GROUND] P2 initial DMA grounding=%ld cyc (sb of addr %08x)\n",
+                                     ovb, dma_busy_addr_);
                     engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
                 }
             }
@@ -336,7 +339,7 @@ void SimWorld::run_invocation(uint64_t at) {
             accel_end_     = accel_start_ + 1000000000ULL;  // sentinel until advance_to completes it
             t_oscore_done_ = t_suc_start_ = t_suc_done_ = accel_start_;
             if (dma_busy_until_ > accel_start_ && dma_busy_addr_) {  // prefetch tail in flight at start
-                long ovb = ((long)(dma_busy_until_ - accel_start_) + 3) / 4;  // L3 beat period = 4
+                long ovb = (long)(dma_busy_until_ - accel_start_);  // L3 beat period = 1 (calib per-beat=1)
                 engine_.dma_enqueue(dma_busy_addr_, (uint32_t)(ovb * 64), true, 0);
             }
         } else {  // degenerate (M_i<=0 etc.): strict serialize from the stage duration
@@ -992,6 +995,14 @@ void SimWorld::advance_to(uint64_t t) {
             std::fprintf(stderr, "  [ENGDONE] busy=%llu osc_end=%u suc(%u..%u) isc(%u..%u) | suc_span=%d isc_tail=%d\n",
                          (unsigned long long)rr.busy, rr.osc_end, rr.suc_start, rr.suc_end, rr.isc_start, rr.isc_end,
                          (int)rr.suc_end - (int)rr.suc_start, (int)rr.isc_end - (int)rr.suc_end);
+            if (!rr.r10_fire.empty()) {
+                size_t n = rr.r10_fire.size();
+                std::fprintf(stderr, "  [R10FIRE] n=%zu  t0=%u t1=%u t8=%u t9=%u tlast=%u | d(0->1)=%d d(8->9)=%d d(last2)=%d\n",
+                             n, rr.r10_fire[0], n>1?rr.r10_fire[1]:0, n>8?rr.r10_fire[8]:0, n>9?rr.r10_fire[9]:0,
+                             rr.r10_fire[n-1], n>1?(int)rr.r10_fire[1]-(int)rr.r10_fire[0]:0,
+                             n>9?(int)rr.r10_fire[9]-(int)rr.r10_fire[8]:0,
+                             n>1?(int)rr.r10_fire[n-1]-(int)rr.r10_fire[n-2]:0);
+            }
         }
         if (Fabric::h_on) Fabric::hist_dump(phase2_ ? "P2-tile" : "engine");
     }

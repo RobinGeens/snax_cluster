@@ -76,6 +76,8 @@ class DataGenerator(DataGeneratorBase):
             # one x tile
             "R7_x": bounds_and_strides_LtD,
             "W3_x": bounds_and_strides_LtD,
+            # x + y residual add (y streamed full-tile, same layout as x)
+            "R13_y": bounds_and_strides_LtD,
             # processing the per-row RMS vector (one tile)
             "R7_rms": bounds_and_strides_Lt,
             "W3_rms": bounds_and_strides_Lt,
@@ -107,8 +109,8 @@ class DataGenerator(DataGeneratorBase):
             "L_tile": Lt,
         }
 
-        # Golden data (full L x D). x/weight DMA'd from L3; out is the golden output.
-        test_data = {name: "uint16_t" for name in ("x", "weight", "out")}
+        # Golden data (full L x D). x/y/weight DMA'd from L3; out is the golden output (rmsnorm(x)*weight + y).
+        test_data = {name: "uint16_t" for name in ("x", "y", "weight", "out")}
         tests = {
             "expected": L * D,
         }
