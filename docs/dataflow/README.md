@@ -11,6 +11,9 @@
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
 > [9. Async tiling](09_async_tiling.md) ·
+> [10. Memory simulator](10_memsim.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
 > [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
 > [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
@@ -52,6 +55,7 @@ design.
 | --- | --- | :---: |
 | `simd` | Coverage test of every BF16 / FP8 SIMD op | [3](03_simd_kernels.md) |
 | `rmsnorm` | RMSNorm fused into 6 SIMD launches | [3](03_simd_kernels.md) |
+| `rmsnorm-tiled` | RMSNorm seqLen-tiled for long sequences (per-launch overhead dominated) | [14](14_rmsnorm_tiled.md) |
 | `batchnorm` | Folded BatchNorm + ReLU (`ReLU(x·scale + shift)`) in 2 SIMD passes; SegFormer ConvModule tail | [3](03_simd_kernels.md) |
 
 ### Mamba main
@@ -78,7 +82,11 @@ design.
 | `fft` | 2-way EinFFT partitioned DFT | [5](05_fft.md) |
 | `fft-tiled` | 2-way DFT, Phase A dModel-tiled + Phase B K-tiled | [5](05_fft.md) |
 | `fft-3way` | 3-way partitioned DFT | [5](05_fft.md) |
-| `fft-3way-tiled` | 3-way DFT, per-phase tiling (dModel / un-tiled / K) | [5](05_fft.md) |
+| `fft-3way-tiled` | 3-way DFT, outer dModel-tile + inner l3-tile loop (`L3 > seqLenUnroll`), all on-chip | [5](05_fft.md) |
+| `fft-3way-tiled-async` | 3-way DFT streaming the `L3` axis through L3 (H2 + psum) for long sequences | [5](05_fft.md) |
+| `fft-3way-L8` | 3-way DFT with a factor-8 axis (`L3 < seqLenUnroll`), via `m3` padding | [5](05_fft.md) |
+| `fft-4way` | 4-way partitioned DFT (kernel-validation harness, every buffer resident) | [5](05_fft.md) |
+| `fft-4way-tiled-async` | 4-way DFT, l3-streamed (staging DMA does the reorder2 `m3↔m4` transpose) | [5](05_fft.md) |
 
 ### EinFFT MLP
 

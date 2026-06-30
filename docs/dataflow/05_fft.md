@@ -1,4 +1,4 @@
-# 5. FFT family: `fft`, `fft-tiled`, `fft-3way`, `fft-3way-tiled`
+# 5. FFT family: `fft`, `fft-tiled`, `fft-3way`, `fft-3way-tiled(-async)`, `fft-4way(-tiled-async)`
 
 > **All pages:**
 > [README](README.md) ·
@@ -125,21 +125,23 @@ All buffers fit in TCDM at once; no L3 spill.
 
 `dModel` is the independent batch axis of every partition (`N_i = dModel·…`,
 weights/twiddles broadcast over `d`). So instead of tiling each phase
-differently, the **whole un-tiled `fft-3way` kernel is run once per dModel-slice**
+differently, the **whole `fft-3way` kernel is run once per dModel-slice**
 of `dM = dModel/nb_tiles_A` channels. Every intermediate buffer shrinks to
-`1/nb_tiles_A` and the 5-step pipeline runs entirely in TCDM per slice — no
-inter-phase L3 spill. This replaced the earlier per-phase regime (Phase A
-dModel-tiled, B un-tiled, C K-tiled), whose *full* Phase-B/C buffers
-(`partition{2,3}_out` are full BF16 activations = `~32 KiB · dModel`) blew past
-the 512 KiB TCDM for any realistic `dModel` (e.g. 3072 KiB at `dModel=96`).
+`1/nb_tiles_A` and the pipeline runs entirely in TCDM per slice — no
+inter-phase L3 spill. (A per-phase regime — Phase A dModel-tiled, B un-tiled, C
+K-tiled — would keep *full* Phase-B/C buffers (`partition{2,3}_out` are full BF16
+activations = `~32 KiB · dModel`) that blow past the 512 KiB TCDM for any realistic
+`dModel`, e.g. 3072 KiB at `dModel=96`.)
 
 Per outer slice (`nb_tiles_A` = number of slices, must divide `dModel`):
 
-1. DMA the slice's `dM` input channels in (`dft_in` is d-major, so a slice is one
-   contiguous chunk).
+1. For each l3-tile, DMA-gather the tile's input + twiddles into contiguous
+   tile-local buffers (for `nb_l3 = 1` this is the whole `dM`-channel slice).
 2. Run the 5-step kernel (partition1 → hadamard1 → reorder1 → partition2 →
-   hadamard2 → reorder2 → partition3) on `dM`-sized buffers — descriptors are the
-   un-tiled `fft-3way` descriptors with `dModel → dM`.
+   hadamard2 → reorder2) per l3-tile, assembling the full `[re|im]` H2; then run
+   **partition3** as a K-tiled (over `nb_l3`) accumulation reading that H2.
+   Descriptors are the un-tiled `fft-3way` descriptors with `dModel → dM`,
+   `L3 → l3_tile`.
 3. **Scatter** `partition3_out` into its d-slice of the full L3 output. The output
    is flattened `K_M_N` (`d` outer in the column axis, `Mu = seqLenUnroll`), so a
    d-slice is `M_3 = 2·L3/seqLenUnroll` strided row-blocks, **not** one contiguous
@@ -149,25 +151,29 @@ Per outer slice (`nb_tiles_A` = number of slices, must divide `dModel`):
    **not** `length_partition3_out / M_3`: `partition3_out`'s final type is FP8, which
    the IS-core zero-pads to the BF16 psum footprint (`padWithZeros`), so each
    per-slice buffer is `[real | zeros]` and the padded length is 2× the real data.
-   Dividing the padded length by `M_3` makes each block straddle two `m2` row-blocks
-   and scrambles `d` vs `m2` — that was the original 22/25-failure bug.
+   Dividing the padded length by `M_3` would make each block straddle two `m2` row-blocks
+   and scramble `d` vs `m2`.
 
 The full output is assembled in L3 and verified there (scalar reads).
 
-**TCDM footprint / `nb_tiles_A`.** Each slice uses **dedicated right-sized buffers**
-(not two max-sized ping-pong slots): one BF16 partition psum `P` (`slot_size =
-2·L·dM·2`, reused in turn by all three partition gemms), two FP8 hadamard scratch
-buffers `H1`/`H2` (each `slot_size/2` — FP8 is half the BF16 partition), and one FP8
-input. Peak ≈ `always_live + 2·L·dM·2 + 2·(L·dM) + L·dM`; at `L=4096` this fits TCDM
-for `dM ≤ 12`, so **`nb_tiles_A ≥ ceil(dModel/12)`** (e.g. `dModel=96 → nb_tiles_A=8,
-dM=12`, ~445 KiB). `nb_tiles_A=1` (no slicing) is exact but only fits small `dModel`.
+**TCDM footprint.** Stages 1-4 use **tile-local** buffers (one l3-tile at a time):
+gathered `in_tile`/`tw1_tile`/`tw2_tile`, a BF16 per-tile psum `P_tile`
+(`slot_size_tile = 2·Lt·dM·2`, reused by gemm1/2), and two FP8 hadamard scratch
+buffers `H1`/`H2` (each `slot_size_tile/2`). The assembled full **H2**
+(`2·L·dM` FP8) is resident from stages 1-4 into partition3. Partition3's psum
+**P3** (full BF16, `2·L·dM·2`) overlays the now-dead stages-1-4 scratch, so
+`peak = weights + full_H2 + max(stages-1-4 scratch, P3)`. The footprint shrinks with
+`nb_tiles_A` (smaller `dM`) and with `nb_l3` (smaller per-tile scratch). The
+build's memory model asserts `P3 ≤ stages-1-4 scratch` (P3 must fit the overlay).
 
 | Tensor | Lifetime | Notes |
 | --- | --- | --- |
-| `weight1/2/3`, `twiddles1/2` | all slices | **shared** — preloaded once, broadcast over `d` |
-| `in` | per slice | FP8 input; gemm1's R12 |
-| `P` (partition psum) | per slice | BF16 `slot_size`; gemm1→cmul1, gemm2→cmul2, gemm3→scatter |
-| `H1` (CMul out), `H2` (reorder out) | per slice | FP8 `slot_size/2` each |
+| `weight1/2/3` | all slices | **shared** — preloaded once, broadcast over `d` |
+| `in_tile`, `tw1_tile`, `tw2_tile` | per l3-tile | gathered from `dft_in`/`twiddles` |
+| `P_tile` (partition psum) | per l3-tile | BF16 `slot_size_tile`; gemm1→cmul1, gemm2→cmul2 |
+| `H1` (CMul out), `H2` (reorder out) | per l3-tile | FP8 `slot_size_tile/2` each |
+| `H2_full` (`[re|im]` partition-3 input) | stages 1-4 → partition3 | FP8 `2·L·dM`, assembled on-chip |
+| `P3` (partition-3 psum) | partition3 | BF16 `2·L·dM·2`, overlays dead stage scratch |
 | `output` (full `partition3_out`) | L3 | assembled by the per-slice 2-D scatter |
 
 **Latency hiding (DMA + CSR).** Right-sizing the FP8 scratch frees the headroom for
@@ -198,9 +204,7 @@ transposer/W3), not a SW one.
 is **exact**: the per-slice kernel is the un-tiled `fft-3way` kernel run on `dM`
 channels, and every quantization (BF16 partitions, FP8 hadamards/output) is
 per-element — no scale depends on the `dModel` grouping — so a slice's bytes equal
-the same channels of the full-`dModel` run for any `nb_tiles_A`. (An earlier note
-here blamed a "coarser per-`dM` requant scale"; that was wrong. The 22/25 failures
-were the scatter zero-pad bug above, not quantization.)
+the same channels of the full-`dModel` run for any `nb_tiles_A`.
 
 The small residual (`dModel=96` `dM=12` → ~2/25) is the FFT DFT kernel's intrinsic
 HW-vs-Scala-model FP8 rounding floor: many FFT outputs are near-zero and land on
@@ -234,8 +238,86 @@ The key structural fact: `m3` (the `L3` axis) is a batch factor for partitions 1
    order, contiguous K-chunks pair correctly. Then scatter the chunk to the L3 output.
 
 So only one `l3`-tile of stages-1–4 scratch, one gathered `N`-tile of `H2`, and one `N`-tile
-of the partition-3 psum are ever resident. Peak ≈ `weights + in_tile + tw1_tile + tw2_tile +
-P_tile + 2·H_tile + h2_ntile + P3_ntile` (all in `memory_model.py`).
+of the partition-3 psum are ever resident. Partition 3 runs only after stages 1–4 finish for a
+slice, so its buffers (`h2_ntile`, `P3`) overlay the by-then-dead stages-1–4 scratch (in
+`src/fft.c`, `ptr_h2ntile = ptr_in`). Peak ≈ `weights + max(in_tile + tw1_tile + tw2_tile +
+P_tile + 2·H_tile, h2_ntile + P3_ntile)` (all in `memory_model.py`).
+
+## `fft-3way-L8` (3-way with a factor-8 axis, `L3 < seqLenUnroll`)
+
+`fft-3way-tiled` needs every `Lx` a multiple of `seqLenUnroll` (=16). `fft-3way-L8` adds an
+`L3 < 16` axis (e.g. `seqLen = 2048 = 16·16·8`, `L3 = 8`) by **padding `m3`**: stages 1–2 run
+at `L3t = seqLenUnroll = 16` with the real `L3` m3 gathered into pre-zeroed buffers, so the
+`(16-L3)` pad m3 stay zero through the linear DFT+twiddle stages and the real results land at
+m3 `0..L3-1`. Then the real `L3` partition-3 `B` is extracted from the `L3t=16` reorder2 output
+and partition 3 runs at the real `L3` (a plain GEMM, fine at any size). `nb_l3 = 1` in this mode.
+
+Two `L3 < seqLenUnroll`-specific points (both no-ops for `L3 ≥ 16`, so the other 3-way apps are
+unchanged):
+
+1. **twiddles2 padding.** `twiddles2` is written via `simdInterleaveRealImag`, which groups 16
+   lanes; with only `L3` m3 per `k2` it would pack `16/L3` different `k2` into one group and the
+   per-`k2` gather would mis-read it. So the generator pads each `k2` row's m3 to `seqLenUnroll`
+   (zeros) before interleaving — one `k2` per group again. (`twiddles1`/`hadamard1` are unaffected
+   because tw1's index mixes m3 with m2.)
+2. **B extract.** At `L3t=16` partition-3 sees `K=2`, so reorder2 emits `B` region-split
+   `[re region | im region]`, each a per-`N` block of `L3t` m3 (`L3` real + pad), `N`-stride
+   `L3t`. The real `B` (`K=1`) is `[N][L3 re, L3 im]` interleaved (`N`-stride `2·L3`). The extract
+   copies the first `L3` re-m3 (re region) and `L3` im-m3 (im region at `+Lt·dM`) into each packed
+   real `N`-group.
+
+Passes the FP8 floor at `L3=8`. Only `L3` can take the small factor: `L1` must be a multiple of
+`seqLenUnroll`, and `L2 < 16` hangs (the gemm2 `B`-reorder needs an `m2`-block of 16).
+
+## `fft-4way` (4-way, `L = L1·L2·L3·L4`)
+
+Generalises `fft-3way` to four sub-DFTs with three twiddles between them: `partition1 →
+hadamard1 → reorder1 → partition2 → hadamard2 → reorder2 → partition3 → hadamard3 → reorder3 →
+partition4`. Partitions 1–3 are bank-transposed (`ISGEMM_SQ_TRANSPOSE`, each feeds the next
+SIMD CMul); partition4 is plain (host-read output). Index conventions and twiddles are the
+recursive extension of the 3-way (see `memory_layouts/09_fft.md` §9.15).
+
+**Contraction-order chip layout.** The single design idea that makes this work: lay out the
+trailing axes `(m2, m3, m4)` in *contraction order* — `m2` innermost, then `m3`, then `m4` —
+in the on-chip byte layout (the host `dft_in` is pre-shuffled by datagen, the chip never
+shuffles). Then partition2 contracts `m2`, partition3 contracts `m3`, partition4 contracts
+`m4`, and each contracted axis is the innermost of the trailing group at its stage. Stages 1–2
+keep both `m3,m4` in the trailing, so their chip layout uses the combined `jc = m4·L3 + m3`
+(m3 inner) which maps to the math index `jm = m3·L4 + m4`; stages 3–4 have only `m4` left.
+
+**reorder2 needs a transpose.** reorder1 and reorder3 are plain block-swap deinterleaves (the
+contracted axis is already innermost, so the SIMD NOOP just splits re/im). reorder2 is the
+exception: partition3 contracts `m3`, but after partition2/cmul2 the data has `m4` innermost, so
+`m3` must be gathered to the K-axis — an `m3↔m4` transpose. The bank-based streamers cannot do
+this (a bank is a fixed run of contiguous bytes; a transpose needs a strided scatter). The
+un-tiled `fft-4way` does it as a scalar C loop (it is a kernel-validation harness, not a
+performance target); the async variant folds it into the L3-staging DMA (which *can* scatter),
+exactly as the 3-way async stages H2 with its re/im split.
+
+`fft-4way` keeps every buffer resident, so it only fits small `dModel` at the minimum valid
+`L = 8192` (`L1=16, L2=L3=L4=8`); use it to validate the kernel. Residual sim errors are the
+FFT FP8 rounding floor (near-zero outputs landing on FP8 boundaries), cascaded across four
+partitions — same nature as the 3-way's `~2/25` floor.
+
+## `fft-4way-tiled-async` (l3-streamed, for `L = 16⁴` and beyond)
+
+The dModel-tile alone cannot fit `L = 65536`: it only slices `dM` and leaves the L-proportional
+buffers (`twiddles1 ≈ 2·L`, the BF16 partition psum `≈ 4·L·dM`, two FP8 hadamards `≈ 2·L·dM`)
+intact — peak `≈ 717 KiB > 512 KiB` even at `dM=1`. The async streams `m3` (the partition-3
+contraction) exactly like `fft-3way-tiled-async`: stages 1–2 run per `l3`-tile on gathered
+tile-local buffers, and each tile's hadamard2 is staged to L3. The crucial 4-way addition is
+that this **staging DMA performs the reorder2 `m3↔m4` transpose** (it writes the tile's hadamard2
+into the L3 `m3`-major / `[re|im]` regions), so no on-chip transpose is needed. Partition3 then
+reads full-`m3` from L3 (N-tiled over `(a, m4)`, K-tiled over `m3`), and `cmul3 → reorder3 →
+partition4` (contracts `m4`, already innermost) run per N-tile before the output scatter.
+
+**reorder2 / reorder3 regimes.** Both deinterleave the cmul re/im into the next partition's
+K-blocks, in HW, picked by the contracted axis length:
+- axis `== 16` (`= seqLenUnroll`): re/im split into K-blocks via two DMA gathers (`Lx`-byte
+  chunks at `2·Lx` source stride).
+- `2·axis ≤ 16` (`K = 1`): the split degenerates to the block-swap SIMD NOOP (reuses
+  reorder1's `R7_2B/W3_2B`), writing the N-major next-partition input directly.
 
 **Factorisation limits.** `L1` is a multiple of 16; `L3 ≤ 32` (`2·L3 ≤ 64`, one square tile), l3-tiled at `l3_tile=16`. **`L2 ≤ 16`:
 `L2 > 16` in is unsupported.
+

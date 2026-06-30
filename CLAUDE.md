@@ -64,6 +64,28 @@ already there?" If yes, link to it instead of re-explaining.
 
 When writing an explanation, do NOT put arbitrary words in ALL CAPS.
 
+### Comment hygiene — keep code comments thin
+
+Source comments rot into "AI slop": every intermediate thought, derivation, and
+debugging note gets appended until the file is unreadable. Prevent it:
+
+- **A comment says *what* the code does, tersely — not *why the design is what it is*.**
+  Design rationale, layout/stride derivations, tiling choices, and footprint math live in
+  the docs (`docs/dataflow/`, `memory_layouts/`) and nowhere else. A one-line label per
+  step/streamer/section plus inline annotations for opaque magic numbers is enough.
+- **Never reference the docs from inside the code body.** A single docs pointer belongs in
+  the file's top header comment, at most. No `See docs/...` scattered through the code.
+- **No process or history in comments**, ever: no changelog ("this replaced…", "the old
+  22/25-failure bug"), no corrections of earlier notes ("an earlier note blamed…"), no
+  validation logs ("verified offline", "see scratchpad/…", "(vsim, <date>)"), no
+  memory-note slugs or source-symbol citations as breadcrumbs. If it isn't needed to read
+  the code as it stands now, delete it.
+- **Don't restate the same explanation in multiple files.** If two comments say the same
+  thing, both are wrong — the fact has one home (the docs).
+
+This applies to docs too: docs describe the *current* state, not a changelog. No dates, no
+"earlier we did X", no correction-of-past-notes paragraphs.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**

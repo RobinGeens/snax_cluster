@@ -3,8 +3,8 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled 3-way partitioned EinFFT (L = L1*L2*L3) with an extra l3-tile loop.
-// See docs/dataflow/05_fft.md.
+// Tiled 3-way partitioned EinFFT with a factor-8 axis on L3 (L = L1*L2*L3).
+// See docs/dataflow/05_fft.md "fft-3way-L8".
 
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"
@@ -12,40 +12,40 @@
 static inline uint32_t align64(uint32_t x) { return (x + 63u) & ~63u; }
 
 // --- l3-tile gathers from DRAM into contiguous tile-local buffers ---
+// _copy = real bytes fetched, _slot = padded dst stride (equal unless pad-m3).
 // in_tile: per k1-tile, copy slice s / l3-tile lt's m3-block (repeat over d).
 static inline void gather_in_tile(uint8_t* dst, uint32_t s, uint32_t lt) {
     for (uint32_t kt = 0; kt < M6_in_ktile_count; kt++) {
-        uint8_t* src = M6_dft_in + kt * M6_in_ktile_stride + s * M6_in_slice_chunk + lt * M6_in_gather_chunk;
-        snrt_dma_start_2d(dst + kt * M6_in_gather_dst_ktile, src, M6_in_gather_chunk,
-                          /*dst_stride=*/M6_in_gather_chunk, /*src_stride=*/M6_in_gather_d_stride,
+        uint8_t* src = M6_dft_in + kt * M6_in_ktile_stride + s * M6_in_slice_chunk + lt * M6_in_gather_copy;
+        snrt_dma_start_2d(dst + kt * M6_in_gather_dst_ktile, src, M6_in_gather_copy,
+                          /*dst_stride=*/M6_in_gather_slot, /*src_stride=*/M6_in_gather_d_stride,
                           /*repeat=*/M6_dModel_slice);
     }
 }
 // twiddles1 (k1, j=m3*L2+m2): gather the tile's m3 j-block per k1 row.
 static inline void gather_tw1(uint8_t* dst, uint32_t lt) {
-    snrt_dma_start_2d(dst, M6_twiddles1 + lt * M6_tw1_gather_chunk, M6_tw1_gather_chunk,
-                      /*dst_stride=*/M6_tw1_gather_chunk, /*src_stride=*/M6_tw1_gather_src_stride, /*repeat=*/L1);
+    snrt_dma_start_2d(dst, M6_twiddles1 + lt * M6_tw1_gather_copy, M6_tw1_gather_copy,
+                      /*dst_stride=*/M6_tw1_gather_slot, /*src_stride=*/M6_tw1_gather_src_stride, /*repeat=*/L1);
 }
 // twiddles2 (l2, l3): gather the tile's L3t columns per l2 row.
 static inline void gather_tw2(uint8_t* dst, uint32_t lt) {
-    snrt_dma_start_2d(dst, M6_twiddles2 + lt * M6_tw2_gather_chunk, M6_tw2_gather_chunk,
-                      /*dst_stride=*/M6_tw2_gather_chunk, /*src_stride=*/M6_tw2_gather_src_stride, /*repeat=*/L2);
+    snrt_dma_start_2d(dst, M6_twiddles2 + lt * M6_tw2_gather_copy, M6_tw2_gather_copy,
+                      /*dst_stride=*/M6_tw2_gather_slot, /*src_stride=*/M6_tw2_gather_src_stride, /*repeat=*/L2);
 }
 
 int test() {
     int err = 0;
 
-    // L3: assembled output + the full H2 (partition-3 input) staged out of TCDM.
+    // L3: only the assembled full-dModel output (the H2 stays on-chip).
     static uint8_t* ptr_output_l3 = NULL;
-    static uint8_t* ptr_h2_l3     = NULL;
     if (snrt_global_core_idx() == 0) {
         (void)snrt_l3alloc(16 * 1024);
         ptr_output_l3 = (uint8_t*)snrt_l3alloc(M6_length_partition3_out);
-        ptr_h2_l3     = (uint8_t*)snrt_l3alloc(M6_full_h2_bytes);
     }
     snrt_cluster_hw_barrier();
 
-    // TCDM: full weights, tile-local gather + scratch, one gathered N-tile of H2, the N-tile psum.
+    // TCDM: full weights, tile-local gather + scratch, the assembled full H2. Partition 3's
+    // psum P3 overlays the dead stage-1-4 scratch (ptr_in); H2 survives into partition 3.
     void* base           = snrt_l1_next();
     uint8_t* ptr_weight1 = (uint8_t*)base;
     uint8_t* ptr_weight2 = ptr_weight1 + align64(M6_length_weight1);
@@ -56,16 +56,15 @@ int test() {
     uint8_t* ptr_P       = ptr_tw2 + align64(M6_tw2_tile_bytes);
     uint8_t* ptr_H1      = ptr_P + M6_slot_size_tile;
     uint8_t* ptr_H2      = ptr_H1 + M6_hsize_tile;
-    // Partition 3 runs after stages 1-4, so overlay its buffers on the dead scratch.
-    uint8_t* ptr_h2ntile = ptr_in;
-    uint8_t* ptr_P3      = ptr_h2ntile + align64(M6_h2_ntile_bytes);
+    uint8_t* ptr_H2_full = ptr_H2 + align64(M6_hsize_tile);
+    uint8_t* ptr_P3      = ptr_in;  // overlays dead stage-1-4 scratch
 
     uint32_t start_cycles     = 0;
     uint32_t simbacore_cycles = 0;
 
     if (snrt_global_core_idx() == 0) {
         printf(
-            "\nStarting program: tiled 3-way FFT (l3-stream, nb_d=%d, nb_l3=%d, seqLen=%d, dModel=%d, "
+            "\nStarting program: tiled 3-way FFT (outer dModel-tile, nb_d=%d, nb_l3=%d, seqLen=%d, dModel=%d, "
             "L1=%d, L2=%d, L3=%d)\n\n",
             M6_nb_d, M6_nb_l3, seqLen, dModel, L1, L2, L3);
         printf("Expected L1 TCDM usage: %u B (%u KiB)\n", (uint32_t)L1_TCDM_PEAK_BYTES,
@@ -92,8 +91,16 @@ int test() {
         // --- stages 1-4 per l3-tile: assemble the full H2 (partition-3 input) ---
         // Prologue: gather tile 0's inputs + zero its gemm1 psum. Every later tile's
         // gathers + P-zeros are prefetched on the DM core behind the previous tile's
-        // noop compute, so the loop body has no exposed DMA except the H2 stage-out.
+        // noop compute, so the loop body has no exposed DMA except the H2 assembly.
         if (snrt_is_dm_core()) {
+            // pad-m3: the gather fills only the real L3 m3; zero the tiles first so the padded
+            // (L3t-L3) m3 are zero (they then stay zero through the linear stages 1-2).
+            if (M6_pad_m3) {
+                snrt_dma_start_1d(ptr_in, (void*)snrt_zero_memory_ptr(), M6_in_tile_bytes);
+                snrt_dma_start_1d(ptr_tw1, (void*)snrt_zero_memory_ptr(), M6_tw1_tile_bytes);
+                snrt_dma_start_1d(ptr_tw2, (void*)snrt_zero_memory_ptr(), M6_tw2_tile_bytes);
+                snrt_dma_wait_all();
+            }
             gather_in_tile(ptr_in, s, 0);
             gather_tw1(ptr_tw1, 0);
             gather_tw2(ptr_tw2, 0);
@@ -108,7 +115,7 @@ int test() {
             if (snrt_global_core_idx() == 0) {
                 // gemm1 (in_tile -> P): start, then program cmul1's streamer behind the run.
                 CFG_GEMM_P(ptr_weight1, ptr_in, 1, ptr_P);
-                set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, M6_dModel_slice * L2 * M6_l3_tile);
+                set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, M6_dModel_slice * L2 * M6_l3t);
                 start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
                 set_simd_streamer_csr((uint32_t)ptr_P, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts, (uint32_t)ptr_tw1,
                                       M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts, (uint32_t)ptr_H1, M6_W3_2_ss, M6_W3_2_tb,
@@ -147,8 +154,7 @@ int test() {
             if (snrt_global_core_idx() == 0) {
                 // gemm2 (H2 -> P): start, then program cmul2's streamer behind the run.
                 CFG_GEMM_P(ptr_weight2, ptr_H2, 3, ptr_P);
-                set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L2, 1, 2 * L2_padded, 1,
-                                  M6_dModel_slice * L1 * M6_l3_tile);
+                set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L2, 1, 2 * L2_padded, 1, M6_dModel_slice * L1 * M6_l3t);
                 start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
                 set_simd_streamer_csr((uint32_t)ptr_P, M6_R7_4_ss, M6_R7_4_tb, M6_R7_4_ts, (uint32_t)ptr_tw2,
                                       M6_R13_4_ss, M6_R13_4_tb, M6_R13_4_ts, (uint32_t)ptr_H1, M6_W3_4_ss, M6_W3_4_tb,
@@ -184,54 +190,56 @@ int test() {
             }
             snrt_cluster_hw_barrier();  // D: H2 ready; next tw2 + next psum prefetched
 
-            // Stage this l3-tile's H2 to L3, splitting its [re | im] K-blocks into the full-K
-            // re and im regions so partition3 reads [re(all m3) | im(all m3)] (its weight order).
+            // Assemble this l3-tile's H2 into the full TCDM H2 ([re | im] regions).
+            // pad-m3: extract the real L3 m3 out of each padded L3t group; else straight-copy.
             if (snrt_is_dm_core()) {
-                snrt_dma_start_1d(ptr_h2_l3 + lt * M6_h2_half_bytes, ptr_H2, M6_h2_half_bytes);
-                snrt_dma_start_1d(ptr_h2_l3 + M6_h2_im_region + lt * M6_h2_half_bytes, ptr_H2 + M6_h2_half_bytes,
-                                  M6_h2_half_bytes);
-                snrt_dma_wait_all();
-            }
-            snrt_cluster_hw_barrier();
-        }
-
-        // --- partition 3: one full-K GEMM per N-tile, then scatter. ---
-        for (uint32_t nt = 0; nt < M6_nb_ntile; nt++) {
-            // Gather this N-tile's full-K H2 (every K-step's N-run) from L3 in one 2-D transfer.
-            if (snrt_is_dm_core()) {
-                snrt_dma_start_2d(ptr_h2ntile, ptr_h2_l3 + nt * M6_ntile_n_off, M6_h2_gather_chunk,
-                                  /*dst_stride=*/M6_h2_gather_chunk, /*src_stride=*/M6_h2_gather_src_stride,
-                                  /*repeat=*/M6_h2_gather_kreps);
-                snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_p3_ntile_bytes);
-                snrt_dma_wait_all();
-            }
-            snrt_cluster_hw_barrier();
-
-            if (snrt_global_core_idx() == 0) {
-                // K-tile the contraction into nb_l3 chunks; accumulate, requant on the last chunk.
-                for (uint32_t kc = 0; kc < M6_nb_l3; kc++) {
-                    CFG_GEMM_P(ptr_weight3 + kc * M6_weight3_kchunk_bytes, ptr_h2ntile + kc * M6_h2_kchunk_bytes, 5,
-                               ptr_P3);
-                    uint32_t mode = (kc + 1 == M6_nb_l3) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT;
-                    set_simbacore_csr(mode, 2 * L3, 1, 2 * L3_padded / M6_nb_l3, 1,
-                                      M6_dModel_slice * L1 * L2 / M6_nb_ntile);
-                    start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
-                    wait_simbacore_and_streamer();
-                    simbacore_cycles += read_simbacore_perf_counter();
+                if (M6_pad_m3) {
+                    snrt_dma_start_2d(ptr_H2_full, ptr_H2, M6_ex_block,
+                                      /*dst_stride=*/M6_ex_dst_group, /*src_stride=*/M6_ex_src_group,
+                                      /*repeat=*/M6_ex_repeat);
+                    snrt_dma_start_2d(ptr_H2_full + M6_ex_im_dst, ptr_H2 + M6_ex_im_src, M6_ex_block,
+                                      /*dst_stride=*/M6_ex_dst_group, /*src_stride=*/M6_ex_src_group,
+                                      /*repeat=*/M6_ex_repeat);
+                } else {
+                    snrt_dma_start_1d(ptr_H2_full + lt * M6_h2_half_bytes, ptr_H2, M6_h2_half_bytes);
+                    snrt_dma_start_1d(ptr_H2_full + M6_h2_im_region + lt * M6_h2_half_bytes, ptr_H2 + M6_h2_half_bytes,
+                                      M6_h2_half_bytes);
                 }
-                asm volatile("fence" ::: "memory");
-            }
-            snrt_cluster_hw_barrier();
-
-            // Scatter this (slice, N-tile)'s partition-3 output into the L3 output.
-            if (snrt_is_dm_core()) {
-                snrt_dma_start_2d(ptr_output_l3 + s * M6_out_block_slice + nt * M6_out_ntile_chunk, ptr_P3,
-                                  M6_out_ntile_chunk, /*dst_stride=*/M6_out_block_full,
-                                  /*src_stride=*/M6_out_ntile_chunk, /*repeat=*/M6_out_nblk);
                 snrt_dma_wait_all();
             }
             snrt_cluster_hw_barrier();
         }
+
+        // --- partition 3: K-tile over nb_l3 chunks of the [re | im] H2, accumulate
+        //     (NO_REQUANT) and requant on the last. Full N; psum stays in TCDM. ---
+        if (snrt_is_dm_core()) {
+            snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
+            snrt_dma_wait_all();
+        }
+        snrt_cluster_hw_barrier();
+
+        if (snrt_global_core_idx() == 0) {
+            for (uint32_t kc = 0; kc < M6_nb_l3; kc++) {
+                CFG_GEMM_P(ptr_weight3 + kc * M6_weight3_kchunk_bytes, ptr_H2_full + kc * M6_h2_kchunk_bytes, 5,
+                           ptr_P3);
+                uint32_t mode = (kc + 1 == M6_nb_l3) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT;
+                set_simbacore_csr(mode, 2 * L3, 1, 2 * L3_padded / M6_nb_l3, 1, M6_dModel_slice * L1 * L2);
+                start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
+                wait_simbacore_and_streamer();
+                simbacore_cycles += read_simbacore_perf_counter();
+            }
+            asm volatile("fence" ::: "memory");
+        }
+        snrt_cluster_hw_barrier();
+
+        // Scatter this slice's partition-3 output into its d-slice of the full L3 output.
+        if (snrt_is_dm_core()) {
+            snrt_dma_start_2d(ptr_output_l3 + s * M6_out_block_slice, ptr_P3, M6_out_block_slice,
+                              /*dst_stride=*/M6_out_block_full, /*src_stride=*/M6_out_block_slice,
+                              /*repeat=*/M6_out_nblk);
+            snrt_dma_wait_all();
+        }
+        snrt_cluster_hw_barrier();
     }
 #undef CFG_GEMM_P
 
@@ -242,8 +250,8 @@ int test() {
 
         err += check_result_sample(ptr_output_l3, M6_partition3_expected, M6_test_samples_expected, nb_test_samples,
                                    "partition3_out (L3)");
-        printf("Test FFT 3-way tiled (l3-stream): (%d x %d), L1=%d L2=%d L3=%d, nb_d=%d nb_l3=%d\n", seqLen, dModel, L1,
-               L2, L3, M6_nb_d, M6_nb_l3);
+        printf("Test FFT 3-way tiled (outer dModel-tile): (%d x %d), L1=%d L2=%d L3=%d, nb_d=%d nb_l3=%d\n", seqLen,
+               dModel, L1, L2, L3, M6_nb_d, M6_nb_l3);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, nb_test_samples);
     }
     snrt_cluster_hw_barrier();

@@ -2,9 +2,9 @@
     // Max number of vsim runs allowed to execute at the same time
     max_parallel: 8
     // Per-run wall-clock cap in seconds. 0 = no timeout
-    timeout: 60000 // suc-async 32k can take >12h
+    timeout: 0 // suc-async 32k can take >12h
     // Per-build  wall-clock cap in seconds. 0 = no timeout
-    build_timeout: 20000
+    build_timeout: 0
     // Global default for `force`
     force: true
 
@@ -12,7 +12,6 @@
         {
             app: main-tiled
             params: [
-                // Sizes B
                 // {
                 //     seqLen: 784
                 //     dModel: 192
@@ -23,6 +22,7 @@
                 // Sizes C
                 {
                     name: IN main C
+                    force: false
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
@@ -44,7 +44,7 @@
                 // Sizes D
                 {
                     name: IN main D
-                    force: true
+                    force: false
                     seqLen: 48
                     dModel: 528
                     dtRank: 24
@@ -60,7 +60,7 @@
             params: [
                 {
                     name: IN main C
-                    force: true
+                    force: false
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
@@ -95,7 +95,6 @@
                 }
                 // // Sizes C (ImageNet) -> use main instead
                 // // Sizes D (ImageNet) -> use main instead
-                // Cityscapes
                 {
                     name: CS P1 C
                     force: false
@@ -119,33 +118,31 @@
             params: [
                 {
                     name: IN P2 C
-                    force: true
+                    force: false
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
                     nb_tiles: 16
                     bc_pad_banks: 4
-                    safe_to_start_r10: 9
-                    safe_to_start_r11: 6000
+                    safe_to_start_r10: 10
+                    safe_to_start_r11: 7500
                 }
                 {
                     name: IN P2 D
-                    force: true
+                    force: false
                     seqLen: 48
                     dModel: 480
                     dtRank: 24
                     nb_tiles: 10
                     bc_pad_banks: 4
-                    safe_to_start_r10: 3
-                    safe_to_start_r11: 4000
+                    safe_to_start_r10: 4
+                    safe_to_start_r11: 3500
                 }
             ]
         }
         {
             app: double-gemm-conflict-free
             params: [
-                // Cityscapes
-                // Sizes B
                 { // z proj
                     name: CS P2 in proj B
                     force: false
@@ -214,7 +211,6 @@
                     dtRank: 24
                     nb_tiles: 4 // 8 not possible
                 }
-                // Sizes B
                 { // out proj
                     name: IN P2 out proj B
                     force: false
@@ -239,8 +235,6 @@
             // SUC P2, all but out proj
             app: P2-async-OS-no-IS
             params: [
-                // Cityscapes
-                // Sizes B
                 {
                     name: IN SUC/in proj B
                     force: false
@@ -253,16 +247,14 @@
                     safe_to_start_r10: 40
                     safe_to_start_r11: 0 // not used
                 }
-                // Cityscapes
-                // Sizes D (block L512 D512): dModel 512 padded to 528 (dInner mult of 24)
                 {
                     name: CS SUC/in proj D
                     force: false
-                    seqLen: 512
+                    seqLen: 1024
                     dModel: 528
                     dtRank: 24
                     nb_tiles: 11
-                    nb_l_tiles: 4 // L_tile=128
+                    nb_l_tiles: 16
                     nb_slots: 2
                     safe_to_start_r10: 27
                     safe_to_start_r11: 0 // not used
@@ -273,19 +265,32 @@
             // SUC-only with dt tiling. Only the largest seqLen needs to tile dt.
             app: suc-async-dt
             params: [
-                // Cityscapes
-                // Sizes A
                 {
                     name: CS SUC A
-                    force: false
-                    seqLen: 32768
+                    force: true
+                    seqLen: 32768 // x2
                     dModel: 96
                     dtRank: 24
                     nb_tiles: 8
-                    nb_l_tiles: 64 // L_tile=512
+                    nb_l_tiles: 128 // L_tile=512
                     nb_slots: 2
                     bc_pad_banks: 4
                     nb_dt_tiles : 32
+                    nb_dt_slots : 2
+                    safe_to_start_r10: 0 // not used
+                    safe_to_start_r11: 0 // not used
+                }
+                {
+                    name: CS SUC B
+                    force: false
+                    seqLen: 16384
+                    dModel: 192
+                    dtRank: 24
+                    nb_tiles: 8
+                    nb_l_tiles: 16 // L_tile=512
+                    nb_slots: 2
+                    bc_pad_banks: 4
+                    nb_dt_tiles : 16
                     nb_dt_slots : 2
                     safe_to_start_r10: 0 // not used
                     safe_to_start_r11: 0 // not used
@@ -296,12 +301,11 @@
             // SUC-only, no dt tiling, no z-proj or out-proj
             app: suc-async
             params: [
-                // Cityscapes
                 // Sizes C
                 {
                     name: CS SUC C
                     force: false
-                    seqLen: 2048
+                    seqLen: 4096
                     dModel: 384
                     dtRank: 24
                     nb_tiles: 16
@@ -309,18 +313,7 @@
                     nb_slots: 2
                     bc_pad_banks: 4
                 }
-                // Sizes B
-                {
-                    name: CS SUC B
-                    force: false
-                    seqLen: 8192
-                    dModel: 192
-                    dtRank: 24
-                    nb_tiles: 8
-                    nb_l_tiles: 16 // L_tile=512
-                    nb_slots: 2
-                    bc_pad_banks: 4
-                }
+
                 // ImageNet
                 // Sizes A
                 {
@@ -341,8 +334,6 @@
             app: einfft-tiled
             params: [
 
-                // Imagenet
-                // Sizes A
                 {
                     name: IN einfft A
                     force: false
@@ -352,7 +343,6 @@
                 }
 
 
-                // Cityscapes
                 // Sizes A -> plain einfft-tiled
                 {
                     name: CS einfft A
@@ -367,7 +357,6 @@
             app: einfft-double-conflictfree
             params: [
 
-                // Sizes B
                 {
                     name: IN einfft B
                     force: false
@@ -388,10 +377,8 @@
                     seqLen: 48
                     dModel: 576
                 }
-                // Cityscapes
                 // NOTE we reuse IN runs
                 // Sizes A -> plain einfft-tiled
-                // Sizes B
                 // {
                 //     name: CS einfft B
                 //     force: false
@@ -417,9 +404,6 @@
         {
             app: fft-tiled
             params: [
-
-
-                // Sizes B
                 {
                     name: IN fft B
                     force: false
@@ -430,7 +414,6 @@
                     nb_tiles: 4,
                     nb_tiles_B: 2
                 }
-                // Sizes C
                 {
                     name: IN fft C
                     force: false
@@ -441,28 +424,42 @@
                     nb_tiles: 4,
                     nb_tiles_B: 2
                 }
-                // Cityscapes
-                // Sizes C
                 {
                     name: CS fft C
-                    force: true
-                    seqLen: 2048,
-                    dModel: 32, // 12
+                    force: false
+                    seqLen: 4096,
+                    dModel: 16, // 24
                     L1: 64,
-                    L2: 32,
-                    nb_tiles: 4,
+                    L2: 64,
+                    nb_tiles: 8,
                     nb_tiles_B: 2
                 }
-                // Sizes D
                 {
                     name: CS fft D
-                    force: true
-                    seqLen: 512,
-                    dModel: 128, // x4
+                    force: false
+                    seqLen: 1024,
+                    dModel: 64, // x8
                     L1: 32,
-                    L2: 16,
-                    nb_tiles: 4,
+                    L2: 32,
+                    nb_tiles: 8,
                     nb_tiles_B: 2
+                }
+            ]
+        }
+        {
+            app: fft-4way-tiled
+            params: [
+                {
+                    name: CS fft A
+                    force: true
+                    seqLen: 65536
+                    dModel: 1 // x 96
+                    L1: 16,
+                    L2: 16,
+                    L3: 16,
+                    L4: 16,
+                    nb_tiles_A: 1
+                    l3_tile: 16
                 }
             ]
         }
@@ -471,38 +468,38 @@
             params: [
                 {
                     name: IN fft A
-                    force: true
+                    force: false
                     seqLen: 4096,
                     dModel: 24, // x4
                     L1: 16,
                     L2: 16,
                     L3: 16,
                     nb_tiles_A: 4
+                    l3_tile: 16
+
                 }
                 {
-                    name: CS fft B
-                    force: true
-                    seqLen: 8192,
-                    dModel: 8, // x24
-                    L1: 32,
-                    L2: 16,
-                    L3: 16,
-                    nb_tiles_A: 8
-                }
-                { // L3>seqLenUnroll: l3-tiled on-chip (l3_tile=16 -> nb_l3=2)
                     name: CS fft A
                     force: true
-                    seqLen: 32768
+                    seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,
                     L2: 16,
-                    L3: 32,
+                    L3: 64,
                     nb_tiles_A: 1
                     l3_tile: 16
                 }
-                // CS fft C (seqLen 2048, L3=8) is unsupported here: L3 < seqLenUnroll(=16)
-                // cannot be l3-tiled (l3_tile must be a multiple of seqLenUnroll). Run it as a
-                // 2-way FFT via the `fft-tiled` app instead.
+                {
+                    name: CS fft B
+                    force: false
+                    seqLen: 16384,
+                    dModel: 8, // x24
+                    L1: 32,
+                    L2: 16,
+                    L3: 32,
+                    nb_tiles_A: 8
+                    l3_tile: 16
+                }
             ]
         }
         {
@@ -511,26 +508,16 @@
                 {
                     name: CS fft A
                     force: true
-                    seqLen: 32768
+                    seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,
                     L2: 16,
-                    L3: 32,
+                    L3: 64,
                     nb_tiles_A: 1
                     l3_tile: 16
                     nb_ntile: 4
                 }
-                // {
-                //     name: CS  A 64k
-                //     seqLen: 65536
-                //     dModel: 1
-                //     L1: 64,
-                //     L2: 16,
-                //     L3: 64,
-                //     nb_tiles_A: 1
-                //     l3_tile: 16
-                //     nb_ntile: 4
-                // }
+
             ]
         }
         {
@@ -618,7 +605,6 @@
                     dModel: 512
                     nb_tiles: 3 // L_tile=16
                 }
-                // Cityscapes
                 // {
                 //     name: CS rms A
                 //     force: false

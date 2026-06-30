@@ -27,7 +27,7 @@ def align64(value: int) -> int:
 
 
 class DataGenerator(DataGeneratorBase):
-    APP_NAME = "fft-3way-tiled"
+    APP_NAME = "fft-3way-L8"
 
     def __init__(self, **kwargs):
         super().__init__(self.APP_NAME, **kwargs)
@@ -72,8 +72,7 @@ class DataGenerator(DataGeneratorBase):
         l3_tile = self.kwargs.get("l3_tile", L3)
         assert L3 % l3_tile == 0, f"L3 ({L3}) must be divisible by l3_tile ({l3_tile})"
         nb_l3 = L3 // l3_tile
-        # Whole partition-3 psum stays on-chip here, so output N-tiling is unsupported: pin
-        # nb_ntile=1 so the partition-3 descriptors match the full-N GEMM.
+        # Non-async variant keeps the whole partition-3 psum on-chip; no output N-tiling.
         nb_ntile = 1
 
         # dModel is the independent batch axis of every partition: slice it and run
@@ -92,11 +91,19 @@ class DataGenerator(DataGeneratorBase):
         # partition3 K-reduction split into nb_l3 invocations (accumulate in BF16, requant on last).
         assert K_3 % nb_l3 == 0, f"K_3 ({K_3}) must be divisible by nb_l3 ({nb_l3})"
         K_3t = K_3 // nb_l3
-        # Stages 1-4 run on one l3-tile at a time, on contiguous tile-local buffers gathered by
-        # DMA; descriptors are the un-tiled ones with L3 -> L3t, L -> Lt.
-        assert l3_tile % seqLenUnroll == 0, f"l3_tile ({l3_tile}) must be a multiple of {seqLenUnroll}"
-        L3t = l3_tile
+        # Stages 1-4 run per l3-tile on contiguous tile-local buffers gathered by DMA, with the
+        # un-tiled descriptors (L3 -> L3t, L -> Lt). pad-m3 mode (L3 < seqLenUnroll): stages 1-2
+        # run on a padded L3t=seqLenUnroll tile (zeros stay zero through the linear stages), then
+        # the real L3 m3 are extracted for partition3.
+        pad_m3 = L3 < seqLenUnroll
+        if pad_m3:
+            assert l3_tile == L3 and nb_l3 == 1, "pad-m3 (L3<16) mode is un-tiled: set l3_tile = L3"
+            L3t = seqLenUnroll
+        else:
+            assert (2 * l3_tile) % seqLenUnroll == 0, f"2*l3_tile ({2 * l3_tile}) must be a multiple of {seqLenUnroll}"
+            L3t = l3_tile
         Lt = L1 * L2 * L3t
+        # L2 must be <= seqLenUnroll (gemm2 B-reorder needs an m2-block of one 16-tile).
         assert L2 <= seqLenUnroll, f"L2 ({L2}) must be <= seqLenUnroll ({seqLenUnroll}); see note above"
         N_1 = dM * L2 * L3t
         N_2 = dM * L1 * L3t
@@ -106,7 +113,7 @@ class DataGenerator(DataGeneratorBase):
         assert L1_padded // dInnerUnroll == L1 // seqLenUnroll
         assert (2 * suc_serial_width_BC) // 8 == 4 * BANK_BYTES, "SIMD input width must be 4 banks"
 
-        # Downsizer accounting.
+        # Downsizer accounting
         b_in_width = self.kwargs["gemm_weight_width"]
         b_array_width = seqLenUnroll * FP8
         b_downsize_factor = b_in_width / b_array_width  # >= 1
@@ -215,8 +222,7 @@ class DataGenerator(DataGeneratorBase):
                 [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
                 [4 * BANK_BYTES],
             ),
-            # Step 5: partition 3. K-tile the 2*L3 contraction into nb_l3 chunks of K_3t from the
-            # assembled [re|im] H2 and accumulate (requant on the last).
+            # Step 5: partition 3. Reads the assembled [re|im] H2; K-tiled over nb_l3.
             "R11_5": (
                 [2 * L3 * 2 * L3_padded * FP8 // iscore_serial_width // nb_l3],
                 [iscore_serial_width // 8],
@@ -232,7 +238,7 @@ class DataGenerator(DataGeneratorBase):
         weight3_kchunk_bytes = (2 * L3 * 2 * L3_padded * FP8 // 8) // nb_l3
         h2_kchunk_bytes = K_3t * downsized_N_3t * b_in_width // 8
 
-        # H2 assembly offsets: each l3-tile's [re|im] halves go to the full H2's re/im regions.
+        # H2 assembly offsets: re half -> re region, im half -> im region of the full H2.
         h2_ktile_bytes = K_3t * downsized_N_3 * b_in_width // 8   # one l3-tile's H2 (re+im)
         h2_half_bytes = h2_ktile_bytes // 2                       # one re or im K-block
         h2_im_region = (2 * L * dM * FP8 // 8) // 2               # start of the im region in the full H2
@@ -249,35 +255,47 @@ class DataGenerator(DataGeneratorBase):
         len_in_slice = L * dM * FP8 // 8
         len_partition3_out = 2 * L * dModel * BF16 // 8
 
-        # Output scatter: M_3 FP8 row-blocks, slice s owns dM contiguous channels per block.
-        # Block sizes use the real (FP8) row-block bytes, not the padded buffer length.
+        # Output scatter: place slice s's dM channels into its d-slice of each of the M_3
+        # FP8 row-blocks. Block sizes use the real (FP8) sizes.
         out_block_full = dModel * L1 * L2 * seqLenUnroll * FP8 // 8
         out_block_slice = dM * L1 * L2 * seqLenUnroll * FP8 // 8
         out_nblk = M_3
 
-        # Input gather. dft_in is K-tile-major ([k1_tile][d][L2*L3][seqLenUnroll]), so a slice's
-        # dM channels sit at a per-K-tile offset; gather them with a 2-D transfer (repeat =
-        # in_ktile_count, src_stride = one full N-sweep).
+        # Input gather: dft_in is K-tile-major, so a slice's dM channels are gathered with a
+        # 2-D transfer over the L1/seqLenUnroll K-tiles.
         in_ktile_count = L1 // seqLenUnroll
         in_slice_chunk = dM * L2 * L3 * seqLenUnroll * FP8 // 8  # one K-tile of a slice
         in_ktile_stride = dModel * L2 * L3 * seqLenUnroll * FP8 // 8  # one full N-sweep in L3
 
         # --- l3-tile gather of input + twiddles into contiguous tile-local buffers (from DRAM) ---
-        # in_tile: per k1-tile, per d, copy the tile's m3-block (L3t*L2*Mu) out of the [d][L2*L3][Mu]
-        # chip layout. Loop k1-tiles in C; each is a 2-D DMA over d.
-        in_gather_chunk = L3t * L2 * seqLenUnroll * FP8 // 8      # one d's m3-block in one k1-tile
+        # in_tile: per k1-tile, copy the tile's m3-block (repeat over d). pad-m3: copy the real
+        # L3 m3 into a padded L3t slot (extra m3 stay zero in the pre-zeroed buffer).
+        l3_copy = L3 if pad_m3 else L3t                          # real m3 actually fetched from DRAM
+        in_gather_copy = l3_copy * L2 * seqLenUnroll * FP8 // 8   # real bytes copied per d
+        in_gather_slot = L3t * L2 * seqLenUnroll * FP8 // 8       # padded dst slot per d (== copy if no pad)
         in_gather_d_stride = L2 * L3 * seqLenUnroll * FP8 // 8    # full-L3 d stride in dft_in
-        in_gather_dst_ktile = dM * L3t * L2 * seqLenUnroll * FP8 // 8  # one k1-tile in in_tile
-        in_tile_bytes = len_in_slice // nb_l3                     # Lt*dM
+        in_gather_dst_ktile = dM * L3t * L2 * seqLenUnroll * FP8 // 8  # one k1-tile in in_tile (padded)
+        in_tile_bytes = Lt * dM * FP8 // 8                        # padded tile (Lt = L1*L2*L3t)
         # twiddles1 (k1, j=m3*L2+m2), 2 bytes/entry (cos,sin): gather the tile's m3 j-block per k1.
         tw1_entry = 2 * FP8 // 8
-        tw1_gather_chunk = L3t * L2 * tw1_entry
+        tw1_gather_copy = l3_copy * L2 * tw1_entry
+        tw1_gather_slot = L3t * L2 * tw1_entry
         tw1_gather_src_stride = L2 * L3 * tw1_entry
-        tw1_tile_bytes = L1 * L3t * L2 * tw1_entry               # 2*Lt
-        # twiddles2 (l2, l3), 2 bytes/entry: gather the tile's L3t columns per l2 row.
-        tw2_gather_chunk = L3t * tw1_entry
-        tw2_gather_src_stride = L3 * tw1_entry
-        tw2_tile_bytes = L2 * L3t * tw1_entry
+        tw1_tile_bytes = L1 * L3t * L2 * tw1_entry               # 2*Lt (padded)
+        # twiddles2 (l2, l3), 2 bytes/entry: gather the tile's L3t columns per l2 row. pad-m3 source
+        # is already L3t-padded per k2 (src stride = L3t); otherwise it holds full L3 (src stride = L3).
+        tw2_gather_copy = L3t * tw1_entry
+        tw2_gather_slot = L3t * tw1_entry
+        tw2_gather_src_stride = (L3t if pad_m3 else L3) * tw1_entry
+        tw2_tile_bytes = L2 * L3t * tw1_entry                    # padded
+        # pad-m3 extract: per N, copy the real L3 re-m3 (re region) and L3 im-m3 (im region at
+        # +Lt*dM) out of each padded L3t group into the packed real B [N][L3 re, L3 im].
+        ex_block = L3 * FP8 // 8                  # real m3 per re/im (first L3 of each L3t group)
+        ex_src_group = L3t * FP8 // 8             # noop2 per-N stride within a region (L3t m3)
+        ex_dst_group = 2 * L3 * FP8 // 8          # real B N-stride: [re L3 | im L3]
+        ex_im_src = Lt * dM * FP8 // 8            # im region offset (K-tile 1)
+        ex_im_dst = L3 * FP8 // 8                 # im offset within a real N-group
+        ex_repeat = dM * L1 * L2                  # number of N (d,k1,k2)
 
         # Tile-local psum/scratch (1/nb_l3 of the full slot).
         slot_size = align64(2 * L * dM * BF16 // 8)              # full partition3 psum (gemm3 out)
@@ -308,19 +326,31 @@ class DataGenerator(DataGeneratorBase):
             "slot_size": slot_size,
             "nb_l3": nb_l3,
             "l3_tile": l3_tile,
-            # l3-tile gather + tile-local buffer sizes
-            "in_gather_chunk": in_gather_chunk,
+            "l3t": L3t,  # stages 1-2 tile size (= seqLenUnroll when padding, else l3_tile)
+            "pad_m3": 1 if pad_m3 else 0,
+            # l3-tile gather + tile-local buffer sizes (copy = real bytes, slot = padded dst)
+            "in_gather_copy": in_gather_copy,
+            "in_gather_slot": in_gather_slot,
             "in_gather_d_stride": in_gather_d_stride,
             "in_gather_dst_ktile": in_gather_dst_ktile,
             "in_tile_bytes": in_tile_bytes,
-            "tw1_gather_chunk": tw1_gather_chunk,
+            "tw1_gather_copy": tw1_gather_copy,
+            "tw1_gather_slot": tw1_gather_slot,
             "tw1_gather_src_stride": tw1_gather_src_stride,
             "tw1_tile_bytes": tw1_tile_bytes,
-            "tw2_gather_chunk": tw2_gather_chunk,
+            "tw2_gather_copy": tw2_gather_copy,
+            "tw2_gather_slot": tw2_gather_slot,
             "tw2_gather_src_stride": tw2_gather_src_stride,
             "tw2_tile_bytes": tw2_tile_bytes,
             "slot_size_tile": slot_size_tile,
             "hsize_tile": hsize_tile,
+            # pad-m3 extract (first L3 re-m3 and L3 im-m3 of each padded N-group -> packed real N-group)
+            "ex_block": ex_block,
+            "ex_src_group": ex_src_group,
+            "ex_dst_group": ex_dst_group,
+            "ex_im_src": ex_im_src,
+            "ex_im_dst": ex_im_dst,
+            "ex_repeat": ex_repeat,
             # partition3 K-tiling over l3-tiles + the [re|im] H2 assembly offsets
             "h2_half_bytes": h2_half_bytes,                    # one l3-tile's re (or im) K-block
             "h2_im_region": h2_im_region,                      # start of the im region in the full H2

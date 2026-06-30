@@ -4,14 +4,7 @@
 # Not released under license. All rights reserved.
 #
 # Standalone L1 TCDM memory model for `fft-3way-tiled-async`.
-#
-# l3-streamed 3-way FFT: m3 (the L3 axis) is a batch factor for partitions 1&2 and the
-# contraction for partition 3. Stages 1-4 run per l3-tile on small tile-local buffers
-# gathered from DRAM (input + twiddles), writing each tile's reordered output into the full
-# H2; partition 3 then N-tiles its output (batch = dM*L1*L2) and K-accumulates the l3-tiles
-# into one small N-tile psum at a time. Peak (during stages 1-4):
-#   weights + in_tile + tw1_tile + tw2_tile + P_tile + H1_tile + H2_tile + full_H2 + P3_ntile
-# Design: docs/dataflow/05_fft.md "fft-3way-tiled".
+# Peak = weights + max(stages-1-4 scratch, partition-3 buffers); see docs/dataflow/05_fft.md.
 
 import os
 import sys
@@ -68,14 +61,16 @@ def build_report(params: dict) -> MemoryReport:
     full_h2 = 2 * L * dM * FP8 // 8                       # partition-3 input (staged to L3)
     h2_ntile = full_h2 // nb_ntile                       # one gathered N-tile of H2 (TCDM)
     p3_ntile = align64(2 * L * dM * BF16 // 8) // nb_ntile
-    # All bump-allocated (snrt_l1_next never frees) -> they coexist; peak = sum.
-    report.add_section("TCDM (all resident, bump-allocated)", [
+    report.add_section("TCDM stages 1-4 (resident)", [
         ("in_tile (gathered)", in_tile),
         ("tw1_tile (gathered)", tw1_tile),
         ("tw2_tile (gathered)", tw2_tile),
         ("P_tile (gemm1/2 psum)", slot_size_tile),
         ("H1_tile", hsize_tile),
         ("H2_tile (noop1/noop2)", hsize_tile),
+    ])
+    # Overlay the dead stages-1-4 scratch (ptr_h2ntile = ptr_in); not added to peak.
+    report.add_section("TCDM partition 3 (overlays stages 1-4)", [
         ("h2_ntile (gemm3 gather)", h2_ntile),
         ("P3 (one N-tile psum)", p3_ntile),
     ])
@@ -85,12 +80,12 @@ def build_report(params: dict) -> MemoryReport:
         ("full H2 (L3)", full_h2),
     ])
 
-    peak = (
-        weights
-        + align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
+    stages14 = (
+        align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
         + slot_size_tile + hsize_tile + hsize_tile
-        + align64(h2_ntile) + p3_ntile
     )
+    partition3 = align64(h2_ntile) + p3_ntile
+    peak = weights + max(stages14, partition3)
     report.add_peak("TCDM peak", peak)
     return report
 

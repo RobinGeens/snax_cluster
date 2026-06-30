@@ -3,10 +3,9 @@
 # Copyright 2025 KU Leuven.
 # Not released under license. All rights reserved.
 #
-# Standalone L1 TCDM memory model for the `fft-3way-tiled` app. The partition-3 psum overlays
-# the dead stage-1-4 scratch, while the assembled full H2 survives throughout, so:
-#   peak = weights + full_H2 + max(stages-1-4 scratch, partition-3 psum)
-# Design: docs/dataflow/05_fft.md "fft-3way-tiled".
+# Standalone L1 TCDM memory model for the `fft-3way-L8` app.
+# Peak = weights + full_H2 + max(stages-1-4 scratch, partition-3 psum).
+# See docs/dataflow/05_fft.md "fft-3way-L8".
 
 import os
 import sys
@@ -25,6 +24,7 @@ from memory_model_base import (  # type: ignore[import]
 
 def _padded(x: int) -> int:
     # Lx_padded = Lx*dInnerUnroll/seqLenUnroll (per-16-tile pad), uniform for L1/L2/L3.
+    # Needs Lx even (L2,L3 multiples of 8, L1 of 16).
     assert (x * D_INNER_UNROLL) % SEQ_LEN_UNROLL == 0, f"L axis {x} must be even"
     return x * D_INNER_UNROLL // SEQ_LEN_UNROLL
 
@@ -40,13 +40,14 @@ def build_report(params: dict) -> MemoryReport:
     assert dModel % nb_d == 0, f"dModel ({dModel}) must be divisible by nb_tiles_A ({nb_d})"
     assert L3 % l3_tile == 0, f"L3 ({L3}) must be divisible by l3_tile ({l3_tile})"
     dM = dModel // nb_d
-    L3t = l3_tile
+    # pad-m3: stages 1-2 run on a padded seqLenUnroll-tile when L3 < seqLenUnroll (see datagen).
+    L3t = SEQ_LEN_UNROLL if L3 < SEQ_LEN_UNROLL else l3_tile
     Lt = L1 * L2 * L3t
 
     L1p, L2p, L3p = _padded(L1), _padded(L2), _padded(L3)
 
     report = MemoryReport(
-        "fft-3way-tiled",
+        "fft-3way-L8",
         {
             "seqLen": L, "dModel": dModel, "L1": L1, "L2": L2, "L3": L3,
             "nb_tiles_A": nb_d, "dM": dM, "l3_tile": l3_tile, "nb_l3": L3 // l3_tile,
