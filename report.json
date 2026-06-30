@@ -83,7 +83,7 @@
       "model_total": "112794",
       "l1_kib": "491",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-tiled__L116_L216_dModel384_nb_tiles4_nb_tiles_B2_seqLen256": {
       "app": "fft-tiled",
@@ -114,7 +114,7 @@
       "model_total": "72166",
       "l1_kib": "482",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L116_L216_L316_dModel96_nb_tiles_A8_seqLen4096": {
       "app": "fft-3way-tiled",
@@ -173,7 +173,7 @@
       "model_total": "192335",
       "l1_kib": "486",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40",
+      "updated": "2026-06-30 18:30:45",
       "name": "IN P1 B"
     },
     "einfft-tiled__dModel96_nb_tiles1_seqLen784": {
@@ -201,7 +201,7 @@
       "model_total": "188001",
       "l1_kib": "296",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40",
+      "updated": "2026-06-30 18:30:45",
       "name": "IN einfft A"
     },
     "main-tiled-oscore__bc_pad_banks4_dModel384_dtRank24_nb_l_tiles12_nb_slots4_nb_tiles16_safe_to_start_r10-1_safe_to_start_r11-1_seqLen192": {
@@ -491,7 +491,7 @@
       "model_total": "72263",
       "l1_kib": "403",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40",
+      "updated": "2026-06-30 18:30:45",
       "name": "IN P1 A"
     },
     "suc-async__bc_pad_banks0_dModel192_dtRank24_nb_l_tiles128_nb_slots4_nb_tiles8_safe_to_start_r100_safe_to_start_r110_seqLen8192": {
@@ -1416,7 +1416,7 @@
       "model_total": "754264",
       "l1_kib": "259",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "P2-tiled-D__bc_pad_banks4_dModel384_dtRank24_nb_tiles16_safe_to_start_r1050_safe_to_start_r114200_seqLen192": {
       "app": "P2-tiled-D",
@@ -2052,7 +2052,7 @@
       "model_total": "460714",
       "l1_kib": "442",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "P1-tiled-D__dModel504_dtRank24_nb_tiles21_seqLen256": {
       "app": "P1-tiled-D",
@@ -2081,7 +2081,7 @@
       "model_total": "390586",
       "l1_kib": "288",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "is-osgemm-tiled__dInner768_dModel384_dtRank24_nb_tiles16_seqLen512": {
       "app": "is-osgemm-tiled",
@@ -2560,7 +2560,7 @@
       "model_total": "101792",
       "l1_kib": "87",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "rmsnorm-tiled__dModel192_nb_tiles7_seqLen784": {
       "app": "rmsnorm-tiled",
@@ -2588,7 +2588,7 @@
       "model_total": "45234",
       "l1_kib": "174",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "rmsnorm-tiled__dModel384_nb_tiles4_seqLen192": {
       "app": "rmsnorm-tiled",
@@ -2616,7 +2616,7 @@
       "model_total": "22180",
       "l1_kib": "156",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "rmsnorm-tiled__dModel512_nb_tiles3_seqLen48": {
       "app": "rmsnorm-tiled",
@@ -2644,7 +2644,7 @@
       "model_total": "8736",
       "l1_kib": "80",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "rmsnorm-tiled__dModel96_nb_tiles128_seqLen32768": {
       "app": "rmsnorm-tiled",
@@ -3637,7 +3637,7 @@
       "model_total": "127249",
       "l1_kib": "194",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-tiled__L132_L216_dModel128_nb_tiles4_nb_tiles_B2_seqLen512": {
       "app": "fft-tiled",
@@ -4143,7 +4143,7 @@
       "model_total": "563572",
       "l1_kib": "421",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "main-tiled-oscore__bc_pad_banks0_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r109_safe_to_start_r116000_seqLen192": {
       "app": "main-tiled-oscore",
@@ -4237,7 +4237,7 @@
       "model_total": "63794",
       "l1_kib": "444",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -4267,7 +4267,7 @@
       "model_total": "123636",
       "l1_kib": "480",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -4297,7 +4297,7 @@
       "model_total": "64386",
       "l1_kib": "348",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel1024_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -4327,7 +4327,7 @@
       "model_total": "117302",
       "l1_kib": "460",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner192_dModel96_dtRank24_nb_tiles4_seqLen784": {
       "app": "double-gemm-conflict-free",
@@ -4357,7 +4357,7 @@
       "model_total": "48590",
       "l1_kib": "459",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner96_dModel192_dtRank24_nb_tiles4_seqLen400": {
       "app": "double-gemm-conflict-free",
@@ -4387,7 +4387,7 @@
       "model_total": "24740",
       "l1_kib": "355",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen384": {
       "app": "double-gemm-conflict-free",
@@ -4446,7 +4446,7 @@
       "model_total": "90786",
       "l1_kib": "306",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L116_L216_L316_dModel24_nb_tiles_A1_seqLen4096": {
       "app": "fft-3way-tiled",
@@ -4566,7 +4566,7 @@
       "model_total": "134908",
       "l1_kib": "490",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel3456_nb_tiles11_seqLen32": {
       "app": "double-gemm-conflict-free",
@@ -4712,7 +4712,7 @@
       "model_total": "24224",
       "l1_kib": "156",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel192_dtRank24_nb_tiles11_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -4742,7 +4742,7 @@
       "model_total": "44656",
       "l1_kib": "264",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel384_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -4772,7 +4772,7 @@
       "model_total": "45402",
       "l1_kib": "312",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel512_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -4802,7 +4802,7 @@
       "model_total": "59782",
       "l1_kib": "408",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel2048_dtRank24_nb_tiles22_seqLen32": {
       "app": "double-gemm-conflict-free",
@@ -4832,7 +4832,7 @@
       "model_total": "165466",
       "l1_kib": "451",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L132_L216_L316_dModel8_nb_tiles_A8_seqLen8192": {
       "app": "fft-3way-tiled",
@@ -4919,7 +4919,7 @@
       "model_total": "65138",
       "l1_kib": "243",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "einfft-double-conflictfree__dModel384_seqLen192": {
       "app": "einfft-double-conflictfree",
@@ -4973,7 +4973,7 @@
       "model_total": "85252",
       "l1_kib": "330",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen512": {
       "app": "double-gemm-conflict-free",
@@ -5003,7 +5003,7 @@
       "model_total": "124508",
       "l1_kib": "450",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen192": {
       "app": "double-gemm-conflict-free",
@@ -5033,7 +5033,7 @@
       "model_total": "48936",
       "l1_kib": "342",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "einfft-double-conflictfree__dModel384_seqLen96": {
       "app": "einfft-double-conflictfree",
@@ -5060,7 +5060,7 @@
       "model_total": "87408",
       "l1_kib": "297",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L116_L216_L316_dModel24_nb_tiles_A4_seqLen4096": {
       "app": "fft-3way-tiled",
@@ -5120,7 +5120,7 @@
       "model_total": "35825",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner192_dModel864_nb_tiles8_seqLen96": {
       "app": "double-gemm-conflict-free",
@@ -5149,7 +5149,7 @@
       "model_total": "59018",
       "l1_kib": "414",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "double-gemm-conflict-free__dInner528_dModel3456_nb_tiles11_seqLen16": {
       "app": "double-gemm-conflict-free",
@@ -5523,7 +5523,7 @@
       "model_total": "833903",
       "l1_kib": "357",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "conv-downsample__dInner528_dModel3456_nb_tiles11_seqLen16": {
       "app": "conv-downsample",
@@ -5608,7 +5608,7 @@
       "model_total": "9428",
       "l1_kib": "297",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L164_L216_L332_dModel1_l3_tile16_nb_ntile4_nb_tiles_A1_seqLen32768": {
       "app": "fft-3way-tiled",
@@ -5670,7 +5670,7 @@
       "model_total": "78442",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "main-tiled__bc_pad_banks4_dModel528_dtRank24_nb_tiles11_safe_to_start_r105_safe_to_start_r113000_seqLen48": {
       "app": "main-tiled",
@@ -5702,7 +5702,7 @@
       "model_total": "255639",
       "l1_kib": "334",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "main-tiled-oscore__bc_pad_banks0_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r108_safe_to_start_r116000_seqLen192": {
       "app": "main-tiled-oscore",
@@ -5736,7 +5736,7 @@
       "model_total": "671441",
       "l1_kib": "407",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "P2-tiled-D__bc_pad_banks4_dModel384_dtRank24_nb_tiles16_safe_to_start_r109_safe_to_start_r116000_seqLen192": {
       "app": "P2-tiled-D",
@@ -5960,7 +5960,7 @@
       "model_total": "127633",
       "l1_kib": "276",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L132_L216_L316_dModel8_l3_tile16_nb_tiles_A8_seqLen8192": {
       "app": "fft-3way-tiled",
@@ -6057,7 +6057,7 @@
       "model_total": "164198",
       "l1_kib": "214",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "P2-tiled-D__bc_pad_banks4_dModel384_dtRank24_nb_tiles16_safe_to_start_r1010_safe_to_start_r117500_seqLen192": {
       "app": "P2-tiled-D",
@@ -6089,7 +6089,7 @@
       "model_total": "401651",
       "l1_kib": "421",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "P2-tiled-D__bc_pad_banks4_dModel480_dtRank24_nb_tiles10_safe_to_start_r104_safe_to_start_r113500_seqLen48": {
       "app": "P2-tiled-D",
@@ -6121,7 +6121,7 @@
       "model_total": "141733",
       "l1_kib": "309",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "suc-async-dt__bc_pad_banks4_dModel96_dtRank24_nb_dt_slots2_nb_dt_tiles32_nb_l_tiles128_nb_slots2_nb_tiles8_safe_to_start_r100_safe_to_start_r110_seqLen65536": {
       "app": "suc-async-dt",
@@ -6381,7 +6381,7 @@
       "model_total": "4323455",
       "l1_kib": "468",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "suc-async__bc_pad_banks4_dModel192_dtRank24_nb_l_tiles16_nb_slots2_nb_tiles8_seqLen16384": {
       "app": "suc-async",
@@ -6507,7 +6507,7 @@
       "model_total": null,
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-3way-tiled__L132_L216_L332_dModel8_l3_tile16_nb_tiles_A8_seqLen16384": {
       "app": "fft-3way-tiled",
@@ -6539,7 +6539,7 @@
       "model_total": "229897",
       "l1_kib": "131",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "P2-async-OS-no-IS__dModel528_dtRank24_nb_l_tiles16_nb_slots2_nb_tiles11_safe_to_start_r1027_safe_to_start_r110_seqLen1024": {
       "app": "P2-async-OS-no-IS",
@@ -6562,9 +6562,9 @@
       "commit": "df3db47c",
       "log": "batch_run_out/20260630_075101/P2-async-OS-no-IS__dModel528_dtRank24_nb_l_tiles16_nb_slots2_nb_tiles11_safe_to_start_r1027_safe_to_start_r110_seqLen1024.log",
       "timeline": "batch_run_out/20260630_075101/P2-async-OS-no-IS__dModel528_dtRank24_nb_l_tiles16_nb_slots2_nb_tiles11_safe_to_start_r1027_safe_to_start_r110_seqLen1024.timeline.png",
-      "state": "running",
+      "state": "done",
       "cached": false,
-      "errors": null,
+      "errors": "2",
       "simbacore": "2449068",
       "total": "2522175",
       "model_errors": "266",
@@ -6572,7 +6572,7 @@
       "model_total": "2959685",
       "l1_kib": "452",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "suc-async-dt__bc_pad_banks4_dModel96_dtRank24_nb_dt_slots2_nb_dt_tiles32_nb_l_tiles128_nb_slots2_nb_tiles8_safe_to_start_r100_safe_to_start_r110_seqLen32768": {
       "app": "suc-async-dt",
@@ -6608,7 +6608,7 @@
       "model_total": "8942537",
       "l1_kib": "148",
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "suc-async-dt__bc_pad_banks4_dModel192_dtRank24_nb_dt_slots2_nb_dt_tiles32_nb_l_tiles16_nb_slots2_nb_tiles8_safe_to_start_r100_safe_to_start_r110_seqLen16384": {
       "app": "suc-async-dt",
@@ -6644,7 +6644,7 @@
       "model_total": null,
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-tiled__L164_L264_dModel32_nb_tiles8_nb_tiles_B2_seqLen4096": {
       "app": "fft-tiled",
@@ -6675,7 +6675,7 @@
       "model_total": null,
       "l1_kib": "675",
       "l1_oom": true,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-tiled__L132_L232_dModel128_nb_tiles8_nb_tiles_B2_seqLen1024": {
       "app": "fft-tiled",
@@ -6706,7 +6706,7 @@
       "model_total": null,
       "l1_kib": "651",
       "l1_oom": true,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     },
     "fft-4way-tiled__L116_L216_L316_L416_dModel1_l3_tile16_nb_tiles_A1_seqLen65536": {
       "app": "fft-4way-tiled",
@@ -6739,8 +6739,8 @@
       "model_total": null,
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-06-30 14:56:40"
+      "updated": "2026-06-30 18:30:45"
     }
   },
-  "updated": "2026-06-30 14:56:40"
+  "updated": "2026-06-30 18:30:45"
 }
