@@ -1,5 +1,5 @@
 // Copyright 2026 KU Leuven. memsim — value-carrying address space.
-// See docs/dataflow/10_memsim.md for the overall design.
+// See target/snitch_cluster/sim/docs/memsim.md for the overall design.
 //
 // A sparse, lazily-backed, zero-initialized 32-bit address space. Reads of
 // never-written addresses return 0 (so .bss / fresh TCDM read as zero without

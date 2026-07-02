@@ -5,7 +5,7 @@ chisel-ssm SimbaCore accelerator. Runs a compiled app `.elf` (no podman, no
 license) and predicts cycle counts orders of magnitude faster than RTL `vsim`.
 
 **Design, calibration, and validation live in
-[`docs/dataflow/10_memsim.md`](../../../docs/dataflow/10_memsim.md)** — not here.
+[`docs/memsim.md`](docs/memsim.md)** — not here.
 
 ## Build & run
 ```bash

@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > **8. Performance optimization (this page)** ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 SW-level techniques for reducing Snitch elapsed time (wall-clock cycles) in
 tiled programs that pipeline DMA transfers with SimbaCore kernel invocations.
@@ -20,9 +24,9 @@ tiled programs that pipeline DMA transfers with SimbaCore kernel invocations.
 ## 1. CSR preloading during busy-wait
 
 **Problem.**  Between two back-to-back kernel invocations the CPU must write new
-base-pointer CSRs, then assert START.  Each `write_csr` takes ~2-5 cycles
-through the SNAX interface.  With 5-12 base pointers per tile, this adds 10-60
-dead cycles where the accelerator sits idle.
+base-pointer CSRs, then assert START.  Each `write_csr` costs the SNAX offload
+latency through the SNAX interface.  With 5-12 base
+pointers per tile, these add up to dead cycles where the accelerator sits idle.
 
 **Technique.**  After asserting START, immediately de-assert the start signals
 and write the *next* tile's CSRs while the current tile is still computing.  The
@@ -92,9 +96,9 @@ while (read_csr(SIMBACORE_BUSY));
 while (read_csr(STREAMER_BUSY_CSR));
 ```
 
-Saves 4 CSR writes + 2 poll loops per tile vs the library function.  Combine
-with CSR preloading (section 1) by inserting the preload writes between the
-de-assert and the BUSY poll.
+Saves 2 CSR writes (the two DELAYED_START clears), 0 poll loops per tile vs the
+library function.  Combine with CSR preloading (section 1) by inserting the
+preload writes between the de-assert and the BUSY poll.
 
 ---
 
@@ -135,20 +139,19 @@ ordering.
 ## 5. Data-array alignment for DMA
 
 The DMA engine requires source and destination addresses to be aligned to the
-AXI data width (8 bytes).  The Python datagen emits test-data arrays without
-alignment attributes by default.  Depending on the binary layout, arrays may
-land at 2- or 4-byte aligned addresses, causing `Misaligned Load/Store` faults
-on the `dmsrc` instruction.
+AXI data width (8 bytes).  Unaligned arrays land at 2- or 4-byte aligned
+addresses, causing `Misaligned Load/Store` faults on the `dmsrc` instruction.
 
-**Fix** (in `datagen_base.py`):
+`datagen_base.py`'s `format_vector` passes `alignment=8` to
+`format_vector_definition()`:
 
 ```python
 def format_vector(self, type, var_name, value):
     self.lines_data.append(format_vector_definition(type, var_name, value, alignment=8))
 ```
 
-This emits `__attribute__((aligned(8)))` on every data array in `data.h`.
-The `alignment` parameter is already supported by `data_utils.py`'s
-`format_vector_definition()` — it was just never passed.
+This emits `__attribute__((aligned(8)))` on every data array in `data.h`.  The
+`alignment` parameter is supported by `data_utils.py`'s
+`format_vector_definition()`.
 
 ---

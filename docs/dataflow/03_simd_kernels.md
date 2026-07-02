@@ -1,4 +1,4 @@
-# 3. SIMD and RMSNorm kernels
+# 3. SIMD, RMSNorm and BatchNorm kernels
 
 > **All pages:**
 > [README](README.md) ·
@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 > SIMD lane / block layouts: [memory_layouts/10](../../../chisel-ssm/docs/memory_layouts/10_simd.md).
 

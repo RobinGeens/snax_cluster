@@ -1,6 +1,20 @@
 # suc-async — multi-operand async ring on the isolated SUC
 
-> [README](README.md) · working principle of async tiling: [9. Async tiling](09_async_tiling.md)
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md) ·
+> **12. SUC async (this page)** ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 The stand-alone SUC kernel (`M27_SUC_ONLY`), dInner-tiled, comes in two variants that differ only
 in how many operands are kept in async TCDM rings instead of full-`seqLen` buffers:
@@ -16,8 +30,8 @@ margin); this page only covers what is specific to running several operands off 
 
 Resident `dt` dominates the budget at large `seqLen` — e.g. 960 KiB at `seqLen=32768` — which is why
 `suc-async-dt` exists. It is needed only at the largest `seqLen`; at every smaller size the resident
-`dt` of plain `suc-async` is affordable, so the batch config uses `suc-async-dt` only for the
-`seqLen=32768` case.
+`dt` of plain `suc-async` is affordable, so the batch config uses `suc-async-dt` only for the largest
+`seqLen` per `dModel` column.
 
 `dt` is the last operand to be ringed (only in `suc-async-dt`). Because a `dt` window
 (`seqLenUnroll·dtRank` FP8) is ~5× smaller than a `BC` window (`seqLenUnroll·2·dState`), `dt` uses a
@@ -96,9 +110,9 @@ slots while large tiles still hide it at `nb_slots = 2`. Measured at `dModel = 9
 | `seqLen` / `nb_l_tiles` / `nb_slots` | `L_tile` | `nb_dt_tiles` / `nb_dt_slots` | result |
 |---|---|---|---|
 | 512 / 4 / 4 | 128 | 2 / 2 | pass |
-| 512 / 8 / 4 | 64  | — | pass (pre-dt-ring) |
-| 512 / 8 / 2 | 64  | — | tears (~20 % of `y` wrong) |
-| 512 / 16 / 2 | 32 | — | tears (~91 %) |
+| 512 / 8 / 4 | 64  | — | pass |
+| 512 / 8 / 2 | 64  | — | tears (`y` wrong) |
+| 512 / 16 / 2 | 32 | — | tears |
 | 3136 / 4 / 2 | 784 | 2 / 2 | pass |
 
 So at small `L_tile` (= 64) the four-operand ring needs `nb_slots = 4`, whereas the big-tile config

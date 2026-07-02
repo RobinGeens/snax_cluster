@@ -1,7 +1,7 @@
 // Copyright 2026 KU Leuven. memsim — entry point.
 // Runs a compiled SNAX app .elf through the dual-hart interpreter + timing
 // World, emitting the same cycle lines the apps print plus a PASS/FAIL line.
-// See docs/dataflow/10_memsim.md.
+// See target/snitch_cluster/sim/docs/memsim.md.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
     }
     // The model's verdict is its layout/BIST cross-check, not the app's FP check_result
     // (the model produces timing + integer/layout, not the bf16/fp8 datapath). See
-    // docs/dataflow/10_memsim.md (Verdict). A deadlock is already caught above.
+    // target/snitch_cluster/sim/docs/memsim.md (Verdict). A deadlock is already caught above.
     bool ok = verify ? world.layout_ok() : true;
     if (verify)
         std::fprintf(stderr,

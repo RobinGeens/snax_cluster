@@ -15,7 +15,7 @@
 // bank(s) it touches the SAME cycle. So contention, FIFO-slack DMA-hiding, inter-stage overlap and
 // pipeline fill/drain all EMERGE. The per-word producer-commit (W0/W2 grant) and consumer-read
 // (R10/R11 grant) cycles are exact, so the safe-to-start sweep (smallest start_cnt with zero stale
-// reads) returns the EXACT minimum delay. See docs/dataflow/11_memsim_cycle_accuracy_audit.md (§3.3).
+// reads) returns the EXACT minimum delay.
 #pragma once
 #include <array>
 #include <cstdint>

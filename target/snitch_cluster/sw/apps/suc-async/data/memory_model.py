@@ -58,7 +58,7 @@ def build_report(params: dict) -> MemoryReport:
 
     # Shared across all dInner tiles: PACKED full dt + BC nb_slots-slot async ring (refilled from the
     # combined dt_BC L3 buffer). Both stay resident for the whole run.
-    # dt + BC are padded per bank-transpose matrix (bc_pad_banks, see datagen.py / 10_memsim.md).
+    # dt + BC are padded per bank-transpose matrix (bc_pad_banks, see datagen.py / target/snitch_cluster/sim/docs/memsim.md).
     bc_matrix_bytes = SEQ_LEN_UNROLL * BANK_BYTES
     bc_matrix_stride = bc_matrix_bytes + params.get("bc_pad_banks", 0) * BANK_BYTES
     pad_win = lambda raw: (raw // bc_matrix_bytes) * bc_matrix_stride

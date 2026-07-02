@@ -151,13 +151,13 @@ int test_phase1_and_2() {
 
         // Stage I: load next tile's data
         if (i < nb_tiles && snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_oscore_weight_P1[buf], M1_oscore_weight + i * M1_length_oscore_weight_tile,
+            snrt_dma_start_1d(ptr_oscore_weight_P1[buf], M1_oscore_weight + i * M1_stride_oscore_weight_tile,
                               M1_length_oscore_weight_tile);
-            snrt_dma_start_1d(ptr_conv_weight[buf], M1_conv_weight + i * M1_length_conv_weight_tile,
+            snrt_dma_start_1d(ptr_conv_weight[buf], M1_conv_weight + i * M1_stride_conv_weight_tile,
                               M1_length_conv_weight_tile);
-            snrt_dma_start_1d(ptr_conv_bias[buf], M1_conv_bias + i * M1_length_conv_bias_tile,
+            snrt_dma_start_1d(ptr_conv_bias[buf], M1_conv_bias + i * M1_stride_conv_bias_tile,
                               M1_length_conv_bias_tile);
-            snrt_dma_start_1d(ptr_iscore_weight_P1[buf], M1_iscore_weight + i * M1_length_iscore_weight_tile,
+            snrt_dma_start_1d(ptr_iscore_weight_P1[buf], M1_iscore_weight + i * M1_stride_iscore_weight_tile,
                               M1_length_iscore_weight_tile);
         }
 
@@ -198,7 +198,7 @@ int test_phase1_and_2() {
         if (i >= 2 && snrt_is_dm_core()) {
             uint32_t spill_tile = i - 2;
             int sbuf            = spill_tile % 2;
-            snrt_dma_start_1d(ptr_conv_out_l3 + spill_tile * M1_length_conv_out_tile, ptr_conv_out_tile[sbuf],
+            snrt_dma_start_1d(ptr_conv_out_l3 + spill_tile * M1_stride_conv_out_tile, ptr_conv_out_tile[sbuf],
                               M1_length_conv_out_tile);
         }
 
@@ -237,18 +237,18 @@ int test_phase1_and_2() {
         int buf = i % 2;
 
         if (i < nb_tiles && snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_oscore_weight_P2[buf], M2_oscore_weight + i * M2_length_oscore_weight_tile,
+            snrt_dma_start_1d(ptr_oscore_weight_P2[buf], M2_oscore_weight + i * M2_stride_oscore_weight_tile,
                               M2_length_oscore_weight_tile);
-            snrt_dma_start_1d(ptr_dt_weight_1[buf], M2_dt_weight_1 + i * M2_length_dt_weight_1_tile,
+            snrt_dma_start_1d(ptr_dt_weight_1[buf], M2_dt_weight_1 + i * M2_stride_dt_weight_1_tile,
                               M2_length_dt_weight_1_tile);
-            snrt_dma_start_1d(ptr_dt_weight_2[buf], M2_dt_weight_2 + i * M2_length_dt_weight_2_tile,
+            snrt_dma_start_1d(ptr_dt_weight_2[buf], M2_dt_weight_2 + i * M2_stride_dt_weight_2_tile,
                               M2_length_dt_weight_2_tile);
-            snrt_dma_start_1d(ptr_dt_bias[buf], M2_dt_bias + i * M2_length_dt_bias_tile, M2_length_dt_bias_tile);
-            snrt_dma_start_1d(ptr_A[buf], M2_suc_A + i * M2_length_A_tile, M2_length_A_tile);
-            snrt_dma_start_1d(ptr_D[buf], M2_suc_D + i * M2_length_D_tile, M2_length_D_tile);
-            snrt_dma_start_1d(ptr_iscore_weight_P2[buf], M2_iscore_weight + i * M2_length_iscore_weight_tile,
+            snrt_dma_start_1d(ptr_dt_bias[buf], M2_dt_bias + i * M2_stride_dt_bias_tile, M2_length_dt_bias_tile);
+            snrt_dma_start_1d(ptr_A[buf], M2_suc_A + i * M2_stride_A_tile, M2_length_A_tile);
+            snrt_dma_start_1d(ptr_D[buf], M2_suc_D + i * M2_stride_D_tile, M2_length_D_tile);
+            snrt_dma_start_1d(ptr_iscore_weight_P2[buf], M2_iscore_weight + i * M2_stride_iscore_weight_tile,
                               M2_length_iscore_weight_tile);
-            snrt_dma_start_1d(ptr_x_tile[buf], ptr_conv_out_l3 + i * M2_length_x_tile, M2_length_x_tile);
+            snrt_dma_start_1d(ptr_x_tile[buf], ptr_conv_out_l3 + i * M2_stride_x_tile, M2_length_x_tile);
         }
 
         if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
@@ -293,8 +293,8 @@ int test_phase1_and_2() {
         if (i >= 2 && snrt_is_dm_core()) {
             uint32_t spill_tile = i - 2;
             int sbuf            = spill_tile % 2;
-            snrt_dma_start_1d(ptr_z_l3 + spill_tile * M2_length_z_tile, ptr_z_tile[sbuf], M2_length_z_tile);
-            snrt_dma_start_1d(ptr_y_l3 + spill_tile * M2_length_y_tile, ptr_y_tile[sbuf], M2_length_y_tile);
+            snrt_dma_start_1d(ptr_z_l3 + spill_tile * M2_stride_z_tile, ptr_z_tile[sbuf], M2_length_z_tile);
+            snrt_dma_start_1d(ptr_y_l3 + spill_tile * M2_stride_y_tile, ptr_y_tile[sbuf], M2_length_y_tile);
         }
 
         if (snrt_is_dm_core()) {

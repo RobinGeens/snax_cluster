@@ -11,7 +11,7 @@
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
 > [9. Async tiling](09_async_tiling.md) ·
-> [10. Memory simulator](10_memsim.md) ·
+> [Memory simulator](../../target/snitch_cluster/sim/docs/memsim.md) (simulator internals) ·
 > [12. SUC async](12_suc_async.md) ·
 > [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
 > [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
@@ -19,7 +19,7 @@
 
 This folder describes, for every program under
 [target/snitch_cluster/sw/apps/](../../target/snitch_cluster/sw/apps/), the
-**high-level dataflow**: the order of accelerator stages, the tiling axis (and
+high-level dataflow: the order of accelerator stages, the tiling axis (and
 why), and which buffers are reused vs. tiled between stages.
 
 For byte-level tensor layouts see
@@ -28,23 +28,18 @@ for the exact streamer/CSR programming see the program sources.
 
 ## App index
 
-Every program under [`sw/apps/`](../../target/snitch_cluster/sw/apps/), grouped
-by family. **Detail** links to the page that describes the dataflow. One-liners
-here are pointers only — the linked page is the single home for each app's
-design.
-
 ### GEMM building blocks
 
 | App | What it does | Detail |
 | --- | --- | :---: |
 | `osgemm` | Single-shot OS-core `D = A·B` (ConvFormat output) | [1](01_oscore_kernels.md) |
-| `osgemm-tiled` | OS GEMM, output **N-axis** tiled | [1](01_oscore_kernels.md) |
+| `osgemm-tiled` | OS GEMM, output `N`-axis tiled | [1](01_oscore_kernels.md) |
 | `osgemm-tiled-async` | OS GEMM with the `A` input L-tiled into an async TCDM ring (input-side ring, paced by `R10`) | [9](09_async_tiling.md) |
 | `isgemm` | Single-shot IS-core `D = C + A·B` (psum read-back) | [2](02_iscore_kernels.md) |
-| `isgemm-tiled` | IS GEMM, **K-axis** accumulating tiles | [2](02_iscore_kernels.md) |
+| `isgemm-tiled` | IS GEMM, `K`-axis accumulating tiles | [2](02_iscore_kernels.md) |
 | `isgemm-tiled-async` | IS GEMM with the PSUM streamed through an async output-side ring (paced by `ISCORE_TILE_CNT`) | [9](09_async_tiling.md) |
-| `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel | ??? |
-| `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | ??? |
+| `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel *(inactive)* | [2](02_iscore_kernels.md) |
+| `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | [2](02_iscore_kernels.md) |
 | `is-osgemm-tiled-async` | Both async rings live at once (A-input refill + PSUM spill/reload), double-paced | [9](09_async_tiling.md) |
 | `double-gemm-conflict-free` | `is-osgemm-tiled`'s parallel OS+IS GEMMs with a bank-partitioned skip-128 layout (OS → banks 0-15, IS → banks 16-31), eliminating cross-core bank contention | [20](20_double_gemm_conflict_free.md) |
 | `conv-downsample` | 3×3 stride-2 Conv2d (SiMBA downsample) as an im2col GEMM, IS-core tiled over the reduction axis `dModel = 9·Cin` | [21](21_conv_downsample.md) |
@@ -86,7 +81,7 @@ design.
 | `fft-3way-tiled-async` | 3-way DFT streaming the `L3` axis through L3 (H2 + psum) for long sequences | [5](05_fft.md) |
 | `fft-3way-L8` | 3-way DFT with a factor-8 axis (`L3 < seqLenUnroll`), via `m3` padding | [5](05_fft.md) |
 | `fft-4way` | 4-way partitioned DFT (kernel-validation harness, every buffer resident) | [5](05_fft.md) |
-| `fft-4way-tiled-async` | 4-way DFT, l3-streamed (staging DMA does the reorder2 `m3↔m4` transpose) | [5](05_fft.md) |
+| `fft-4way-tiled-async` | 4-way DFT, l3-streamed for `L = 16⁴`+ (per-`l3`-tile staging DMA gathers `m3` into K-position; partition 3 stays TCDM-resident) *(inactive)* | [5](05_fft.md) |
 
 ### EinFFT MLP
 
@@ -126,8 +121,9 @@ These constraints are baked into the hardware and shape every program.
    accumulating tiled IS GeMMs must tile K, not N: tiling N puts a fake
    last-iteration in every tile and corrupts the requant timing.
 5. **Inter-stage byte reorders must be folded into streamer programming.**
-   Scalar reorders over TCDM via Snitch are too slow and are not used in any
-   program here.
+   Scalar reorders over TCDM via Snitch are too slow; the only exception is
+   `fft-4way`'s `reorder2` validation harness (the async variant folds it into
+   DMA staging).
 6. **Padding is the programmer's responsibility** unless an explicit hardware
    helper does it (e.g., `ISGEMM_SQ` pads the input internally; the weight
    must still be pre-padded).
@@ -145,12 +141,6 @@ tile `i−2` in lockstep, with the DM core and compute core 0 working in
 parallel. The compute streamer is configured once with per-tile bounds; only
 the moving base pointers change per tile.
 
-**On-chip forwarding.** In Phase 2 the OS-core writes its output and the
-SU-core reads it on the next cycle via an on-chip wire, bypassing TCDM. The
-same pattern carries SU-core → IS-core. This is what lets one P2 launch
-run the OS-core, Switch-core, SU-core, and IS-core concurrently.
-
-**Buffer reuse across phases.** In Mamba main, Phase 1's IS-core output
-(`xProj`) doubles as Phase 2's Switch-core input (`dt_in`), and Phase 1's
-Switch-core output (`conv_out`) doubles as Phase 2's SU-core input (`x`). No
-re-DMA between phases.
+**On-chip forwarding and cross-phase buffer reuse** are specific to the Mamba
+block (which hops are true TCDM-bypass wires vs. gauge-paced TCDM round-trips,
+and which buffers carry over between phases) — see [4. Mamba main](04_mamba_main.md).

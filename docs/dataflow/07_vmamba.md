@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > **7. VMamba SS2D (this page)** ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),
@@ -123,17 +127,6 @@ An 8-step SIMD chain on the merged y (adapted from the `rmsnorm` program):
 
 ### Tested configurations
 
-| H | W | dModel | dInner | K | Per-dir errors | Merge+RMS errors | Total |
-|---|---|--------|--------|---|----------------|------------------|-------|
-| 4 | 4 |   48   |   96   | 4 | 0/300          | 37/50 (FP8 rounding) | 37/350 |
-| 4 | 4 |   96   |  192   | 4 | 1/300 (FP8)    | —                | 1/300+ |
-
-Per-direction checks (z, SUC y, iscore_out) are exact or near-exact. Cross-merge
-and RMSNorm errors are accumulated FP8 rounding from summing 4 directions and
-the 8-step SIMD normalization chain — inherent to FP8 arithmetic.
-
-### Tested configurations
-
 | H | W | dModel | L | D | Binary | L1 | P1 (4 dirs) | P2 (4 dirs) | Post-merge errors | Status |
 |---|---|--------|---|---|--------|-----|-------------|-------------|-------------------|--------|
 | 4 | 4 | 48 | 16 | 96 | 117 KiB | 53 KiB | 3,164 cc | 12,440 cc | 34/50 (FP8) | PASS |
@@ -160,11 +153,12 @@ dModel=96.
 
 ### Cross-scan implementation
 
-Cross-scan is currently implemented as a scalar permutation on the Snitch
-compute core: a single input in flattenA format (dir 0) is stored, and for
-dirs 1–3, `cross_scan_flattena()` reorders it byte-by-byte in TCDM. This
-eliminates K copies of oscore_in from the binary but uses scalar cycles
-(~2 cc/byte, ~12K cc for L=64 dModel=96).
+Cross-scan is done in the Scala data generator: `VMambaLib.crossScan` builds
+the K=4 directional sequences and `DataGeneratorVMamba` writes them K-stacked
+as `oscore_in_K`. Both `vmamba` and `vmamba-tiled` DMA the pre-flattened
+per-direction slice (`M2_oscore_in_K + k * dir_size_oscore_in`) from L3 into
+TCDM at the top of each direction; there is no scalar reorder on the Snitch
+compute core.
 
 For a real multi-layer deployment, the previous layer's output in L3 would be
 DMA'd into TCDM per direction, with the cross-scan permutation folded into
@@ -174,8 +168,10 @@ reused per direction.
 
 ## `vmamba-tiled`
 
-Both phases are **dInner-tiled** following `main-tiled`. Currently runs a single
-Phase 1 → Phase 2 pass (not yet K per-direction). See
+Both phases are **dInner-tiled** following `main-tiled`, run inside the full K=4
+per-direction loop, followed by cross-merge (SIMD ADD) and the 8-step RMSNorm
+chain — the same end-to-end SS2D pipeline as `vmamba`, with each direction's
+Phase 1 and Phase 2 tiled over dInner. See
 [04_mamba_main.md §main-tiled](04_mamba_main.md#main-tiled) for tiling details.
 
 ### Tested configurations

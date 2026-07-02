@@ -179,7 +179,7 @@ uint64_t cyc_suc_duration(const Agu& r7_agu, int seqLen, int dInner_tile, uint32
     // Per-cycle SUC: the R7 dt_BC reader is not group-synchronous -- each lane's DataRequestor
     // issues its head address independently and retries on conflict while lanes on free banks
     // run ahead (bounded by FIFO depth), so the bank-conflict magnitude (~1.75x at pad0/2 banks,
-    // 1.0x at pad4/4 banks) comes from the per-cycle arbitration. See docs/dataflow/10_memsim.md.
+    // 1.0x at pad4/4 banks) comes from the per-cycle arbitration. See target/snitch_cluster/sim/docs/memsim.md.
     const int NCH = 4, delaySU = 4, RPR = 4;   // R7 group = 4 lanes; RPR groups (B+C) per delaySU
     // RTL FIFO depths (Reader.scala/StreamParamGen): request-side addr FIFO = 4; response-side
     // read-ahead = responser FIFO (4) + dataBuffer (4) = 8 (the 2-refresh cross-overlap). Do

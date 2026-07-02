@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 > Byte layouts of every Phase 1 / Phase 2 buffer:
 > [memory_layouts/07 — per-mode reference](../../../chisel-ssm/docs/memory_layouts/07_mode_reference.md),
@@ -23,9 +27,11 @@ The Mamba block runs as two SimbaCore launches:
 - **Phase 1**: a "side" path that produces `conv_out` and an IS-core output
   `xProj` (the `(dt, B, C)` projection).
 - **Phase 2**: the main path. Inside one P2 launch, the OS-core, Switch-
-  core, SU-core, and IS-core all run concurrently with on-chip forwarding:
-  OS-core out streams directly into the SU-core, and SU-core out streams
-  directly into the IS-core. Neither hop round-trips through TCDM.
+  core, SU-core, and IS-core all run concurrently. The true on-chip wire
+  bypasses are OS-core → Switch-core in Phase 1 and Switch-core → SU-core
+  (the `delta` input) in Phase 2. The OS-core output `z` and the SU-core
+  output `y` do round-trip TCDM: `z` via W0 → R10 and `y` via W2 → R11,
+  paced by the R10/R11 safe-to-start gauges.
 
 **Cross-phase buffer sharing.** Phase 1's outputs are Phase 2's inputs:
 
@@ -64,8 +70,8 @@ No re-DMA between phases; the buffers stay at the same TCDM address.
 | `A`, `D`            | SU-core state matrices                | DMA from L3                           |
 | `iscore_weight`     | IS-core weight                        | DMA from L3                           |
 | `iscore_bias`       | IS-core bias                          | DMA from L3                           |
-| `z`                 | OS-core output (forwarded to SU-core) | produced in P2                        |
-| `y`                 | SU-core output (forwarded to IS-core) | produced in P2                        |
+| `z`                 | OS-core output (W0 → R10 via TCDM)    | produced in P2                        |
+| `y`                 | SU-core output (W2 → R11 via TCDM)    | produced in P2                        |
 | `iscore_out`        | IS-core final output                  | produced in P2                        |
 
 ## `main` and `main-full`
@@ -100,7 +106,7 @@ ping-pong region for its own ping-pong, since Phase 1 is done with it.
 
 **Why `iscore_out_P1` uses a single buffer (no psum/final split).**
 The BankTransposer is gated on `isCoreOutIsFinal`
-([MambaCore.scala:370](../../../chisel-ssm/src/main/scala/mambacore/MambaCore.scala#L370)):
+([MambaCore.scala:361](../../../chisel-ssm/src/main/scala/mambacore/MambaCore.scala#L361)):
 intermediate K-steps accumulate in standard layout, and the transposer
 only fires on the hardware's internal final K-step. This is the same
 mechanism the untiled `main` program relies on. Within a single
@@ -128,15 +134,15 @@ DMA-tile size against kernel-launch overhead.
 
 ### Possible further tricks (not yet implemented)
 
-- L-tile `iscore_out_P2` by splitting P2 into a new "PHASE2\_NO\_ISCORE" mode
-  (chisel-ssm change) + IS-core-only kernel calls. Frees the `L*dModel*2`
-  buffer.
+- L-tile `iscore_out_P2` by splitting P2 into the `PHASE2_NO_ISCORE` mode
+  (`M33_PHASE2_NO_ISCORE`, already used by `P2-async-OS-no-IS`) + IS-core-only
+  kernel calls. Frees the `L*dModel*2` buffer.
 
 
 ## Phase / core isolation apps
 
 - **`P1-tiled-D`** — P1 alone, dInner-tiled and double-buffered. IS-core out psum is fully resident
-- **`P2-tiled-D`** — P2 2 alone, dInner-tiled and double-buffered. IS-core out psum is fully resident
+- **`P2-tiled-D`** — P2 alone, dInner-tiled and double-buffered. IS-core out psum is fully resident
 - **`suc-only`** Only SUC, used to demonstrate the bank-conflict hit it `BC`. The regular (unpadded) memory layout gives
   bank conflicts in `BC` because the spatial stride of BC is 16 banks, so every two elements come from the same bank. 
   In this app, we overwrite the stride with an incorrect one, just to verify utilization.
@@ -208,15 +214,6 @@ Fallback:
 
 Infeasible:
 - Async IS-gemm and OS-gemm in P2: DMA cannot sustain this -> loose overlap benefit
-
-
-## `main-tiled-A2`
-
-Not implemented yet.
-
-## `main-tiled-B1`
-
-Implements option B1.
 
 
 

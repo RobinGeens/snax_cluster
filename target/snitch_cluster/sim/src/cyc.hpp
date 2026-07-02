@@ -2,7 +2,7 @@
 // The real cycle-accurate memory model: 32-bank TCDM with per-bank arbitration,
 // DMA-vs-streamer superbank preemption, and reader/writer streamers with AGUs +
 // FIFOs. Bank conflicts, FIFO backpressure, and DMA preemption are produced by
-// stepping this every cycle. See docs/dataflow/10_memsim.md.
+// stepping this every cycle. See target/snitch_cluster/sim/docs/memsim.md.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -109,7 +109,7 @@ struct Fabric {
 // Each transfer becomes drainable only at its submit cycle (at_rel), so DMAs issued mid-
 // invocation collide only from when the SW actually launched them. period = cycles the
 // backend holds a superbank per beat (L3 read-bound vs TCDM bus-bound; derived from the DMA
-// trace, see docs/dataflow/10_memsim.md).
+// trace, see target/snitch_cluster/sim/docs/memsim.md).
 struct DmaEngine {
     struct Xfer { uint32_t tcdm_addr; uint32_t beats; int period; uint64_t at_rel; };
     std::vector<Xfer> q;            // FIFO of transfers, in submit order

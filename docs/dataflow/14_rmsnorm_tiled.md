@@ -1,5 +1,21 @@
 # 14. RMSNorm tiled (with residual)
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> **14. RMSNorm tiled (this page)** ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
+
 Computes `out = rmsnorm(x) * weight + y` for arbitrarily large seqLen by tiling the sequence
 axis. RMSNorm is per-token and the residual add is elementwise, so every L-tile is fully
 independent.

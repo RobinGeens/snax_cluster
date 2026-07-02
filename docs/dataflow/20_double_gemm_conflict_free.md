@@ -1,5 +1,21 @@
 # 20. Double GEMM, bank-conflict-free
 
+> **All pages:**
+> [README](README.md) ·
+> [1. OS-core kernels](01_oscore_kernels.md) ·
+> [2. IS-core kernels](02_iscore_kernels.md) ·
+> [3. SIMD / RMSNorm kernels](03_simd_kernels.md) ·
+> [4. Mamba main](04_mamba_main.md) ·
+> [5. FFT family](05_fft.md) ·
+> [6. EinFFT MLP](06_einfft_mlp.md) ·
+> [7. VMamba SS2D](07_vmamba.md) ·
+> [8. Performance optimization](08_performance_optimization.md) ·
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> **20. Bank-conflict-free double GEMM (this page)** ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
+
 `double-gemm-conflict-free` runs the same two independent GEMMs in parallel as
 [`is-osgemm-tiled`](../../target/snitch_cluster/sw/apps/is-osgemm-tiled). The two GEMMs share no data; their only coupling is
 TCDM bank bandwidth. This app removes that coupling with a bank-partitioned memory layout, so the

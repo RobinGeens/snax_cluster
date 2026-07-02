@@ -75,7 +75,7 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         assert nb_l_tiles % nb_slots == 0, "nb_l_tiles must be a multiple of nb_slots"
         win_per_l_tile = L_tile // su
 
-        # BC bank-conflict padding: pad each bank-transpose matrix to bc_matrix_stride (see 10_memsim.md).
+        # BC bank-conflict padding: pad each bank-transpose matrix to bc_matrix_stride (see target/snitch_cluster/sim/docs/memsim.md).
         def pad_win(raw):  # raw spans a whole number of (unpadded) bank-transpose matrices
             assert raw % self.bc_matrix_bytes == 0, f"{raw} not a multiple of bc_matrix_bytes {self.bc_matrix_bytes}"
             return (raw // self.bc_matrix_bytes) * self.bc_matrix_stride

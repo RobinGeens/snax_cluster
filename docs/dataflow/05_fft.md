@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 > Byte layouts (weights, twiddles, intermediates, the `flattenB`
 > reorder output): [memory_layouts/09](../../../chisel-ssm/docs/memory_layouts/09_fft.md).
@@ -19,12 +23,15 @@ All FFT programs implement an **EinFFT-style partitioned DFT**: a length-`L`
 complex DFT is run as a sequence of small IS-core matmuls interleaved with
 SIMD Hadamards (CMul) and SIMD reorders (Noop deinterleave of re/im). The
 streamer chain is fully on-chip — there are no software byte reorders
-between stages.
+between stages (the one exception is `fft-4way`'s reorder2 `m3↔m4`
+transpose, a scalar C loop in the un-tiled validation harness — see that
+section).
 
 **The no-software-reorder trick.** The data generator emits inputs in a
 byte layout chosen so each SIMD-Noop deinterleave output is *already* in
 the format the next IS-core partition consumes. This is why no stage needs
-a software byte loop between accelerator launches.
+a software byte loop between accelerator launches (again excepting
+`fft-4way`'s reorder2 transpose).
 
 ## `fft` (2-way, `L = L1 · L2`)
 
@@ -100,7 +107,7 @@ K-tile reorder into the already-present spill DMA.
 
 ## `fft-3way` (3-way, `L = L1 · L2 · L3`)
 
-Five accelerator stages in order:
+Seven accelerator stages in order:
 
 1. **partition 1** — IS-core (bank-transposed output).
 2. **hadamard 1** — SIMD CMul against `twiddles1`.
@@ -304,12 +311,15 @@ partitions — same nature as the 3-way's `~2/25` floor.
 The dModel-tile alone cannot fit `L = 65536`: it only slices `dM` and leaves the L-proportional
 buffers (`twiddles1 ≈ 2·L`, the BF16 partition psum `≈ 4·L·dM`, two FP8 hadamards `≈ 2·L·dM`)
 intact — peak `≈ 717 KiB > 512 KiB` even at `dM=1`. The async streams `m3` (the partition-3
-contraction) exactly like `fft-3way-tiled-async`: stages 1–2 run per `l3`-tile on gathered
-tile-local buffers, and each tile's hadamard2 is staged to L3. The crucial 4-way addition is
-that this **staging DMA performs the reorder2 `m3↔m4` transpose** (it writes the tile's hadamard2
-into the L3 `m3`-major / `[re|im]` regions), so no on-chip transpose is needed. Partition3 then
-reads full-`m3` from L3 (N-tiled over `(a, m4)`, K-tiled over `m3`), and `cmul3 → reorder3 →
-partition4` (contracts `m4`, already innermost) run per N-tile before the output scatter.
+contraction) per `l3`-tile, but the whole partition-3 input stays TCDM-resident — no L3 spill.
+Stages 1–2 run per `l3`-tile on gathered tile-local buffers: the tile's input and twiddles are
+DMA-gathered from DRAM so the `m3`-block lands in K-position for partition 3. reorder2
+deinterleaves cmul2's re/im (DMA gather for `L3 == 16`, block-swap SIMD NOOP for `2·L3 ≤ 16`)
+and writes the tile's contribution into a persistent TCDM buffer `packed3`. Once all `l3`-tiles
+have accumulated into `packed3`, partition3 runs **once** as a single full-K (`2·L3_padded`)
+`ISGEMM_SQ_TRANSPOSE`, and `cmul3 → reorder3 → partition4` (contracts `m4`, already innermost)
+run **once** over the full buffer before the output scatter. Stage-3/4 N-tiling (`nb_ntile > 1`)
+is asserted unimplemented.
 
 **reorder2 / reorder3 regimes.** Both deinterleave the cmul re/im into the next partition's
 K-blocks, in HW, picked by the contracted axis length:
@@ -318,6 +328,5 @@ K-blocks, in HW, picked by the contracted axis length:
 - `2·axis ≤ 16` (`K = 1`): the split degenerates to the block-swap SIMD NOOP (reuses
   reorder1's `R7_2B/W3_2B`), writing the N-major next-partition input directly.
 
-**Factorisation limits.** `L1` is a multiple of 16; `L3 ≤ 32` (`2·L3 ≤ 64`, one square tile), l3-tiled at `l3_tile=16`. **`L2 ≤ 16`:
-`L2 > 16` in is unsupported.
+**Factorisation limits.** `L1` is a multiple of 16; `L3 ≤ 32` (`2·L3 ≤ 64`, one square tile), l3-tiled at `l3_tile=16`; `L2 ≤ 16` (`L2 > 16` is unsupported).
 

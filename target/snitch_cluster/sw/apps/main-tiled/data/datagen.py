@@ -287,7 +287,13 @@ class DataGenerator(DataGeneratorBase):
             "length_conv_out_tile": len_conv_out // nb,
             "length_iscore_weight_tile": len_iscore_weight // nb,
         }
-        scalars = {**lengths, **deltas, **tile_scalars}
+        # Per-tile source strides default to the per-tile size (can be overridden, e.g., for L2-fitting dummy)
+        stride_scalars = {
+            f"stride_{k[len('length_'):]}": v
+            for k, v in tile_scalars.items()
+            if k.startswith("length_") and k.endswith("_tile")
+        }
+        scalars = {**lengths, **deltas, **tile_scalars, **stride_scalars}
         self.phase1_scalars = scalars.copy()
 
         tests = {"conv_out": self.seqLen * self.dInner, "iscore_out": self.seqLen * self.xProjDim}
@@ -517,10 +523,17 @@ class DataGenerator(DataGeneratorBase):
             "length_iscore_weight_tile": len_iscore_weight // nb,
         }
 
+        # Per-tile source strides (= per-tile size by default); the L2-fitting dummy sets them to 0.
+        stride_scalars = {
+            f"stride_{k[len('length_'):]}": v
+            for k, v in tile_scalars.items()
+            if k.startswith("length_") and k.endswith("_tile")
+        }
         scalars = {
             **lengths,
             **deltas,
             **tile_scalars,
+            **stride_scalars,
             "R10_start_cnt": suc_start_cnt,
             "R11_start_cnt": iscore_start_cnt,
             "dt_to_BC_offset": self.dt_to_BC_offset,

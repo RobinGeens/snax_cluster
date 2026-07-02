@@ -76,7 +76,7 @@ struct Machine {
     // The app's own FP check_result (its "ref = N" / "N/M errors" lines) cannot pass under
     // memsim (timing + integer/layout, not the bf16/fp8 datapath), so it is suppressed by
     // default (set MEMSIM_SHOW_APP_CHECK=1 to see it). The model's correctness signal is the
-    // --verify layout/BIST cross-check; see docs/dataflow/10_memsim.md.
+    // --verify layout/BIST cross-check; see target/snitch_cluster/sim/docs/memsim.md.
     bool show_app_check = false;
     std::string app_line_;               // line accumulator for the filter
     static bool is_app_check_line(const std::string& s) {

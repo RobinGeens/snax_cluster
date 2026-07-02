@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> **9. Async tiling (this page)**
+> **9. Async tiling (this page)** ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 When a streamer's tensor is shared across many kernel calls (or across many
 K-steps inside one call), it can dominate the TCDM budget. Real tiling is often
@@ -42,6 +46,9 @@ CSR change). Re-enable only once the DMA is done. Requires the streamer to have
 an individual start signal.
 
 ## Implementation concepts
+
+The input-side ring is implemented in `osgemm-tiled-async` (minimal single-osCore
+GEMM) and `main-tiled-oscore` (the full P1 with `oscore_in` ring-tiled).
 
 **1. Make the streamer wrap with no HW change.**
 Streamer AGUs only support non-negative strides, so a literal modular
@@ -114,16 +121,19 @@ blocking gauge-wait (e.g. a dependent reader's delayed start), sequence that wai
 
 ## Scaling laws 
 
-We need async tiling to support larger sequence lengths (not model sizes). If L becomes larger for given Dmodel, the
-SUC will start taking longer than the GEMM cores. This relaxes our bandwidth requirements even further: we need to pace
-the DMA refill based on the SUC throughput, not the GEMM throughput.
+Async tiling targets larger sequence lengths, not model sizes. At larger `L` for a
+given `dModel`, the SUC takes longer than the GEMM cores. This relaxes the bandwidth
+requirement further: the DMA refill is paced on the SUC throughput, not the GEMM
+throughput.
 
 ## Output-side ring (PSUM)
 
 The same mechanism applies to isCore. Instead of ringing a shared
 input, keep the full IS-core PSUM (`seqLen × dModel`) in L3 and slide the ring
 through TCDM, paced by the IS-core output-tile gauge `ISCORE_TILE_CNT` instead of
-`R10_DELAY_GAUGE`. Two differences from the input case:
+`R10_DELAY_GAUGE`. Implemented in `isgemm-tiled-async` (minimal single-isCore
+GEMM) and `main-tiled-iscore` (the full P1 with `iscore_out_P1` ring-tiled). Two
+differences from the input case:
 
 - **Two transfers per ring visit.** Because K (dInner) is the outer loop, every
   L-tile's running psum is revisited each K-step, so a visit must **spill** the
@@ -189,7 +199,7 @@ threshold `M2_R10_start_cnt` and trails the osCore.
 
 How much they overlap is set entirely by that threshold. The SUC reads z in a scrambled
 per-`(seqLenUnroll × dInnerUnroll)` tile order, so it must trail the osCore by ~1 such
-window: `safe_to_start = ceil(seqLen_tiles · 1.2)`, clamped to
+window: `safe_to_start = ceil(max(seqLen_tiles, suc_delta) · 1.2)`, clamped to
 `gemm_total = seqLen_tiles · n_24L` (`get_safe_to_start_delay`), where
 `n_24L = dInner_tile / dInnerUnroll`. Therefore:
 

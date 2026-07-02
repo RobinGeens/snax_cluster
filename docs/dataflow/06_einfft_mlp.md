@@ -10,7 +10,11 @@
 > **6. EinFFT MLP (this page)** ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 > Byte layouts of A, B, D for the OS-core:
 > [memory_layouts/02](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md)
@@ -87,8 +91,8 @@ This is enabled by three coordinated decisions:
 
 Without these three, the program would need C helpers to gather
 ConvFormat → flat / scatter flat → flatA / broadcast bias / clamp BF16,
-which would dominate the wall-clock cycle count (≈45× speed-up was
-measured against the original C-helper version on the un-tiled config).
+which would dominate the wall-clock cycle count (a C-helper version of
+the un-tiled config is ≈45× slower).
 
 The one piece that ConvFormat-throughout does **not** cover is the
 inter-layer chain: layer 1's output is in ConvFormat in TCDM, but layer
@@ -120,11 +124,12 @@ DMA'd into TCDM before the four OSGEMMs run. With `L=16, D=192`
   Consequently the scratch, the BF16 staging, and the output buffers only
   ever hold ONE tile — the TCDM footprint scales as `~1/nb_tiles` in those
   buffers, which is what lets large `(L, dModel)` fit (see §6.5).
-- The earlier "SIMD degrades at short per-tile bounds" caveat applies
+- The "SIMD degrades at short per-tile bounds" caveat applies
   only to *tiny absolute* bounds (~12 fp8 cycles, the `L=16` default).
   At realistic params the per-tile bound is far above that and the fuse
   is correct; validated at `64/384/2`, `192/384/2`, and `384/384/2`
-  (the last ~648 KiB with the old full-buffer scheme — formerly OOM).
+  (the last is ~648 KiB under a full-buffer scheme, which the per-tile
+  buffers keep within the TCDM budget).
 
 This program PASSES at `nb_tiles = 1` (per-tile fuse degenerates to the
 un-tiled `einfft` chain, plus a one-iteration tile loop and one-tile
@@ -153,7 +158,7 @@ weight buffer. ConvFormat is d3-outer, so `rr/ir` are the first
 `seqLen·dPerB_tile` bytes of `out_A/out_B` and `ri/ii` the second; the SIMD
 fuse just points its readers at the right halves. Verified `96/128/1`,
 `192/128/1`, `192/128/2`, `384/128/2`; at `dModel=192` the concat is ~0.4%
-fewer simbacore cycles than the old 4-launch path, and `dModel=96` runs at
+fewer simbacore cycles than a 4-launch path, and `dModel=96` runs at
 the true minimal MAC count (≈2× fewer OSGEMM cycles than a zero-pad).
 
 ## 6.3 Un-tiled dataflow (`einfft`)
@@ -252,7 +257,7 @@ the per-tile buffers, so larger `(L, dModel)` fit; the floor is the
 FULL per-branch `x_re/x_im` (reused by every N-tile) plus mini-bias.
 
 Total live TCDM (un-tiled, `L=16, D=192`):
-≈ 36 KiB (most of it the 16 FULL FP8 / BF16 broadcast buffers).
+≈ 58 KiB (most of it the 16 FULL FP8 / BF16 broadcast buffers).
 
 ## 6.6 Layer chaining
 
@@ -306,6 +311,8 @@ cores**, running them concurrently under the `IS_OSGEMM` kernel mode (the same
 mode [`is-osgemm-tiled`](09_async_tiling.md) uses to run one OS-core and one
 IS-core matmul in a single launch). Generator:
 `chisel-ssm/.../datagen/DataGeneratorEinfftMlpIsOs.scala`.
+The bank-conflict-free `einfft-double-conflictfree` variant is
+[20. Double GEMM, bank-conflict-free](20_double_gemm_conflict_free.md).
 
 - **REAL side → OS-core** (`rr = x_re·W_re`, `ii = x_im·W_im`): FP8 ConvFormat,
   fused exactly like `einfft` (widen → SUB → bias-add → narrow).

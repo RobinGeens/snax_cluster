@@ -1,5 +1,5 @@
 // Copyright 2026 KU Leuven. memsim — SimWorld: functional datapath (real data
-// movement) + cycle-accurate timing. See docs/dataflow/10_memsim.md.
+// movement) + cycle-accurate timing. See target/snitch_cluster/sim/docs/memsim.md.
 #pragma once
 #include <algorithm>
 #include <array>
@@ -192,7 +192,7 @@ class SimWorld : public World {
     // ---- timing constants ----
     // Timing constants. Each value is derived from an RTL register/FIFO depth (file:line
     // cited) or marked residual where a latency is data-dependent rather than a static depth.
-    // Full rationale + the constants table live in docs/dataflow/10_memsim.md; cross-check the
+    // Full rationale + the constants table live in target/snitch_cluster/sim/docs/memsim.md; cross-check the
     // cited RTL before changing a value.
     uint32_t dma_first_beat_l3_ = 19;    // iDMA backend req->AR->first-R/W (axi_dma_backend.sv) +
                                          // 3 FE stages; 11 of 16 is the simulated L3+xbar latency.

@@ -1,4 +1,4 @@
-# 2. IS-core kernels: `isgemm` and `isgemm-tiled`
+# 2. IS-core kernels
 
 > **All pages:**
 > [README](README.md) ·
@@ -10,7 +10,11 @@
 > [6. EinFFT MLP](06_einfft_mlp.md) ·
 > [7. VMamba SS2D](07_vmamba.md) ·
 > [8. Performance optimization](08_performance_optimization.md) ·
-> [9. Async tiling](09_async_tiling.md)
+> [9. Async tiling](09_async_tiling.md) ·
+> [12. SUC async](12_suc_async.md) ·
+> [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
 > Byte layouts of A, B, C, D: [memory_layouts/02](../../../chisel-ssm/docs/memory_layouts/02_gemm_layouts.md).
 
@@ -48,3 +52,22 @@ the final tile applies the requant on the fully accumulated psum.
 **Pipeline.** Two stages: DMA-in the next A-tile and B-tile while computing
 the previous tile. Compute stages cannot overlap with each other because
 they share the accumulator.
+
+## `is-osgemm` and `is-osgemm-tiled`
+
+Two independent GEMMs run concurrently in a single `IS_OSGEMM` launch: an
+OS-core `D = A · B` (streamers `R0`/`R1` → `W0`, ConvFormat output) and an
+IS-core `D = C + A · B` (streamers `R11`/`R12`/`R13` → `W3`, psum read-back).
+They share nothing but the TCDM fabric, so their only coupling is bank
+contention — see [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md)
+for the skip-128 partition that removes it.
+
+`is-osgemm-tiled` tiles both GEMMs along `dInner`, which is the OS-core's
+output `N` axis (each tile = different output columns) and the IS-core's
+reduction `K` axis (each tile accumulates into the `CD` buffer). Non-final
+tiles run `IS_OSGEMM_NO_REQUANT`; the final tile runs `IS_OSGEMM`, applying
+the IS-core requant on the last K iteration (see "Why K, not N" above). A
+three-stage pipeline double-buffers DMA-in / compute / DMA-out.
+
+The async variant (`is-osgemm-tiled-async`) streams both rings at once — see
+[9. Async tiling](09_async_tiling.md).

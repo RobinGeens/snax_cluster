@@ -203,7 +203,7 @@ void SimWorld::run_invocation(uint64_t at) {
     // The per-cycle DMA-contention engine is OPT-IN (MEMSIM_DMA_PERIOD=<beats period>). Verification
     // showed P2's SUC is switchCore-bound (sw_cyc gating already captures the oscore gap to +0.5%), so
     // the engine's bank contention is mostly hidden and over-counts if always on. Off by default ->
-    // the (accurate) provisional timeline is unchanged. See docs/dataflow/10_memsim.md.
+    // the (accurate) provisional timeline is unchanged. See target/snitch_cluster/sim/docs/memsim.md.
     // The per-cycle DMA-contention engine is ALWAYS ON: all timing emerges from stepping, no closed
     // form. beat_period_l3 = measured L3 rate (~4 cyc/64B beat). MEMSIM_DMA_PERIOD overrides the period;
     // =0 disables the engine (debug only -> falls back to the dma_cycles approximation).
@@ -218,7 +218,7 @@ void SimWorld::run_invocation(uint64_t at) {
     inv_finalized_ = false;
     engine_active_ = false;
     engine_used_   = false;
-    // ---- compute per-invocation busy-cycle durations (see docs/dataflow/10_memsim.md
+    // ---- compute per-invocation busy-cycle durations (see target/snitch_cluster/sim/docs/memsim.md
     // and the MambaCore FSM). cfg_.dInner is the per-tile dInner (M*_dInner_tile). ----
     const uint32_t Mu = 16, Nu = 24;
     uint32_t M_i = cfg_.seqLen / Mu;                            // seqLen tiles
@@ -499,7 +499,7 @@ static bool cmp_fp32_golden(const std::vector<double>& model, const std::vector<
 }
 
 // Golden-free AGU structural audit, run on every invocation of every app. Three located,
-// pure-address checks (no golden needed); see docs/dataflow/10_memsim.md:
+// pure-address checks (no golden needed); see target/snitch_cluster/sim/docs/memsim.md:
 //   (1) bounds: each streamer's address extent stays inside the 512 KiB TCDM.
 //   (2) producer->consumer containment: a reader overlapping a writer reads only within it.
 //   (3) writer no-alias: a writer never writes one word twice (a permutation within bounds).
@@ -628,7 +628,7 @@ void SimWorld::verify_layout() {
 
 // Golden-aware datapath verification (mamba P2, runs once): integer osCore GEMM round-trip,
 // FP32 osCore/isCore/SUC cross-checks vs the app's FP8 goldens (MEMSIM_DATAPATH), the
-// safe-to-start sweep, and the SUC dt_BC delivery BIST. See docs/dataflow/10_memsim.md.
+// safe-to-start sweep, and the SUC dt_BC delivery BIST. See target/snitch_cluster/sim/docs/memsim.md.
 void SimWorld::verify_datapath() {
     const int Mu = 16, Nu = 24, CONV = 4;
     int M = cfg_.seqLen, K = cfg_.dModel, N = cfg_.dInner;  // dInner = per-tile N
@@ -727,7 +727,7 @@ void SimWorld::verify_datapath() {
     // FP32 osCore GEMM vs the app's FP8 golden (M2_oscore_expected, tile 0): decode A/B
     // fp8_alt->FP32, compute z=A.B, compare to the golden. A global requant scale is
     // normalized out (median ratio) so only wrong operands (layout/stale read) flag; the
-    // tolerance covers fp8(e5m2) rounding. See docs/dataflow/10_memsim.md.
+    // tolerance covers fp8(e5m2) rounding. See target/snitch_cluster/sim/docs/memsim.md.
     // Gated on MEMSIM_DATAPATH like the isCore/SUC golden checks below: the flattenB/convfmt
     // layout assumed here is the non-tiled `main` layout, so a TILED app's tile-0 golden does
     // not match (scale collapses to ~0) and would false-fail every tiled config. The structural

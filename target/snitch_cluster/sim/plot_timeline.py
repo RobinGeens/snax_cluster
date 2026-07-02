@@ -23,7 +23,7 @@ one coloured line per FIFO, readers solid and writers dotted. Living in timeline
 shows up wherever the timeline does (e.g. the batch-run report) with no extra wiring.
 
 The windows + ideal counts come from `memsim --timeline <csv>` (see src/world.cpp); the
-timing model itself is documented in docs/dataflow/10_memsim.md.
+timing model itself is documented in target/snitch_cluster/sim/docs/memsim.md.
 """
 import argparse
 import csv

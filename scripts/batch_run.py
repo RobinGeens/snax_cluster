@@ -399,7 +399,7 @@ class BatchRun:
 
     # Scheduling keys that common-datagen.mk filters OUT of the datagen cache key
     # (they affect data.h packing / safe-to-start, not the sbt golden data shape).
-    _CACHE_KEY_DROP = ("nb_tiles", "nb_l_tiles", "nb_slots", "safe_to_start", "force")
+    _CACHE_KEY_DROP = ("nb_tiles", "nb_l_tiles", "nb_slots", "nb_dt_tiles", "nb_dt_slots", "safe_to_start", "force")
 
     def _cache_args(self, job):
         """Replicate common-datagen.mk's CACHE_ARGS: the job's effective params as
