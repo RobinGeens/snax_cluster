@@ -39,7 +39,7 @@ BUILD_LOG="${RUN_DIR}/build.log"
 
 
 # --- Create a temporary clone for a clean build ---
-# Place it under OUTPUT_ROOT (not /tmp) so podman can bind-mount it inside the container.
+# Place it under OUTPUT_ROOT so podman can bind-mount it inside the container.
 TMPDIR_ROOT="$(mktemp -d -p "${OUTPUT_ROOT}" tmp.XXXXXX)"
 WORK_DIR="${TMPDIR_ROOT}/snax_cluster"
 
@@ -113,10 +113,7 @@ run_one() {
   local timed_out=$(( rc == 124 ))
   parsed_errors="$(sed -n 's/.*Finished with exit code[[:space:]]\+\([0-9]\+\).*/\1/p' "${test_log}" | tail -n1)"
   if [ -z "${parsed_errors}" ]; then
-    # No app completion marker -> the program never exited. vsim's own "Errors: N"
-    # summary counts simulator faults (e.g. a fatal RTL assertion), NOT tolerable
-    # output-compare mismatches: any nonzero value is a crash, so flag it rather than
-    # record a bare count that reads as a sub-threshold pass.
+    # No app completion marker -> the program never exited
     local vsim_errors
     vsim_errors="$(sed -n 's/.*Errors:[[:space:]]\+\([0-9]\+\).*/\1/p' "${test_log}" | tail -n1)"
     if [ -n "${vsim_errors}" ] && [ "${vsim_errors}" -gt 0 ]; then

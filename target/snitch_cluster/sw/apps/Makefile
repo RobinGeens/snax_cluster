@@ -3,50 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Luca Colagrande <colluca@iis.ee.ethz.ch>
+# Modified by: Robin Geens <robin.geens@kuleuven.be>
 
-SUBDIRS  = nop
-SUBDIRS += main
-SUBDIRS += main-tiled-oscore
-SUBDIRS += main-tiled-iscore
-SUBDIRS += osgemm-tiled-async
-SUBDIRS += isgemm-tiled-async
-SUBDIRS += is-osgemm-tiled-async
-SUBDIRS += fft-tiled
-SUBDIRS += einfft-tiled
-SUBDIRS += einfft-tiled-is-osgemm
-SUBDIRS += einfft-double-conflictfree
-SUBDIRS += vmamba
-SUBDIRS += vmamba-tiled
-SUBDIRS += fft
-SUBDIRS += rmsnorm
-SUBDIRS += main-tiled
-SUBDIRS += P1-tiled-D
-SUBDIRS += P2-tiled-D
-SUBDIRS += SUC-tiled
-SUBDIRS += suc-async
-SUBDIRS += suc-async-dt
-SUBDIRS += P2-async-OS-no-IS
-SUBDIRS += batchnorm
-SUBDIRS += rmsnorm-tiled
-SUBDIRS += fft-3way-tiled
-SUBDIRS += fft-3way-L8
-SUBDIRS += fft-3way-tiled-async
-SUBDIRS += fft-4way
-SUBDIRS += fft-3way
-SUBDIRS += osgemm
-SUBDIRS += isgemm
-SUBDIRS += simd
-SUBDIRS += osgemm-tiled
-SUBDIRS += isgemm-tiled
-SUBDIRS += is-osgemm-tiled
-SUBDIRS += double-gemm-conflict-free
-SUBDIRS += conv-downsample
-SUBDIRS += main-full
-SUBDIRS += einfft
-SUBDIRS += streamer-burner
-SUBDIRS += core-burner
-SUBDIRS += suc-only
-
+# Autodiscover apps: every subdirectory containing a Makefile is an app.
+SUBDIRS := $(sort $(patsubst %/,%,$(dir $(wildcard */Makefile))))
 
 # Apps that have a data generator (auto-detected by presence of data/Makefile)
 DATAGEN_APPS := $(foreach app,$(SUBDIRS),$(if $(wildcard $(app)/data/Makefile),$(app)))

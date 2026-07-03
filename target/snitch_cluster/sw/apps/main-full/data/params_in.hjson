@@ -1,7 +1,6 @@
 {
-    // Used by both main-full and suc-only. main-full needs all P2 buffers FULL in TCDM
-    // → check it actually fits before raising dModel.
+    // Used by both main-full and suc-only
     "seqLen": 96,
-    "dModel": 192,
+    "dModel": 144,
     "dtRank": 24
 }

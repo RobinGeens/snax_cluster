@@ -726,8 +726,8 @@ uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t
 }
 
 // Check some samples of ther result to speed up verification
-uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
-                             int32_t test_sample_count, const char* tensor_name) {
+uint32_t check_result_sample_verbose(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
+                                     int32_t test_sample_count, const char* tensor_name, bool verbose) {
     uint32_t err = 0;
     printf("Checking results: sampling %d elements\r\n", test_sample_count);
 
@@ -736,18 +736,25 @@ uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* s
         uint8_t output_value = output[sample_index];
         uint8_t golden_value = output_golden[sample_index];
         if (values_match_u8_lsb(output_value, golden_value)) {
-            printf("PASS %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
+            if (verbose)
+                printf("PASS %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
         } else {
             err++;
-            printf("FAIL %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
+            if (verbose)
+                printf("FAIL %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_index, output_value, golden_value);
         }
     }
     return err;
 }
 
+uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
+                             int32_t test_sample_count, const char* tensor_name) {
+    return check_result_sample_verbose(output, output_golden, sample_indices, test_sample_count, tensor_name, true);
+}
+
 // Check some samples interpreting the buffers as uint16_t elements
-uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
-                                 int32_t test_sample_count, const char* tensor_name) {
+uint32_t check_result_sample_u16_verbose(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
+                                         int32_t test_sample_count, const char* tensor_name, bool verbose) {
     uint32_t err = 0;
     printf("Checking results (u16): sampling %d elements\r\n", test_sample_count);
 
@@ -757,12 +764,19 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
         uint16_t golden_value = output_golden[sample_index];
         if (!values_match_u16_lsb(output_value, golden_value)) {
             err++;
-            printf("FAIL %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
+            if (verbose)
+                printf("FAIL %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
         } else {
-            printf("PASS %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
+            if (verbose)
+                printf("PASS %s[%d] = %u,\tref = %u\r\n", tensor_name, sample_index, output_value, golden_value);
         }
     }
     return err;
+}
+
+uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
+                                 int32_t test_sample_count, const char* tensor_name) {
+    return check_result_sample_u16_verbose(output, output_golden, sample_indices, test_sample_count, tensor_name, true);
 }
 
 // Initialize cycle counter (call once at program start)

@@ -1,6 +1,6 @@
 {
-  seqLen: 64
-  dModel: 192
-  dtRank: 24
-  nb_tiles: 16
+    seqLen: 64
+    dModel: 96
+    dtRank: 24
+    nb_tiles: 16
 }

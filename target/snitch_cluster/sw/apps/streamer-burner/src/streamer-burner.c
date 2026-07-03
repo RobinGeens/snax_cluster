@@ -21,20 +21,20 @@ int burner() {
     uint16_t* ptr_iscore_out_P1   = (uint16_t*)(tcdm_base_ptr + M1_addr_iscore_out);    // holds the psums
 
     // Phase 2
-    void* phase2_base_ptr         = ((void*)ptr_iscore_out_P1 + M1_length_iscore_out);
-    uint8_t* ptr_oscore_weight_P2 = (uint8_t*)(phase2_base_ptr + M2_addr_oscore_weight);
-    uint8_t* ptr_z                = (uint8_t*)(phase2_base_ptr + M2_addr_z);  // osCore out
-    uint8_t* ptr_dt_in            = (uint8_t*)ptr_iscore_out_P1;
-    uint8_t* ptr_BC               = (void*)ptr_dt_in + M2_dt_to_BC_offset;
-    uint8_t* ptr_dt_weight_1      = (uint8_t*)(phase2_base_ptr + M2_addr_dt_weight_1);
-    uint8_t* ptr_dt_weight_2      = (uint8_t*)(phase2_base_ptr + M2_addr_dt_weight_2);
-    uint8_t* ptr_dt_bias          = (uint8_t*)(phase2_base_ptr + M2_addr_dt_bias);
-    uint8_t* ptr_x                = ptr_conv_out;
-    uint8_t* ptr_A                = (uint8_t*)(phase2_base_ptr + M2_addr_A);
-    uint8_t* ptr_D                = (uint8_t*)(phase2_base_ptr + M2_addr_D);
-    uint8_t* ptr_y                = (uint8_t*)(phase2_base_ptr + M2_addr_y);  // SUC out
-    uint8_t* ptr_iscore_weight_P2 = (uint8_t*)(phase2_base_ptr + M2_addr_iscore_weight);
-    uint16_t* ptr_iscore_out_P2   = (uint16_t*)(phase2_base_ptr + M2_addr_iscore_out);
+    uint8_t* ptr_oscore_weight_P2 = (uint8_t*)((void*)ptr_iscore_out_P1 + M1_length_iscore_out);
+    uint8_t* ptr_dt_weight_1      = ptr_oscore_weight_P2 + M2_length_oscore_weight;
+    uint8_t* ptr_dt_weight_2      = ptr_dt_weight_1 + M2_length_dt_weight_1;
+    uint8_t* ptr_dt_bias          = ptr_dt_weight_2 + M2_length_dt_weight_2;
+    uint8_t* ptr_A                = ptr_dt_bias + M2_length_dt_bias;
+    uint8_t* ptr_D                = ptr_A + M2_length_A;
+    uint8_t* ptr_iscore_weight_P2 = ptr_D + M2_length_D;
+    uint16_t* ptr_iscore_out_P2   = (uint16_t*)(ptr_iscore_weight_P2 + M2_length_iscore_weight);
+
+    uint8_t* ptr_z     = ptr_oscore_weight_P1;  // osCore out, reuses dead P1 oscore_weight
+    uint8_t* ptr_y     = ptr_iscore_weight_P1;  // SUC out, reuses dead P1 iscore_weight
+    uint8_t* ptr_dt_in = (uint8_t*)ptr_iscore_out_P1;
+    uint8_t* ptr_BC    = (void*)ptr_dt_in + M2_dt_to_BC_offset;
+    uint8_t* ptr_x     = ptr_conv_out;
 
     // Initialize cycle counter for timing
     // if (snrt_global_core_idx() == 0) init_cycle_counter();

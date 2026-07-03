@@ -1,6 +1,6 @@
 {
     seqLen: 4096,
-    dModel: 24,
+    dModel: 4,
     L1: 16,
     L2: 16,
     L3: 16,
