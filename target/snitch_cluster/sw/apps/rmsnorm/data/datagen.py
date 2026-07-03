@@ -102,7 +102,9 @@ class DataGenerator(DataGeneratorBase):
         lengths, deltas = self._collect_lengths_and_deltas(specs)
         scalars = {**lengths, **deltas}
 
-        test_data = {**{name: "uint16_t" for name in ("x", "weight", "out")}}
+        # This app computes rmsNorm(x) * weight without the residual add, so it checks
+        # against the residual-free golden "norm" (not "out" = norm + y, used by rmsnorm-tiled).
+        test_data = {**{name: "uint16_t" for name in ("x", "weight", "norm")}}
         tests = {
             "expected": L * D,
             "rms": L,

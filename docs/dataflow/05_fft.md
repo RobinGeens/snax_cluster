@@ -167,11 +167,12 @@ The full output is assembled in L3 and verified there (scalar reads).
 gathered `in_tile`/`tw1_tile`/`tw2_tile`, a BF16 per-tile psum `P_tile`
 (`slot_size_tile = 2·Lt·dM·2`, reused by gemm1/2), and two FP8 hadamard scratch
 buffers `H1`/`H2` (each `slot_size_tile/2`). The assembled full **H2**
-(`2·L·dM` FP8) is resident from stages 1-4 into partition3. Partition3's psum
-**P3** (full BF16, `2·L·dM·2`) overlays the now-dead stages-1-4 scratch, so
+(`2·L·dM` FP8) is resident from stages 1-4 into partition3, and sits **below** the
+stages-1-4 scratch. Partition3's psum **P3** (full BF16, `2·L·dM·2`) overlays the
+now-dead scratch and may spill upward into free TCDM without touching `H2_full`, so
 `peak = weights + full_H2 + max(stages-1-4 scratch, P3)`. The footprint shrinks with
-`nb_tiles_A` (smaller `dM`) and with `nb_l3` (smaller per-tile scratch). The
-build's memory model asserts `P3 ≤ stages-1-4 scratch` (P3 must fit the overlay).
+`nb_tiles_A` (smaller `dM`) and with `nb_l3` (smaller per-tile scratch); P3 is bounded
+by the TCDM budget, not by the scratch size.
 
 | Tensor | Lifetime | Notes |
 | --- | --- | --- |

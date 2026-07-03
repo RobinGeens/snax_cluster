@@ -163,8 +163,8 @@ int test() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, read_simbacore_perf_counter());
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
-        err += check_result_sample_u16(ptr_x, M12_out, M12_test_samples_expected,  //
-                                       nb_test_samples, "out");
+        err += check_result_sample_u16(ptr_x, M12_norm, M12_test_samples_expected,  //
+                                       nb_test_samples, "norm");
 
         printf("Test RMSNORM: (%d x %d)\n", seqLen, dModel);
         printf("%s: %u/%d errors.\n", err ? "FAIL" : "PASS", err, nb_test_samples);

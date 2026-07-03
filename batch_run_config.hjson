@@ -6,7 +6,7 @@
     // Per-build  wall-clock cap in seconds. 0 = no timeout
     build_timeout: 0
     // Global default for `force`
-    force: true
+    force: false
 
     runs: [
         {
@@ -267,7 +267,7 @@
             params: [
                 {
                     name: CS SUC A
-                    force: true
+                    force: false
                     seqLen: 32768 // x2
                     dModel: 96
                     dtRank: 24
@@ -447,11 +447,11 @@
             ]
         }
         {
-            app: fft-4way-tiled
+            app: fft-4way
             params: [
                 {
                     name: CS fft A
-                    force: true
+                    force: false
                     seqLen: 65536
                     dModel: 1 // x 96
                     L1: 16,
@@ -480,7 +480,7 @@
                 }
                 {
                     name: CS fft A
-                    force: true
+                    force: false
                     seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,
@@ -507,7 +507,7 @@
             params: [
                 {
                     name: CS fft A
-                    force: true
+                    force: false
                     seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,

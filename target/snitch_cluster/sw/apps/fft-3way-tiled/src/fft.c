@@ -44,20 +44,20 @@ int test() {
     }
     snrt_cluster_hw_barrier();
 
-    // TCDM layout: P3 overlays the dead stage-1-4 scratch (from ptr_in); the assembled
-    // H2 survives into partition 3.
+    // TCDM layout: the assembled H2 (partition-3 input) sits below the stage-1-4 scratch, so
+    // P3 overlays the dead scratch and may spill upward into free TCDM without touching H2.
     void* base           = snrt_l1_next();
     uint8_t* ptr_weight1 = (uint8_t*)base;
     uint8_t* ptr_weight2 = ptr_weight1 + align64(M6_length_weight1);
     uint8_t* ptr_weight3 = ptr_weight2 + align64(M6_length_weight2);
-    uint8_t* ptr_in      = ptr_weight3 + align64(M6_length_weight3);
+    uint8_t* ptr_H2_full = ptr_weight3 + align64(M6_length_weight3);
+    uint8_t* ptr_in      = ptr_H2_full + align64(M6_h2_full_bytes);
     uint8_t* ptr_tw1     = ptr_in + align64(M6_in_tile_bytes);
     uint8_t* ptr_tw2     = ptr_tw1 + align64(M6_tw1_tile_bytes);
     uint8_t* ptr_P       = ptr_tw2 + align64(M6_tw2_tile_bytes);
     uint8_t* ptr_H1      = ptr_P + M6_slot_size_tile;
     uint8_t* ptr_H2      = ptr_H1 + M6_hsize_tile;
-    uint8_t* ptr_H2_full = ptr_H2 + align64(M6_hsize_tile);
-    uint8_t* ptr_P3      = ptr_in;  // overlays dead stage-1-4 scratch
+    uint8_t* ptr_P3      = ptr_in;  // overlays dead stage-1-4 scratch, spills up into free TCDM
 
     uint32_t start_cycles     = 0;
     uint32_t simbacore_cycles = 0;

@@ -93,12 +93,12 @@ def build_report(params: dict) -> MemoryReport:
         [("partition3_out (L3)", 2 * L * dModel * BF16 // 8)],
     )
 
-    # Stages-1-4 scratch occupies [ptr_in .. ptr_H2_full); partition 3 overlays it with P3.
+    # H2_full sits below the scratch; partition 3 overlays the dead scratch with P3 and may
+    # spill upward into free TCDM, so P3 is bounded by the budget, not the scratch size.
     stages14 = (
         align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
         + slot_size_tile + hsize_tile + align64(hsize_tile)
     )
-    assert p3_full <= stages14, f"P3 ({p3_full}) must fit in the dead stages-1-4 scratch ({stages14})"
     peak = weights + align64(full_h2) + max(stages14, p3_full)
     report.add_peak("TCDM peak", peak)
     return report

@@ -324,6 +324,7 @@ class DataGenerator(DataGeneratorBase):
             # partition3 K-tiling over l3-tiles + the [re|im] H2 assembly offsets
             "h2_half_bytes": h2_half_bytes,                    # one l3-tile's re (or im) K-block
             "h2_im_region": h2_im_region,                      # start of the im region in the full H2
+            "h2_full_bytes": 2 * h2_im_region,                 # full assembled H2 (re + im regions)
             "weight3_kchunk_bytes": weight3_kchunk_bytes,      # partition3 K-chunk weight offset
             "h2_kchunk_bytes": h2_kchunk_bytes,                # partition3 K-chunk h2 offset
         }

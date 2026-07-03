@@ -112,7 +112,7 @@ int test() {
                 for (int m4 = 0; m4 < L4; m4++)
                     for (int m3 = 0; m3 < L3; m3++)
                         for (int reim = 0; reim < 2; reim++) {
-                            int l   = a * L34v + m3 * L4 + m4;
+                            int l   = a * L34v + m4 * L3 + m3;
                             int src = (l / 16) * 32 + reim * 16 + (l % 16);
                             int dst = (a * L4 + m4) * (2 * L3) + reim * L3 + m3;
                             ptr_hadamard2_packed[dst] = ptr_hadamard2_out[src];

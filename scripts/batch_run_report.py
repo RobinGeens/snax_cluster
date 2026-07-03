@@ -28,7 +28,10 @@ from datetime import datetime, timezone
 
 # Markers emitted by the simulator (same ones the regression test parses).
 RE_ERRORS = re.compile(r"Finished with exit code\s+(\d+)")
-RE_ERRORS_ALT = re.compile(r"Errors:\s+(\d+)")
+# vsim's own end-of-run summary. Its count is simulator faults ($error/$fatal/assert),
+# NOT the app's output-compare count -- any nonzero value is a real crash, not
+# quantization noise, so it is never eligible for the FP8 tolerance below.
+RE_VSIM_ERRORS = re.compile(r"Errors:\s+(\d+)")
 RE_SIMBACORE = re.compile(r"Simbacore elapsed time:\s+(\d+)\s+cycles")
 RE_TOTAL = re.compile(r"Snitch elapsed time:\s+(\d+)\s+cycles")
 RE_L1 = re.compile(r"Expected L1 TCDM usage:\s+\d+\s+B\s+\((\d+)\s+KiB\)")
@@ -85,19 +88,31 @@ def _pad(s, width, right=False):
 
 
 def parse_log(path):
-    """Return (errors, simbacore, total, l1_bytes) strings from a run log, or Nones."""
+    """Return (errors, simbacore, total, l1_bytes, crashed) from a run log, or Nones.
+
+    `errors` is the app's own output-compare count from the "Finished with exit code N"
+    completion marker -- the only number the FP8 quantization tolerance applies to. A run
+    that never printed that marker did not complete; `crashed` is True when the log instead
+    ends on a simulator fault (vsim "Errors: N>0", e.g. a fatal RTL assertion), so it is
+    failed outright rather than judged against the tolerance."""
     if not path or not os.path.exists(path):
-        return None, None, None, None
+        return None, None, None, None, False
     try:
         with open(path, errors="replace") as f:
             text = f.read()
     except OSError:
-        return None, None, None, None
-    m = RE_ERRORS.findall(text) or RE_ERRORS_ALT.findall(text)
+        return None, None, None, None, False
+    comp = RE_ERRORS.findall(text)
     sc = RE_SIMBACORE.findall(text)
     tot = RE_TOTAL.findall(text)
     l1 = RE_L1.findall(text)
-    return ((m[-1] if m else None), (sc[-1] if sc else None), (tot[-1] if tot else None), (l1[-1] if l1 else None))
+    if comp:
+        errors, crashed = comp[-1], False
+    else:
+        vsim = RE_VSIM_ERRORS.findall(text)
+        errors = vsim[-1] if vsim else None
+        crashed = bool(vsim) and int(vsim[-1]) > 0
+    return (errors, (sc[-1] if sc else None), (tot[-1] if tot else None), (l1[-1] if l1 else None), crashed)
 
 
 def parse_model_agu_errors(path):
@@ -149,7 +164,7 @@ def parse_build_log_l1(path):
     return (l1[-1] if l1 else None), bool(RE_L1_OOM.search(text))
 
 
-def _display_status(state, errors, oom=False):
+def _display_status(state, errors, oom=False, crashed=False):
     if state == "queued":
         return "QUEUED"
     if state == "building":
@@ -161,6 +176,8 @@ def _display_status(state, errors, oom=False):
     if state == "timeout":
         return "TIMEOUT"
     if state == "done":
+        if crashed:
+            return "ERRORS"
         if errors is None:
             return "NO_RESULT"
         if errors.isdigit() and int(errors) < ERROR_THRESHOLD:
@@ -238,7 +255,7 @@ def merge_run_into_report(report_dir, rundir):
             }
             memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
             if os.path.exists(memsim_log):
-                m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
+                m_errors, m_sc, m_tot, _, _ = parse_log(memsim_log)
                 # Only overwrite the stored Model columns when the fresh memsim actually produced a
                 # SimbaCore number; a timeout / unparseable / config-mismatch run must not blank the row.
                 if m_sc is not None:
@@ -253,10 +270,10 @@ def merge_run_into_report(report_dir, rundir):
             report["jobs"][jid] = row
             continue
         log_abs = os.path.join(rundir, job["log"])
-        errors, sc, tot, sim_l1 = parse_log(log_abs)
+        errors, sc, tot, sim_l1, crashed = parse_log(log_abs)
         # memsim runs alongside the vsim into its own log. Scrape the same markers
         memsim_log = os.path.join(rundir, os.path.splitext(job["log"])[0] + ".memsim.log")
-        m_errors, m_sc, m_tot, _ = parse_log(memsim_log)
+        m_errors, m_sc, m_tot, _, _ = parse_log(memsim_log)
         # Model Err = the faults the model LOCATED, not its binary exit code (which a
         # tiled-golden false positive can flip). Two located sources, summed:
         #   - the golden-free AGU audit (bounds + producer->consumer + writer no-alias), and
@@ -297,6 +314,7 @@ def merge_run_into_report(report_dir, rundir):
             "state": job.get("state", "?"),
             "cached": cached,
             "errors": errors,
+            "crashed": crashed,
             "simbacore": sc,
             "total": tot,
             "model_errors": m_errors,
@@ -402,7 +420,7 @@ def render_report(report_dir):
     counts = {}
     rows = []
     for e in jobs.values():
-        disp = _display_status(e.get("state", "?"), e.get("errors"), e.get("l1_oom"))
+        disp = _display_status(e.get("state", "?"), e.get("errors"), e.get("l1_oom"), e.get("crashed"))
         counts[disp] = counts.get(disp, 0) + 1
         status = f"{EMOJI.get(disp, '')} {disp}".strip()
         commit = e.get("commit")
