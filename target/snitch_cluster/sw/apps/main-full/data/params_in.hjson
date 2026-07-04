@@ -2,5 +2,7 @@
     // Used by both main-full and suc-only
     "seqLen": 96,
     "dModel": 144,
-    "dtRank": 24
+    "dtRank": 24,
+    "safe_to_start_r10": -1,
+    "safe_to_start_r11": -1
 }

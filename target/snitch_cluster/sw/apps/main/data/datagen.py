@@ -28,6 +28,19 @@ class DataGenerator(DataGeneratorBase):
         self.phase1_scalars: dict[str, int] = {}
         self.phase2_scalars: dict[str, int] = {}
 
+    def read_and_format_vector(self, mode_id, type, tensor_name):
+        if tensor_name == "iscore_bias":
+            # On Occamy, .bss (in the L3/SPM region) is not zeroed at startup
+            # Force the array into .data so the loaded image zero-initialises it.
+            from data_utils import format_vector_definition  # type: ignore[import]
+
+            data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            self.lines_data.append(
+                format_vector_definition(type, f"M{mode_id}_{tensor_name}", data, alignment=8, section=".data")
+            )
+            return
+        return super().read_and_format_vector(mode_id, type, tensor_name)
+
     def run(self):
         self.save_params()
         self.build_Phase1_data()

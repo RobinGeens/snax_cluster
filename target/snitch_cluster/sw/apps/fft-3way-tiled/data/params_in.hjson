@@ -1,9 +1,9 @@
 {
-    seqLen: 8192
-    dModel: 1
+    seqLen: 4096
+    dModel: 16
     L1: 16
     L2: 16
-    L3: 32
+    L3: 16
     l3_tile: 16
-    nb_tiles_A: 1
+    nb_tiles_A: 2
 }

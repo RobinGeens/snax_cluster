@@ -474,9 +474,22 @@
                     L1: 16,
                     L2: 16,
                     L3: 16,
-                    nb_tiles_A: 4
+                    nb_tiles_A: 3
                     l3_tile: 16
 
+                }
+                {
+                    // 3-way replacement for fft-tiled "CS fft C" (L=4096, 16 ch): 90,759 cc =
+                    // 5,672 cc/ch vs 2-way 8,715 (-35%). dM=8; 492 KiB.
+                    name: CS fft C
+                    force: false
+                    seqLen: 4096,
+                    dModel: 16,
+                    L1: 16,
+                    L2: 16,
+                    L3: 16,
+                    nb_tiles_A: 2
+                    l3_tile: 16
                 }
                 {
                     name: CS fft A

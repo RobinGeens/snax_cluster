@@ -93,13 +93,17 @@ def build_report(params: dict) -> MemoryReport:
         [("partition3_out (L3)", 2 * L * dModel * BF16 // 8)],
     )
 
-    # H2_full sits below the scratch; partition 3 overlays the dead scratch with P3 and may
-    # spill upward into free TCDM, so P3 is bounded by the budget, not the scratch size.
+    # H2_full sits below the scratch. For nb_l3>1, P3 overlays the dead stages-1-4 scratch and
+    # may spill upward, so it is bounded by max(scratch, P3). For nb_l3==1, P3 gets its own
+    # buffer above the scratch (so the next slice can be prefetched into the freed scratch during
+    # partition3), making it additive.
     stages14 = (
         align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
         + slot_size_tile + hsize_tile + align64(hsize_tile)
     )
-    peak = weights + align64(full_h2) + max(stages14, p3_full)
+    nb_l3 = L3 // l3_tile
+    p3_term = (stages14 + p3_full) if nb_l3 == 1 else max(stages14, p3_full)
+    peak = weights + align64(full_h2) + p3_term
     report.add_peak("TCDM peak", peak)
     return report
 

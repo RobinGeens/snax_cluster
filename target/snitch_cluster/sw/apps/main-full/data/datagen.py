@@ -5,10 +5,10 @@
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
 
-import pathlib
 import sys
 import os
 import importlib.util
+import hjson
 
 # Add data utility path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../util/sim/"))
@@ -30,6 +30,14 @@ class DataGenerator(_main_datagen.DataGenerator):
     used."""
 
     APP_NAME = "main-full"
+
+    def __init__(self, **kwargs):
+        # Make sure the params_in.hjson file of this app is used
+        local = os.path.join(os.path.dirname(__file__), "params_in.hjson")
+        with open(local) as f:
+            for key, value in hjson.loads(f.read()).items():
+                kwargs.setdefault(key, value)
+        super().__init__(**kwargs)
 
 
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
