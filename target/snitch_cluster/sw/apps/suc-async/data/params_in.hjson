@@ -1,8 +1,8 @@
 {
-  seqLen: 3136
-  dModel: 96
+  seqLen: 4096
+  dModel: 384
   dtRank: 24
-  nb_tiles: 8
+  nb_tiles: 16
   nb_l_tiles: 4
   nb_slots: 2
   bc_pad_banks: 4

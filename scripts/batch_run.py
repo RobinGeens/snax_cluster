@@ -192,6 +192,7 @@ class BatchRun:
                     "app": job["app"],
                     "tag": job["tag"],
                     "name": job["name"],
+                    "model": job["model"],
                     "overrides": dict(job["overrides"]),
                     "params": job["all_params"],
                     "seqLen": job["seqLen"],
@@ -234,6 +235,9 @@ class BatchRun:
                 # `name` is an optional user-defined label for the report's Name column;
                 # like `force` it is display-only, so pull it out before validation/datagen.
                 name = overrides.pop("name", None)
+                # `model` is an optional user-defined label for the report's Model column
+                # (e.g. "IN Simba-L"); display-only, pulled out just like `name`.
+                model = overrides.pop("model", None)
                 missing = [k for k in base if k not in overrides]
                 if missing:
                     missing_errors.append(
@@ -254,6 +258,7 @@ class BatchRun:
                         "app": app,
                         "tag": tag,
                         "name": name,  # optional user-defined label for the report
+                        "model": model,  # optional user-defined model label for the report
                         "force": force,  # None => inherit global; else per-set override
                         "overrides": overrides,
                         "all_params": dict(eff),

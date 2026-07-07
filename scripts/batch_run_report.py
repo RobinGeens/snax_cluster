@@ -248,6 +248,7 @@ def merge_run_into_report(report_dir, rundir):
                 # so renaming a config reuses the cached vsim under the same jid. Refresh
                 # it from the fresh job so a rename shows up in the report.
                 "name": job.get("name"),
+                "model": job.get("model"),
                 "batch_run": stamp,
                 "cached": True,
                 "state": prev.get("state", job.get("state", "done")),
@@ -303,6 +304,7 @@ def merge_run_into_report(report_dir, rundir):
             "app": job["app"],
             "tag": job.get("tag", ""),
             "name": job.get("name"),
+            "model": job.get("model"),
             "params": job.get("params", {}),
             "seqLen": job.get("seqLen"),
             "dModel": job.get("dModel"),
@@ -442,6 +444,7 @@ def render_report(report_dir):
             batch_cell = CURRENT_MARK
         row = (
             _fmt_col(e.get("name")),
+            _fmt_col(e.get("model")),
             e["app"],
             _fmt_col(e.get("seqLen")),
             _fmt_col(e.get("dModel")),
@@ -462,12 +465,13 @@ def render_report(report_dir):
         )
         rows.append((stale, row))
     # Fresh rows first (stale at the bottom). Sort by user-define name, then app name
-    rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][1]))
+    rows.sort(key=lambda sr: (sr[0], sr[1][0], sr[1][2]))
     rows = [r for _, r in rows]
 
     tally = " · ".join(f"{EMOJI.get(k, '')} {v} {k}" for k, v in sorted(counts.items()))
     headers = [
         "Name",
+        "Model",
         "App",
         "seqLen",
         "dModel",
@@ -487,6 +491,7 @@ def render_report(report_dir):
         "Plot",
     ]
     aligns = [
+        "left",
         "left",
         "left",
         "right",
