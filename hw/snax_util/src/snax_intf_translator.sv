@@ -101,27 +101,16 @@ module snax_intf_translator #(
 
   // Combinational logic
 
-  // A response is actually CONSUMED by the core this cycle (handshake completes).
-  logic rsp_handshake;
-  assign rsp_handshake = snax_csr_rsp_valid_i && snax_pready_i;
-
-  // Push a read's id whenever it is accepted (snax_csr_req_ready_i) UNLESS its response is consumed
-  // in the very same cycle (rsp_handshake) -- in that case the live passthrough id (snax_req_i.id)
-  // is still valid, so no buffering is needed.
-  // The original condition `!snax_csr_rsp_valid_i` declined to push a read whose csrman response is
-  // combinationally valid but NOT yet consumed (the core's pready is low that cycle). The response
-  // then completes a cycle later, by which point the request bus has moved on, so the passthrough id
-  // is STALE and the gauge value is written to the WRONG GPR -> its scoreboard bit never clears ->
-  // the dependent branch (e.g. the R10 poll) hangs forever. Pushing on accept-but-not-delivered
-  // holds the correct id in the FIFO until the response is consumed. (See csr_id_bug_demo/.)
+  // We push everytime there is a new read request
+  // but then the response is not immediatley available
+  // and when the fifo is not full!
   assign rsp_fifo_push =   snax_qvalid_i
-                        && snax_csr_req_ready_i
                         && !write_csr
-                        && !rsp_handshake
+                        && !snax_csr_rsp_valid_i
                         && !rsp_fifo_full;
 
-  // Pop exactly when a buffered response is consumed by the core.
-  assign rsp_fifo_pop  =   rsp_handshake
+  // We pop when the response is valid and the fifo is not empty
+  assign rsp_fifo_pop  =   snax_csr_rsp_valid_i
                         && !rsp_fifo_empty;
 
   // Buffer for aligning request id

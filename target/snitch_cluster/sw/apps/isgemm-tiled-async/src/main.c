@@ -81,7 +81,7 @@ int test_isgemm_tiled_async() {
         // paced by ISCORE_TILE_CNT (gauge_step ticks per L-tile).
         for (uint32_t r = 0; r < nb_l_tiles; r++) {
             if (snrt_global_core_idx() == 0) {
-                while (read_csr(ISCORE_TILE_CNT) < (r + 1) * gauge_step);
+                while (read_snax_csr_safe(ISCORE_TILE_CNT) < (r + 1) * gauge_step);
             }
             snrt_cluster_hw_barrier();
             if (snrt_is_dm_core()) {

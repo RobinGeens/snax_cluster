@@ -75,6 +75,16 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         assert nb_l_tiles % nb_slots == 0, "nb_l_tiles must be a multiple of nb_slots"
         win_per_l_tile = L_tile // su
 
+        # Async-ring latency guard: a slot's refill DMA (L3->TCDM) must land within the nb_slots visits
+        # it is buffered ahead; one visit is L_tile*delaySU SUC cycles. Below ~2048 cycles that latency
+        # isn't hidden and the ring tears (empirically L_tile=48 tears, L_tile>=256 is clean).
+        ring_hide_cycles = nb_slots * L_tile * self.delaySU
+        assert ring_hide_cycles >= 2048, (
+            f"seqLen {self.seqLen} too small for the suc-async ring: nb_slots*L_tile*delaySU = "
+            f"{nb_slots}*{L_tile}*{self.delaySU} = {ring_hide_cycles} < 2048 -> the L3->TCDM refill "
+            f"latency can't be hidden and the ring tears. Increase seqLen or nb_slots."
+        )
+
         # BC bank-conflict padding: pad each bank-transpose matrix to bc_matrix_stride (see target/snitch_cluster/sim/docs/memsim.md).
         def pad_win(raw):  # raw spans a whole number of (unpadded) bank-transpose matrices
             assert raw % self.bc_matrix_bytes == 0, f"{raw} not a multiple of bc_matrix_bytes {self.bc_matrix_bytes}"

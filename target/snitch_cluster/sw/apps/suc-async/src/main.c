@@ -54,7 +54,7 @@ static inline void suc_ring_loop(uint8_t* bc_slot, const uint8_t* l3_dt_BC,  //
 
     for (uint32_t r = 0; r < visits; r++) {
         if (snrt_global_core_idx() == 0)
-            while (read_csr(R11_DELAY_GAUGE) < (r + 1) * step);
+            while (read_snax_csr_safe(R11_DELAY_GAUGE) < (r + 1) * step);
 
         snrt_cluster_hw_barrier();
 

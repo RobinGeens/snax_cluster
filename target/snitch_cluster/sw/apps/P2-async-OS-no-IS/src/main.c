@@ -51,9 +51,9 @@ static inline void refill_loop(uint8_t* os_slot_base, const uint8_t* l3_oscore_i
         if (snrt_global_core_idx() == 0) {
             uint32_t rdy_os, rdy_bc;
             do {
-                rdy_os = (r_os < os_visits) && (read_csr(R10_DELAY_GAUGE) >= (r_os + 1) * os_step);
-                rdy_bc = (r_bc < bc_visits) && (read_csr(R11_DELAY_GAUGE) >= (r_bc + 1) * bc_step);
-                if (r10_release_en && !r10_released && read_csr(R10_DELAY_GAUGE) >= r10_start_cnt) {
+                rdy_os = (r_os < os_visits) && (read_snax_csr_safe(R10_DELAY_GAUGE) >= (r_os + 1) * os_step);
+                rdy_bc = (r_bc < bc_visits) && (read_snax_csr_safe(R11_DELAY_GAUGE) >= (r_bc + 1) * bc_step);
+                if (r10_release_en && !r10_released && read_snax_csr_safe(R10_DELAY_GAUGE) >= r10_start_cnt) {
                     // release the SUC -> it pipelines behind the osCore
                     write_csr(DELAYED_START_READER_10, 1);
                     r10_released = 1;
@@ -88,7 +88,7 @@ static inline void refill_loop(uint8_t* os_slot_base, const uint8_t* l3_oscore_i
     snrt_cluster_hw_barrier();
 
     if (snrt_global_core_idx() == 0 && r10_release_en && !r10_released) {
-        while (read_csr(R10_DELAY_GAUGE) < r10_start_cnt);
+        while (read_snax_csr_safe(R10_DELAY_GAUGE) < r10_start_cnt);
         write_csr(DELAYED_START_READER_10, 1);
     }
 }

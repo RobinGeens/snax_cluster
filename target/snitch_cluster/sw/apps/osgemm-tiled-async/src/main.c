@@ -68,7 +68,7 @@ int test_osgemm_async() {
         // Async A-ring refill during compute, paced by R10 (osCore output-tile gauge).
         for (uint32_t r = 0; r < N_visits; r++) {
             if (snrt_global_core_idx() == 0) {
-                while (read_csr(R10_DELAY_GAUGE) < (r + 1) * gauge_step);
+                while (read_snax_csr_safe(R10_DELAY_GAUGE) < (r + 1) * gauge_step);
             }
             snrt_cluster_hw_barrier();
             if (snrt_is_dm_core()) {
