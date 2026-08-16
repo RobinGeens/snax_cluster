@@ -139,19 +139,7 @@ class DataGenerator(DataGeneratorBase):
         the SUC) and R11 (y-reader, feeds the IS-core). Both gate a consumer behind a producer that
         writes its output in a per-24xL-tile (seqLen x dInnerUnroll) scrambled order, so a tile is
         the dependency unit. The two readers use DIFFERENT models because their consumer/producer
-        rates differ:
-
-          - R10 / SUC: the SUC consumes z SLOWER than the osCore writes it (suc_delta < 0) -> it
-            never catches up, so a small fixed delay (one osCore window) suffices. Rate model.
-          - R11 / IS-core: the IS-core consumes y FASTER than the SUC writes it -> across the
-            n = dInner/dInnerUnroll  24xL tiles of a kernel it RACES into later tiles. Since each
-            full 24xL tile must be written before the IS-core reads it, the LAST tile binds:
-                IS-core reaches tile n-1 at  R11_start + (n-1)*iscore_cycles_per_tile
-                tile n-1 fully written at    n*suc_elems_per_tile     (SUC = 1 elem/cyc -> gauge==cyc)
-                =>  R11_start = n*suc_elems_per_tile - (n-1)*iscore_cycles_per_tile
-            (n==1 collapses to one 24xL tile. NOTE: the old rate-only `iscore_delta` =
-            n*(suc-iscore)_per_tile is this MINUS one iscore_cycles_per_tile -> it lets the IS-core
-            start the last tile before that tile is fully written, which underflows for n>1.)
+        rates differ
 
         Returned in gauge units: R10 in osCore tiles, R11 in SUC-output elements.
         """
@@ -166,12 +154,8 @@ class DataGenerator(DataGeneratorBase):
         suc_delta = (gemm_cycles - suc_total_nb_elements) / self.dModel  # [osCore tiles]
         suc_safe_to_start = math.ceil(max(seqLen_tiles, suc_delta) * (1 + MARGIN))
 
-        # R11 (IS-core y-reader): faster consumer -> throughput mismatch across the 24xL tiles
-        suc_elems_per_tile = self.seqLen * self.dInnerUnroll  # SUC y written per 24xL tile
-        iscore_cycles_per_tile = seqLen_tiles * self.dModel  # IS-core cycles to read one 24xL tile
-        iscore_safe_to_start = math.ceil(
-            (n_24L * suc_elems_per_tile - (n_24L - 1) * iscore_cycles_per_tile) * (1 + MARGIN)
-        )
+        # R11 (IS-core y-reader): row-major reads span all k-blocks -> full y must be written.
+        iscore_safe_to_start = suc_total_nb_elements
 
         print(f"// DEBUG safe-to-start delays (per-tile, dInner={dInner}, n_24L={n_24L}):")
         print(f"//      OScore cycles: {gemm_cycles}")
@@ -179,8 +163,6 @@ class DataGenerator(DataGeneratorBase):
         print(f"//      SUC cycles (= total y elements): {suc_total_nb_elements}")
         print(f"//      SUC delta: {suc_delta}")
         print(f"//      R10 (SUC z) safe to start: {suc_safe_to_start}")
-        print(f"//      SUC elems per 24xL tile: {suc_elems_per_tile}")
-        print(f"//      IScore cycles per 24xL tile: {iscore_cycles_per_tile}")
         print(f"//      R11 (IS-core y) safe to start: {iscore_safe_to_start}")
 
         return int(min(suc_safe_to_start, gemm_total_nb_tiles)), int(min(iscore_safe_to_start, suc_total_nb_elements))

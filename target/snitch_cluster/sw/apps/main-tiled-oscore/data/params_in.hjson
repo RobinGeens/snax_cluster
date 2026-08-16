@@ -6,5 +6,5 @@
     nb_l_tiles: 4
     nb_slots: 2
     safe_to_start_r10: -1
-    safe_to_start_r11: -1
+    safe_to_start_r11: 11695
 }

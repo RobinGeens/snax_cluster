@@ -101,6 +101,9 @@ class BatchRun:
     def __init__(self, config_path=None, no_redo=False, skip_lock=False):
         self.cli_no_redo = no_redo
         self.root = repo_root()
+        # mount chisel-ssm
+        out = subprocess.check_output(["bender", "path", "chisel-ssm"], cwd=self.root, stderr=subprocess.DEVNULL)
+        self.chisel = os.path.normpath(out.decode().strip())
         self.cluster = os.path.join(self.root, "target", "snitch_cluster")
         # Only ONE batch run may run at a time: concurrent batch runs share each
         # app's build dir, the chisel-ssm/sbt datagen cache and the root
@@ -412,9 +415,7 @@ class BatchRun:
         decide which lane a job goes in -- the build's own make re-checks the cache
         for correctness, so a misclassification only ever costs scheduling, never data."""
         parts = [
-            f"{k}={v}"
-            for k, v in job["all_params"].items()
-            if not any(k.startswith(p) for p in self._CACHE_KEY_DROP)
+            f"{k}={v}" for k, v in job["all_params"].items() if not any(k.startswith(p) for p in self._CACHE_KEY_DROP)
         ]
         return " ".join(parts)
 
@@ -473,6 +474,8 @@ class BatchRun:
             *env_args,
             "-v",
             f"{self.root}:{self.root}",
+            "-v",
+            f"{self.chisel}:{self.chisel}",
             "-w",
             self.cluster,
             CONTAINER,
@@ -730,8 +733,10 @@ class BatchRun:
         print(f"  Report: {os.path.join(self.report_dir, 'report.md')}")
         kept, cached = self.no_redo_summary
         if cached:
-            print(f"  force:false: ran {len(kept)} job(s); fully skipped {len(cached)} cached "
-                  f"job(s) (no build/vsim/memsim -- kept stored row).")
+            print(
+                f"  force:false: ran {len(kept)} job(s); fully skipped {len(cached)} cached "
+                f"job(s) (no build/vsim/memsim -- kept stored row)."
+            )
             for jid in cached:
                 print(f"    skipped {jid}")
 
@@ -748,8 +753,9 @@ class BatchRun:
         build/<app>.elf can be matched to the right job without trusting the (churned) build dir."""
         try:
             env = {**os.environ, "MEMSIM_ACC": "1"}
-            out = subprocess.run([MEMSIM_BIN, elf], cwd=self.cluster, env=env,
-                                 capture_output=True, text=True, timeout=60).stderr
+            out = subprocess.run(
+                [MEMSIM_BIN, elf], cwd=self.cluster, env=env, capture_output=True, text=True, timeout=60
+            ).stderr
         except Exception:
             return None
         m = re.search(r"seqLen=(\d+) dModel=(\d+)", out)
