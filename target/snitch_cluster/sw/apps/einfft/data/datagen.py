@@ -38,21 +38,6 @@ from datagen_base import DataGeneratorBase, FP8, BF16, BANK_BYTES  # type: ignor
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
-# Synthesized SIMD mode value. The Chisel SimbaCoreMode bit layout is
-# (high to low): boolean enables · m_switchCoreMode · sw_simdInType · m_simd,
-# where m_simd = (SimdMode<<3) | (doRelu<<2) | (doRequant<<1) | doSoftShrink.
-# `en_isCoreRequant` defaults to 1 → bit 15 is set on every plain SIMD mode.
-# Sanity-check: M8_SIMD_ADD_BF16 = 32776 = 0x8008 = (en_isCoreRequant) | (Add<<3).
-_EN_ISCORE_REQUANT_BIT = 1 << 15
-_SIMD_MODE_ADD = 1
-
-
-def _simd_add_bf16_relu_mode() -> int:
-    """ADD_BF16 with doRelu=1 — used so layer-1's bias-ADD also applies ReLU."""
-    m_simd = (_SIMD_MODE_ADD << 3) | (1 << 2)   # mode=Add, doRelu=1
-    return _EN_ISCORE_REQUANT_BIT | m_simd      # 0x800c = 32780
-
-
 class DataGenerator(DataGeneratorBase):
     APP_NAME = "einfft"
     NB_BRANCHES = 4
@@ -261,7 +246,7 @@ class DataGenerator(DataGeneratorBase):
             "length_d":               len_d,
             "length_bf16":            len_bf16,
             "length_bias_bcast_branch": len_bias_bcast_branch,
-            "SIMD_ADD_BF16_RELU":     _simd_add_bf16_relu_mode(),
+            "SIMD_ADD_BF16_RELU":     self.kwargs["M40_SIMD_ADD_BF16_RELU"],
         }
 
         # ---- Test data + sampled checks ---------------------------------------

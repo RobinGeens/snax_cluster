@@ -45,9 +45,7 @@ class DataGenerator(DataGeneratorBase):
         assert simdLanes == self.kwargs["seqLenUnroll"], "memory layout mismatch"
         assert L % simdLanes == 0, f"seqLen ({L}) must be a multiple of simdLanes ({simdLanes})"
 
-        # SIMD_ADD_BF16 with the doRelu post-op bit set. doRelu = 1<<2 (verified against
-        # einfft-tiled's M3_SIMD_ADD_BF16_RELU); the named SIMD_ADD_BF16 lacks the relu bit.
-        simd_add_bf16_relu = self.kwargs["M8_SIMD_ADD_BF16"] | (1 << 2)
+        simd_add_bf16_relu = self.kwargs["M40_SIMD_ADD_BF16_RELU"]
 
         # Per-channel affine walk (mirrors rmsnorm step 6 "x * weight"):
         #   x   : (L, D) BF16 in IS-core out layout = [L/lanes][D][lanes]

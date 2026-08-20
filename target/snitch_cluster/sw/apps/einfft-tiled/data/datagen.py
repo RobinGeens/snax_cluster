@@ -26,17 +26,6 @@ from datagen_base import DataGeneratorBase, FP8, BF16, BANK_BYTES  # type: ignor
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
-# Synthesized SIMD mode: SIMD_ADD_BF16 + doRelu. See einfft/datagen.py for the
-# SimbaCoreMode bit-layout sanity check (verified against M8_SIMD_ADD_BF16).
-_EN_ISCORE_REQUANT_BIT = 1 << 15
-_SIMD_MODE_ADD = 1
-
-
-def _simd_add_bf16_relu_mode() -> int:
-    m_simd = (_SIMD_MODE_ADD << 3) | (1 << 2)
-    return _EN_ISCORE_REQUANT_BIT | m_simd
-
-
 class DataGenerator(DataGeneratorBase):
     APP_NAME = "einfft-tiled"
     NB_BRANCHES = 4
@@ -292,7 +281,7 @@ class DataGenerator(DataGeneratorBase):
             "length_bf16": len_bf16,
             "length_bias_mini_branch": len_bias_mini_branch,
             "length_bias_mini_tile": len_bias_mini_tile,
-            "SIMD_ADD_BF16_RELU": _simd_add_bf16_relu_mode(),
+            "SIMD_ADD_BF16_RELU": self.kwargs["M40_SIMD_ADD_BF16_RELU"],
         }
 
         test_data = {

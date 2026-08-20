@@ -25,18 +25,9 @@ from datagen_base import DataGeneratorBase, FP8, BF16, BANK_BYTES  # type: ignor
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
-# Synthesized SIMD mode: SIMD_ADD_BF16 + doRelu (see einfft datagen for the bit-layout sanity check).
-_EN_ISCORE_REQUANT_BIT = 1 << 15
-_SIMD_MODE_ADD = 1
-
 # Skip-128 block: low 128 B of every 256 B map to banks 0-15, high 128 B to banks 16-31.
 # See docs/dataflow/20_double_gemm_conflict_free.md.
 SKIP_BLOCK = 128
-
-
-def _simd_add_bf16_relu_mode() -> int:
-    m_simd = (_SIMD_MODE_ADD << 3) | (1 << 2)
-    return _EN_ISCORE_REQUANT_BIT | m_simd
 
 
 def skip128(bounds, strides):
@@ -135,11 +126,8 @@ class DataGenerator(DataGeneratorBase):
             seqLen >= 2 * Mu
         ), f"seqLen ({seqLen}) must be >= 2*seqLenUnroll ({2 * Mu}); M=1 breaks the folded imag narrow."
 
-        # ---- Combined IS_OSGEMM mode (OS requant ON, IS requant OFF) ----------
-        is_osgemm = self.kwargs["M3_OSGEMM"] | self.kwargs["M4_ISGEMM"]
-        requant_bit = self.kwargs["M4_ISGEMM"] ^ self.kwargs["M5_ISGEMM_NO_REQUANT"]
-        iosgemm_no_requant = is_osgemm & ~requant_bit
-        noop_bf16_requant_relu = self.kwargs["M24_SIMD_NOOP_BF16_REQUANT"] | (1 << 2)
+        iosgemm_no_requant = self.kwargs["M32_IS_OSGEMM_NO_REQUANT"]
+        noop_bf16_requant_relu = self.kwargs["M41_SIMD_NOOP_BF16_REQUANT_RELU"]
 
         # ============================ OS-core (real side) =====================
         a_in_width = Mu * FP8
@@ -279,7 +267,7 @@ class DataGenerator(DataGeneratorBase):
             "length_bias_mini_branch": len_bias_mini_branch,
             "length_bias_im_branch": len_bias_im_branch,
             "IS_OSGEMM_NO_REQUANT": iosgemm_no_requant,
-            "SIMD_ADD_BF16_RELU": _simd_add_bf16_relu_mode(),
+            "SIMD_ADD_BF16_RELU": self.kwargs["M40_SIMD_ADD_BF16_RELU"],
             "SIMD_NOOP_BF16_REQUANT_RELU": noop_bf16_requant_relu,
         }
 
