@@ -290,9 +290,11 @@ class BatchRun:
         """Tag jobs that should be fully skipped rather than rerun (sets job["cached"]).
 
         A job is cached iff its effective force is false AND its last recorded run in the
-        persistent report.json reached state `done` with a real error count (PASS or
-        ERRORS/OOM). force=true jobs (the default) are never cached. build_fail, timeout
-        and no_result (state `done` but no error line) always rerun.
+        persistent report.json actually completed: state `done`, a real error count, NOT
+        crashed, and real cycle counts (a crash can still print a spurious error line but
+        never produces cycle counts). force=true jobs (the default) are never cached.
+        build_fail, timeout, no_result (done but no error line) and crashes / no-cycle runs
+        always rerun.
 
         Cached jobs are skipped completely: no .elf build, no vsim, no memsim model. The
         report merge keeps their last stored row verbatim (re-stamped as reused on this run)."""
@@ -309,7 +311,18 @@ class BatchRun:
         for lane in self.jobs:
             for job in lane:
                 prev = report.get(job["id"], {})
-                produced_result = prev.get("state") == "done" and prev.get("errors") is not None
+                # A crash can reach state `done` and still print a spurious error line, but it
+                # never produces cycle counts -- require real cycles and no crash flag so such
+                # jobs (and any no-cycle run) rerun instead of being cached forever.
+                has_cycles = (prev.get("simbacore") not in (None, "", "None")) or (
+                    prev.get("total") not in (None, "", "None")
+                )
+                produced_result = (
+                    prev.get("state") == "done"
+                    and prev.get("errors") is not None
+                    and not prev.get("crashed")
+                    and has_cycles
+                )
                 job["cached"] = (not self._job_force(job)) and produced_result
                 (cached if job["cached"] else kept).append(job["id"])
         self.cached_jobs = cached

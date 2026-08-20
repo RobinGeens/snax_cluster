@@ -87,6 +87,25 @@ def _pad(s, width, right=False):
     return fill + s if right else s + fill
 
 
+def _scan_log(path, regexes):
+    """Stream `path` line by line and return, per regex, the last findall() group it
+    matched (None if it never matched), or None if the file can't be opened. All the
+    markers here are single-line, so streaming is exact -- and it keeps memory bounded:
+    a runaway sim log (a putc_buffer stdout flood) can reach many GB, so reading it
+    whole with f.read() raises MemoryError."""
+    last = [None] * len(regexes)
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                for i, rx in enumerate(regexes):
+                    m = rx.findall(line)
+                    if m:
+                        last[i] = m[-1]
+    except OSError:
+        return None
+    return last
+
+
 def parse_log(path):
     """Return (errors, simbacore, total, l1_bytes, crashed) from a run log, or Nones.
 
@@ -97,22 +116,16 @@ def parse_log(path):
     failed outright rather than judged against the tolerance."""
     if not path or not os.path.exists(path):
         return None, None, None, None, False
-    try:
-        with open(path, errors="replace") as f:
-            text = f.read()
-    except OSError:
+    scanned = _scan_log(path, (RE_ERRORS, RE_SIMBACORE, RE_TOTAL, RE_L1, RE_VSIM_ERRORS))
+    if scanned is None:
         return None, None, None, None, False
-    comp = RE_ERRORS.findall(text)
-    sc = RE_SIMBACORE.findall(text)
-    tot = RE_TOTAL.findall(text)
-    l1 = RE_L1.findall(text)
-    if comp:
-        errors, crashed = comp[-1], False
+    comp, sc, tot, l1, vsim = scanned
+    if comp is not None:
+        errors, crashed = comp, False
     else:
-        vsim = RE_VSIM_ERRORS.findall(text)
-        errors = vsim[-1] if vsim else None
-        crashed = bool(vsim) and int(vsim[-1]) > 0
-    return (errors, (sc[-1] if sc else None), (tot[-1] if tot else None), (l1[-1] if l1 else None), crashed)
+        errors = vsim
+        crashed = vsim is not None and int(vsim) > 0
+    return errors, sc, tot, l1, crashed
 
 
 def parse_model_agu_errors(path):
@@ -120,13 +133,8 @@ def parse_model_agu_errors(path):
     if the line is absent (e.g. a vsim-only log, or --timing-only)."""
     if not path or not os.path.exists(path):
         return None
-    try:
-        with open(path, errors="replace") as f:
-            text = f.read()
-    except OSError:
-        return None
-    m = RE_MODEL_AGU.findall(text)
-    return m[-1] if m else None
+    scanned = _scan_log(path, (RE_MODEL_AGU,))
+    return scanned[0] if scanned else None
 
 
 def parse_model_s2s_stale(path):
@@ -136,15 +144,10 @@ def parse_model_s2s_stale(path):
     uncommitted data -> wrong output (the gross vsim iscore_out/SUC-y failures)."""
     if not path or not os.path.exists(path):
         return None
-    try:
-        with open(path, errors="replace") as f:
-            text = f.read()
-    except OSError:
+    scanned = _scan_log(path, (RE_MODEL_S2S,))
+    if not scanned or scanned[0] is None:
         return None
-    m = RE_MODEL_S2S.findall(text)
-    if not m:
-        return None
-    z, y = m[-1]
+    z, y = scanned[0]
     return int(z) + int(y)
 
 
@@ -155,13 +158,11 @@ def parse_build_log_l1(path):
     and present even when an OOM aborts the build. Returns (l1_kib, oom)."""
     if not path or not os.path.exists(path):
         return None, False
-    try:
-        with open(path, errors="replace") as f:
-            text = f.read()
-    except OSError:
+    scanned = _scan_log(path, (RE_L1, RE_L1_OOM))
+    if scanned is None:
         return None, False
-    l1 = RE_L1.findall(text)
-    return (l1[-1] if l1 else None), bool(RE_L1_OOM.search(text))
+    l1, oom = scanned
+    return l1, oom is not None
 
 
 def _display_status(state, errors, oom=False, crashed=False):

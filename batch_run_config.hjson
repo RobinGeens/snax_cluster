@@ -227,16 +227,8 @@
                     dtRank: 24
                     nb_tiles: 4 // 8 not possible
                 }
-                { // out proj
-                    name: P2 out proj B
-                    model: Simba-L IN
-                    force: false
-                    seqLen: 192 // 4x (kernel does 2x this L -> 784)
-                    dModel: 384
-                    dInner: 192
-                    dtRank: 24
-                    nb_tiles: 8
-                }
+                // P2 out proj B (Simba-L IN) removed: p2-carry now fuses this output projection into its
+                // Phase B (K-tiled), so the SUC/in proj B p2-carry entry above computes the full P2.
 
                 {  // FFT
                     name: fft D
@@ -250,8 +242,10 @@
             ]
         }
         {
-            // SUC P2, all but out proj
-            app: P2-async-OS-no-IS
+            // SUC P2 (osCore in-proj + SUC), all but out proj — now via p2-carry: on-chip SSM state carry
+            // replaces P2-async's BC/oscore_in async rings (~-44% on the P2 part). The output projection is
+            // still the separate GEMM below, since p2-carry's fused out-proj does not fit in TCDM here.
+            app: p2-carry
             params: [
                 {
                     name: SUC/in proj B
@@ -260,12 +254,18 @@
                     seqLen: 768
                     dModel: 192
                     dtRank: 24
-                    nb_tiles: 8
-                    nb_l_tiles: 4
-                    nb_slots: 2
-                    safe_to_start_r10: 40
-                    safe_to_start_r11: 0 // not used
+                    nb_tiles: 1
+                    nb_l_tiles: 12 // L_tile=64
+                    bc_pad_banks: 4
                 }
+            ]
+        }
+        {
+            // Simba-L CS (1024/528) stays on P2-async: p2-carry runs full dInner (nb_tiles=1), whose osCore
+            // weight (dModel*dInner = 528*1056 ~ 544 KiB) exceeds the 512 KiB TCDM. Needs dInner tiling in
+            // p2-carry (not yet supported).
+            app: P2-async-OS-no-IS
+            params: [
                 {
                     name: SUC/in proj D
                     model: Simba-L CS
@@ -282,8 +282,8 @@
             ]
         }
         {
-            // SUC-only with dt tiling. Only the largest seqLen needs to tile dt.
-            app: suc-async-dt
+            // SUC-only, on-chip state carry, largest seqLen (dt is tiled per L-tile like BC, so it stays flat).
+            app: suc-carry
             params: [
                 {
                     name: SUC A
@@ -292,14 +292,9 @@
                     seqLen: 32768 // x2
                     dModel: 96
                     dtRank: 24
-                    nb_tiles: 8
-                    nb_l_tiles: 128 // L_tile=512
-                    nb_slots: 2
+                    nb_tiles: 1
+                    nb_l_tiles: 128 // L_tile=256
                     bc_pad_banks: 4
-                    nb_dt_tiles : 32
-                    nb_dt_slots : 2
-                    safe_to_start_r10: 0 // not used
-                    safe_to_start_r11: 0 // not used
                 }
                 {
                     name: SUC B
@@ -308,20 +303,15 @@
                     seqLen: 16384
                     dModel: 192
                     dtRank: 24
-                    nb_tiles: 8
-                    nb_l_tiles: 16 // L_tile=512
-                    nb_slots: 2
+                    nb_tiles: 1
+                    nb_l_tiles: 128 // L_tile=128
                     bc_pad_banks: 4
-                    nb_dt_tiles : 16
-                    nb_dt_slots : 2
-                    safe_to_start_r10: 0 // not used
-                    safe_to_start_r11: 0 // not used
                 }
             ]
         }
         {
-            // SUC-only, no dt tiling, no z-proj or out-proj
-            app: suc-async
+            // SUC-only, on-chip state carry (replaces suc-async); full dInner per invocation (nb_tiles=1)
+            app: suc-carry
             params: [
                 // Sizes C
                 {
@@ -331,9 +321,8 @@
                     seqLen: 4096
                     dModel: 384
                     dtRank: 24
-                    nb_tiles: 16
-                    nb_l_tiles: 4 // L_tile=512
-                    nb_slots: 2
+                    nb_tiles: 1
+                    nb_l_tiles: 128 // L_tile=32 (double-buffer footprint bound at dInner=768)
                     bc_pad_banks: 4
                 }
 
@@ -346,9 +335,8 @@
                     seqLen: 3136
                     dModel: 96
                     dtRank: 24
-                    nb_tiles: 8
-                    nb_l_tiles: 4
-                    nb_slots: 2
+                    nb_tiles: 1
+                    nb_l_tiles: 14 // L_tile=224
                     bc_pad_banks: 4
                 }
 
@@ -810,16 +798,9 @@
                     dtRank: 24
                     nb_tiles: 3
                 }
-                { // out proj
-                    name: P2 out proj B
-                    model: Simba-S IN
-                    force: false
-                    seqLen: 256 // x3.0625
-                    dModel: 256
-                    dInner: 144 // 128 -> mult of 24
-                    dtRank: 24
-                    nb_tiles: 3
-                }
+                // P2 out proj B (Simba-S IN) removed: p2-carry now fuses this output projection (its Phase B,
+                // K-tiled). Note p2-carry runs it over the padded dInner=288 (vs 256 here); the extra channels
+                // are zero, so the result matches, at a few % more cycles.
                 { // 64 -> 128 downsample
                     name: downsample A
                     model: Simba-S IN
@@ -945,8 +926,8 @@
             ]
         }
         {
-            // SUC-only, no dt tiling (layer A). "Cannot dissect" -> full-block dims.
-            app: suc-async
+            // SUC-only, on-chip state carry (layer A). "Cannot dissect" -> full-block dims.
+            app: suc-carry
             params: [
                 {
                     name: SUC A
@@ -955,16 +936,15 @@
                     seqLen: 3136 // x1
                     dModel: 72 // 64 -> mult of 24
                     dtRank: 24
-                    nb_tiles: 3
-                    nb_l_tiles: 4 // L_tile=784
-                    nb_slots: 2
+                    nb_tiles: 1
+                    nb_l_tiles: 14 // L_tile=224
                     bc_pad_banks: 4
                 }
             ]
         }
         {
-            // SUC P2 in proj (layer B). "Cannot dissect" -> full-block dims.
-            app: P2-async-OS-no-IS
+            // SUC P2 in proj (layer B). "Cannot dissect" -> full-block dims. Now via p2-carry (state carry).
+            app: p2-carry
             params: [
                 {
                     name: SUC/in proj B
@@ -973,11 +953,9 @@
                     seqLen: 784 // x1
                     dModel: 144 // 128 -> mult of 24
                     dtRank: 24
-                    nb_tiles: 6
-                    nb_l_tiles: 49 // L_tile=16 (784=16*49; nb_slots must be >=2 and divide nb_l_tiles)
-                    nb_slots: 7
-                    safe_to_start_r10: 40
-                    safe_to_start_r11: 0 // not used
+                    nb_tiles: 1
+                    nb_l_tiles: 7 // L_tile=112 (784=112*7)
+                    bc_pad_banks: 4
                 }
             ]
         }
