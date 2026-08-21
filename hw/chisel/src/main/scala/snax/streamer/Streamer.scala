@@ -213,7 +213,7 @@ class Streamer(param: StreamerParam) extends Module with RequireAsyncReset {
   // if every data reader/writer is not busy
   streamer_finish := !(
     reader.map(_.io.busy).reduceLeftOption(_ || _).getOrElse(0.B) ||
-      writer.map(_.io.busy).reduceLeftOption(_ || _).getOrElse(0.B) ||
+      writer.map(w => w.io.busy || !w.io.bufferEmpty).reduceLeftOption(_ || _).getOrElse(0.B) ||
       reader_writer.map(_.io.readerInterface.busy).reduceLeftOption(_ || _).getOrElse(0.B) ||
       reader_writer.map(_.io.writerInterface.busy).reduceLeftOption(_ || _).getOrElse(0.B) ||
       readerDatapathExtension.map(_.io.busy).reduceLeftOption(_ || _).getOrElse(0.B) ||

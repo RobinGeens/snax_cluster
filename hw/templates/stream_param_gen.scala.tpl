@@ -36,20 +36,12 @@ object StreamerParametersGen {
   def readerParams = Seq(
 % for idx in range(0,len(cfg["snax_streamer_cfg"]["data_reader_params"]["spatial_bounds"])):
     new ReaderWriterParam(
-      spatialBounds = List(
-% for jdx in range(0,len(cfg["snax_streamer_cfg"]["data_reader_params"]["spatial_bounds"][idx])):
-        ${cfg["snax_streamer_cfg"]["data_reader_params"]["spatial_bounds"][idx][jdx]}${',' if not loop.last else ''}
-% endfor
-      ),
+      spatialBounds = List(${", ".join(str(c) for c in cfg["snax_streamer_cfg"]["data_reader_params"]["spatial_bounds"][idx])}),
       temporalDimension = ${cfg["snax_streamer_cfg"]["data_reader_params"]["temporal_dim"][idx]},
       tcdmDataWidth = ${tcdm_data_width},
       tcdmSize = ${tcdm_size},
 % if "tcdm_logic_word_size" in cfg["snax_streamer_cfg"]["data_reader_params"]:
-      tcdmLogicWordSize = Seq(
-% for jdx in range(0,len(cfg["snax_streamer_cfg"]["data_reader_params"]["tcdm_logic_word_size"][idx])):
-        ${cfg["snax_streamer_cfg"]["data_reader_params"]["tcdm_logic_word_size"][idx][jdx]}${',' if not loop.last else ''}
-% endfor
-      ),
+      tcdmLogicWordSize = Seq(${", ".join(str(c) for c in cfg["snax_streamer_cfg"]["data_reader_params"]["tcdm_logic_word_size"][idx])}),
 % else:
       tcdmLogicWordSize = Seq(256),
 % endif
@@ -78,20 +70,12 @@ ${'   ), ' if not loop.last else '    )'}
   def writerParams = Seq(
 % for idx in range(0,len(cfg["snax_streamer_cfg"]["data_writer_params"]["spatial_bounds"])):
     new ReaderWriterParam(
-      spatialBounds = List(
-% for jdx in range(0,len(cfg["snax_streamer_cfg"]["data_writer_params"]["spatial_bounds"][idx])):
-        ${cfg["snax_streamer_cfg"]["data_writer_params"]["spatial_bounds"][idx][jdx]}${',' if not loop.last else ''}
-% endfor
-      ),
+      spatialBounds = List(${", ".join(str(c) for c in cfg["snax_streamer_cfg"]["data_writer_params"]["spatial_bounds"][idx])}),
       temporalDimension = ${cfg["snax_streamer_cfg"]["data_writer_params"]["temporal_dim"][idx]},
       tcdmDataWidth = ${tcdm_data_width},
       tcdmSize = ${tcdm_size},
 % if "tcdm_logic_word_size" in cfg["snax_streamer_cfg"]["data_writer_params"]:
-      tcdmLogicWordSize = Seq(
-% for jdx in range(0,len(cfg["snax_streamer_cfg"]["data_writer_params"]["tcdm_logic_word_size"][idx])):
-        ${cfg["snax_streamer_cfg"]["data_writer_params"]["tcdm_logic_word_size"][idx][jdx]}${',' if not loop.last else ''}
-% endfor
-      ),
+      tcdmLogicWordSize = Seq(${", ".join(str(c) for c in cfg["snax_streamer_cfg"]["data_writer_params"]["tcdm_logic_word_size"][idx])}),
 % else:
       tcdmLogicWordSize = Seq(256),
 % endif
@@ -120,20 +104,12 @@ ${'   ), ' if not loop.last else '    )'}
   def readerWriterParams = Seq(
 % for idx in range(0,len(cfg["snax_streamer_cfg"]["data_reader_writer_params"]["spatial_bounds"])):
     new ReaderWriterParam(
-      spatialBounds = List(
-% for jdx in range(0,len(cfg["snax_streamer_cfg"]["data_reader_writer_params"]["spatial_bounds"][idx])):
-        ${cfg["snax_streamer_cfg"]["data_reader_writer_params"]["spatial_bounds"][idx][jdx]}${',' if not loop.last else ''}
-% endfor
-      ),
+      spatialBounds = List(${", ".join(str(c) for c in cfg["snax_streamer_cfg"]["data_reader_writer_params"]["spatial_bounds"][idx])}),
       temporalDimension = ${cfg["snax_streamer_cfg"]["data_reader_writer_params"]["temporal_dim"][idx]},
       tcdmDataWidth = ${tcdm_data_width},
       tcdmSize = ${tcdm_size},
 % if "tcdm_logic_word_size" in cfg["snax_streamer_cfg"]["data_reader_writer_params"]:
-      tcdmLogicWordSize = Seq(
-% for jdx in range(0,len(cfg["snax_streamer_cfg"]["data_reader_writer_params"]["tcdm_logic_word_size"][idx])):
-        ${cfg["snax_streamer_cfg"]["data_reader_writer_params"]["tcdm_logic_word_size"][idx][jdx]}${',' if not loop.last else ''}
-% endfor
-      ),
+      tcdmLogicWordSize = Seq(${", ".join(str(c) for c in cfg["snax_streamer_cfg"]["data_reader_writer_params"]["tcdm_logic_word_size"][idx])}),
 % else:
       tcdmLogicWordSize = Seq(256),
 % endif

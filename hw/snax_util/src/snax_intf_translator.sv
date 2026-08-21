@@ -101,16 +101,20 @@ module snax_intf_translator #(
 
   // Combinational logic
 
-  // We push everytime there is a new read request
-  // but then the response is not immediatley available
-  // and when the fifo is not full!
+  // The core consumes a response this cycle.
+  logic rsp_handshake;
+  assign rsp_handshake = snax_csr_rsp_valid_i && snax_pready_i;
+
+  // Push an accepted read's id unless its response is consumed this same cycle,
+  // in which case the live passthrough id is still valid.
   assign rsp_fifo_push =   snax_qvalid_i
+                        && snax_csr_req_ready_i
                         && !write_csr
-                        && !snax_csr_rsp_valid_i
+                        && !rsp_handshake
                         && !rsp_fifo_full;
 
-  // We pop when the response is valid and the fifo is not empty
-  assign rsp_fifo_pop  =   snax_csr_rsp_valid_i
+  // Pop exactly when a buffered response is consumed by the core.
+  assign rsp_fifo_pop  =   rsp_handshake
                         && !rsp_fifo_empty;
 
   // Buffer for aligning request id

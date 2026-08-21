@@ -48,7 +48,7 @@ static inline void oscore_in_refill_loop(uint8_t* slot_base, const uint8_t* l3_o
     for (uint32_t r = 0; r < N_visits; r++) {
         // Snitch0 polls until L-tile r is consumed and its slot can be refilled.
         if (snrt_global_core_idx() == 0) {
-            while (read_snax_csr_safe(R10_DELAY_GAUGE) < (r + 1) * gauge_step);
+            while (read_csr(R10_DELAY_GAUGE) < (r + 1) * gauge_step);
 
             // Release each delayed SUC reader
             // R10 has already been polled above, so reuse the loop index as its gauge value.
@@ -56,7 +56,7 @@ static inline void oscore_in_refill_loop(uint8_t* slot_base, const uint8_t* l3_o
                 write_csr(DELAYED_START_READER_10, 1);
                 r10_released = 1;
             }
-            if (r11_release_en && !r11_released && read_snax_csr_safe(R11_DELAY_GAUGE) >= r11_start_cnt) {
+            if (r11_release_en && !r11_released && read_csr(R11_DELAY_GAUGE) >= r11_start_cnt) {
                 write_csr(DELAYED_START_READER_11, 1);
                 r11_released = 1;
             }
@@ -79,12 +79,12 @@ static inline void oscore_in_refill_loop(uint8_t* slot_base, const uint8_t* l3_o
     if (snrt_global_core_idx() == 0) {
         if (r10_release_en && !r10_released) {
             printf("Fallback: delayed R10 threshold sits after refill loop end.\n");
-            while (read_snax_csr_safe(R10_DELAY_GAUGE) < r10_start_cnt);
+            while (read_csr(R10_DELAY_GAUGE) < r10_start_cnt);
             write_csr(DELAYED_START_READER_10, 1);
         }
         if (r11_release_en && !r11_released) {
             printf("Fallback: delayed R11 threshold sits after refill loop end.\n");
-            while (read_snax_csr_safe(R11_DELAY_GAUGE) < r11_start_cnt);
+            while (read_csr(R11_DELAY_GAUGE) < r11_start_cnt);
             write_csr(DELAYED_START_READER_11, 1);
         }
     }

@@ -30,24 +30,6 @@
 #define R11_DELAY_GAUGE (SIMBACORE_CSR_ADDR_BASE + 10)  // Number of elements that have been streamed out of SUC
 #define ISCORE_TILE_CNT (SIMBACORE_CSR_ADDR_BASE + 11)  // Number of tiles that have been streamed out of isCore
 
-// SNAX-range (0x3c0..0x5ff) CSR read that survives the taped-out translator's id-drop bug. These regs
-// answer combinationally (0-latency); the core's single write-back port prioritises retire/load over
-// the accelerator, so in a non-quiescent pipeline the response is consumed a cycle late under a stale
-// id -> the destination scoreboard bit strands forever -> permanent wedge. The leading `fence` drains
-// the pipeline so the response is consumed the same cycle with the correct id (the `add rd,rd,zero`
-// is the demo's id filler, kept as belt-and-suspenders).
-#define read_snax_csr_safe(reg)                        \
-    ({                                                 \
-        unsigned long __tmp;                           \
-        asm volatile("fence\n\t"                     \
-                     "csrr %0, " CSR_STR(reg) "\n\t" \
-                     "add  %0, %0, zero"             \
-                     : "=r"(__tmp)                   \
-                     :                               \
-                     : "memory"); \
-        __tmp;                                         \
-    })
-
 void set_streamer_csr(uint32_t R0_ptr, int32_t* R0_ss, int32_t* R0_tb, int32_t* R0_ts, bool R0_en,       //
                       uint32_t R1_ptr, int32_t* R1_ss, int32_t* R1_tb, int32_t* R1_ts, bool R1_en,       //
                       uint32_t R2_ptr, int32_t* R2_ss, int32_t* R2_tb, int32_t* R2_ts, bool R2_en,       //

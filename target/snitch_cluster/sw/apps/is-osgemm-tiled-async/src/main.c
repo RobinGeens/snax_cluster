@@ -113,8 +113,8 @@ int test_is_osgemm_tiled_async() {
             if (snrt_global_core_idx() == 0) {
                 uint32_t ready_os, ready_is;
                 do {
-                    ready_os = (r_os < nb_l_tiles) && (read_snax_csr_safe(R10_DELAY_GAUGE) >= (r_os + 1) * os_step);
-                    ready_is = (r_is < nb_l_tiles) && (read_snax_csr_safe(ISCORE_TILE_CNT) >= (r_is + 1) * is_step);
+                    ready_os = (r_os < nb_l_tiles) && (read_csr(R10_DELAY_GAUGE) >= (r_os + 1) * os_step);
+                    ready_is = (r_is < nb_l_tiles) && (read_csr(ISCORE_TILE_CNT) >= (r_is + 1) * is_step);
                 } while (!ready_os && !ready_is);
                 do_os = ready_os;
                 do_is = ready_is;
