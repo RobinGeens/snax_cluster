@@ -136,11 +136,14 @@ class DataGenerator(_suc_carry_datagen.DataGenerator):
             emit(f"uint32_t M2_{name} = {val};")
 
         # osCore->SUC z safe-to-start (R10), scaled to one L-tile launch (main-tiled's formula on L_tile).
+        # The swizzled BC read removes the SUC front-end bottleneck, so its z consumption
+        # catches the osCore sooner: widen the release margin accordingly.
         gemm_window_cnt = L_tile // su
         gemm_total_tiles = (L_tile // su) * N_kern
         gemm_cycles = gemm_total_tiles * self.dModel
         suc_delta = (gemm_cycles - L_tile * dI) / self.dModel
-        r10_start = min(math.ceil(max(gemm_window_cnt, suc_delta) * 1.2), gemm_total_tiles)
+        margin = 2.0 if self.bc_swizzle else 1.2
+        r10_start = min(math.ceil(max(gemm_window_cnt, suc_delta) * margin), gemm_total_tiles)
         emit(f"uint32_t M2_R10_start_cnt_lt = {int(r10_start)};")
         # NB_L_TILES and L_tile are already emitted by suc-carry's _emit_suc_carry (via super().run()).
 

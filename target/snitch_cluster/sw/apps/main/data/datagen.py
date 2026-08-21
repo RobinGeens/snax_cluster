@@ -27,6 +27,20 @@ class DataGenerator(DataGeneratorBase):
         super().__init__(self.APP_NAME, **kwargs)
         self.phase1_scalars: dict[str, int] = {}
         self.phase2_scalars: dict[str, int] = {}
+        # bc_swizzle is python-only (the Scala generator ignores it): read it from params_in
+        local_params_path = self.params_in_path(__file__)
+        if local_params_path.exists():
+            import hjson
+
+            with local_params_path.open() as f:
+                for key, value in hjson.loads(f.read()).items():
+                    self.kwargs.setdefault(key, value)
+        self.kwargs.setdefault("bc_swizzle", 0)  # always emitted for main.c
+
+    @staticmethod
+    def _swz(a: int) -> int:
+        """AGU XOR bank swizzle (docs/dataflow/22_agu_xor_swizzle.md): addr[7:5] ^= addr[10:8]."""
+        return (a & ~0xE0) | ((((a >> 5) ^ (a >> 8)) & 0x7) << 5)
 
     def read_and_format_vector(self, mode_id, type, tensor_name):
         if tensor_name == "iscore_bias":
@@ -35,6 +49,16 @@ class DataGenerator(DataGeneratorBase):
             from data_utils import format_vector_definition  # type: ignore[import]
 
             data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            if self.bc_swizzle and mode_id == 1:
+                # P1 R13/W3 access iscore_out through the swizzle: pre-swizzle the bias init
+                # image so the plain 1-D DMA lands it at the swizzled addresses.
+                base = self._iscore_out_p1_addr
+                raw = b"".join(int(v).to_bytes(2, "little") for v in data)
+                out = bytearray(len(raw))
+                for o in range(0, len(raw), 32):
+                    p = self._swz(base + o) - base
+                    out[p : p + 32] = raw[o : o + 32]
+                data = [int.from_bytes(out[i * 2 : (i + 1) * 2], "little") for i in range(len(data))]
             self.lines_data.append(
                 format_vector_definition(type, f"M{mode_id}_{tensor_name}", data, alignment=8, section=".data")
             )
@@ -90,6 +114,10 @@ class DataGenerator(DataGeneratorBase):
         self.bc_pad_bytes = self.bc_pad_banks * BANK_BYTES
         self.bc_matrix_bytes = self.seqLenUnroll * BANK_BYTES  # one bank-transpose matrix
         self.bc_matrix_stride = self.bc_matrix_bytes + self.bc_pad_bytes
+        # Alternative BC bank-conflict fix at zero footprint: AGU XOR swizzle on the dt_BC
+        # producers/consumers (P1 W3/R13, P2 R7/R2). Mutually exclusive with the padding.
+        self.bc_swizzle = int(self.kwargs.get("bc_swizzle", 0))
+        assert not (self.bc_swizzle and self.bc_pad_banks), "bc_swizzle and bc_pad_banks are mutually exclusive"
         self.weight_downsize_factor = self.gemm_weight_width / (self.dInnerUnroll * FP8)  # >= 1
         # Derived
         self.downsized_dModel = int(self.dModel / self.weight_downsize_factor)
@@ -252,6 +280,12 @@ class DataGenerator(DataGeneratorBase):
             ("iscore_out", iscore_out_bytes),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
+        if self.bc_swizzle:
+            # The swizzle permutes within absolute 256 B rows: iscore_out must be row-aligned
+            # (main.c aligns the TCDM base to 2 KiB) and span a whole number of rows.
+            deltas["addr_iscore_out"] = -(-deltas["addr_iscore_out"] // 256) * 256
+            assert lengths["length_iscore_out"] % 256 == 0
+        self._iscore_out_p1_addr = deltas["addr_iscore_out"]
         scalars = {**lengths, **deltas}
         self.phase1_scalars = scalars.copy()
 

@@ -30,8 +30,9 @@ int test_phase1_and_2() {
     }
     snrt_cluster_hw_barrier();
 
-    // ---- FULL TCDM buffers.
-    void* tcdm_base_ptr = snrt_l1_next();
+    // ---- FULL TCDM buffers. Base aligned to the swizzle key period so datagen's
+    // bc_swizzle phase anchor (iscore_out at base + M1_length_oscore_in) holds.
+    void* tcdm_base_ptr = (void*)(((uintptr_t)snrt_l1_next() + 2047u) & ~(uintptr_t)2047u);
 
     uint8_t* ptr_oscore_in      = (uint8_t*)tcdm_base_ptr;
     uint8_t* ptr_iscore_out_P1  = ptr_oscore_in + M1_length_oscore_in;
@@ -130,6 +131,10 @@ int test_phase1_and_2() {
         set_streamer_phase1((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P1[0], (uint32_t)ptr_conv_weight[0],
                             (uint32_t)ptr_conv_bias[0], (uint32_t)ptr_iscore_weight_P1[0], (uint32_t)ptr_iscore_out_P1,
                             (uint32_t)ptr_conv_out_tile[0]);
+        if (bc_swizzle) {  // produce dt_BC through the XOR swizzle
+            write_csr(ADDR_REMAP_INDEX_READER_13, 1);
+            write_csr(ADDR_REMAP_INDEX_WRITER_3, 1);
+        }
         set_simbacore_csr(M28_PHASE1_NO_REQUANT, seqLen, dModel, M1_dInner_tile, dtRank, xProjDim);
     }
 
@@ -229,6 +234,12 @@ int test_phase1_and_2() {
                             (uint32_t)ptr_dt_bias[0], (uint32_t)ptr_x_tile[0], (uint32_t)ptr_A[0], (uint32_t)ptr_BC,
                             (uint32_t)ptr_D[0], (uint32_t)ptr_y_tile[0], (uint32_t)ptr_iscore_weight_P2[0],
                             (uint32_t)ptr_iscore_out_P2);
+        if (bc_swizzle) {  // read dt/BC through the swizzle; P2's own psum R13/W3 back to identity
+            write_csr(ADDR_REMAP_INDEX_READER_13, 0);
+            write_csr(ADDR_REMAP_INDEX_WRITER_3, 0);
+            write_csr(ADDR_REMAP_INDEX_READER_2, 1);
+            write_csr(ADDR_REMAP_INDEX_READER_7, 1);
+        }
         set_simbacore_csr(M29_PHASE2_NO_REQUANT, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
     }
     snrt_cluster_hw_barrier();
@@ -321,8 +332,8 @@ int test_phase1_and_2() {
         // is caused by bad x (= conv_out) or bad dt+BC (= iscore_out_P1) rather than a SUC bug.
         err += check_result_sample(ptr_conv_out_l3, M1_conv_out, M1_test_samples_conv_out,  //
                                    nb_test_samples, "P1 conv_out (= P2 x, from L3)");
-        err += check_result_sample(ptr_iscore_out_P1, M1_iscore_out, M1_test_samples_iscore_out, nb_test_samples,
-                                   "P1 iscore_out (= P2 dt+BC)");
+        err += check_result_sample_swz(ptr_iscore_out_P1, M1_iscore_out, M1_test_samples_iscore_out,
+                                       M1_test_samples_iscore_out_swz, nb_test_samples, "P1 iscore_out (= P2 dt+BC)");
 
         // z and y now live in L3 (P2 spills them per-tile). check_result_sample reads via
         // AXI directly from L3 — slow per-byte, but only 25 samples, so cost is negligible.

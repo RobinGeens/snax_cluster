@@ -56,6 +56,16 @@ class DataGenerator(MainTiledDataGenerator):
         self._build_vmamba_test_data()
         self._run_memory_model()
 
+    def read_and_format_vector(self, mode_id, type, tensor_name):
+        if self.bc_swizzle and tensor_name == "iscore_bias":
+            # P1 psum init (emitted under DATA_MODE_ID here); pre-swizzled like main-tiled's.
+            # The P2 psum init is the separate "iscore_bias_P2" tensor and stays logical.
+            data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            data = self._swizzle_u16_image(data, self._iscore_out_p1_addr)
+            self.format_vector(type, f"M{mode_id}_{tensor_name}", data)
+            return
+        return super().read_and_format_vector(mode_id, type, tensor_name)
+
     def _run_memory_model(self):
         import importlib.util
         app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -99,6 +109,12 @@ class DataGenerator(MainTiledDataGenerator):
             ("iscore_out", len_iscore_out),
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
+
+        # main.c places iscore_out at (2 KiB-aligned base) + len_oscore_in: the swizzle-phase
+        # anchor for the bias image (bc_swizzle).
+        self._iscore_out_p1_addr = len_oscore_in
+        if self.bc_swizzle:
+            assert len_oscore_in % 256 == 0 and len_iscore_out % 256 == 0
 
         tile_scalars = {
             "dInner_tile": self.dInner_tile,

@@ -116,6 +116,11 @@ uint32_t check_result_sample(uint8_t* output, uint8_t* output_golden, int32_t* s
                              int32_t test_sample_count, const char* tensor_name);
 uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
                                  int32_t test_sample_count, const char* tensor_name);
+// For buffers living at AGU-swizzled addresses: golden read at the logical index,
+// result at its swizzled twin (both arrays come from datagen).
+uint32_t check_result_sample_swz(const uint8_t* output, const uint8_t* output_golden, const int32_t* sample_indices,
+                                 const int32_t* sample_indices_swz, int32_t test_sample_count,
+                                 const char* tensor_name);
 
 // Initialize cycle counter (call once at program start)
 void init_cycle_counter(void);

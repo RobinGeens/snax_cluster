@@ -55,10 +55,13 @@ int test() {
     uint8_t* ptr_tw1     = ptr_in + align64(M6_in_tile_bytes);
     uint8_t* ptr_tw2     = ptr_tw1 + align64(M6_tw1_tile_bytes);
     uint8_t* ptr_P       = ptr_tw2 + align64(M6_tw2_tile_bytes);
-    uint8_t* ptr_H1      = ptr_P + M6_slot_size_tile;
-    uint8_t* ptr_H2      = ptr_H1 + M6_hsize_tile;
+    // H2 ping-pong (nb_l3>1): the cmuls write one slot while the previous tile's
+    // assembly DMA drains the other. Single slot for nb_l3==1 (no assembly).
+    uint8_t* ptr_H2s[2];
+    ptr_H2s[0] = ptr_P + M6_slot_size_tile;
+    ptr_H2s[1] = (M6_nb_l3 > 1) ? ptr_H2s[0] + align64(M6_hsize_tile) : ptr_H2s[0];
     // P3 (partition-3 psum). For nb_l3>1 it overlays the by-then-dead stage-1-4 scratch
-    uint8_t* ptr_P3 = (M6_nb_l3 == 1) ? (ptr_H2 + align64(M6_hsize_tile)) : ptr_in;
+    uint8_t* ptr_P3 = (M6_nb_l3 == 1) ? (ptr_H2s[0] + align64(M6_hsize_tile)) : ptr_in;
 
     uint32_t start_cycles     = 0;
     uint32_t simbacore_cycles = 0;
@@ -89,142 +92,154 @@ int test() {
                             M6_W3_##N##_tb, M6_W3_##N##_ts)
 
     for (uint32_t s = 0; s < M6_nb_d; s++) {
+        // Psum buffers. For nb_l3==1 the two slot-sized buffers alternate roles each slice
+        // (gemm1 + partition3 share one, gemm2 the other) so every zero-fill hides behind a
+        // compute window. For nb_l3>1 both gemms share P and partition3 overlays the scratch.
+        uint8_t* psum_g1 = (M6_nb_l3 == 1 && (s & 1)) ? ptr_P3 : ptr_P;
+        uint8_t* psum_g2 = (M6_nb_l3 == 1) ? ((s & 1) ? ptr_P : ptr_P3) : ptr_P;
+        uint8_t* psum_p3 = (M6_nb_l3 == 1) ? psum_g1 : ptr_P3;
+
         // --- stages 1-4 per l3-tile: assemble the full H2 (partition-3 input) ---
         // Prologue: gather tile 0's inputs + zero its gemm1 psum. Later l3-tiles' gathers +
-        // P-zeros ride behind the previous tile's noop; for nb_l3==1 the whole prologue of
+        // P-zeros ride in the serial DMA windows below; for nb_l3==1 the whole prologue of
         // slice>0 is instead prefetched behind the previous slice's partition3 (see below),
         // so it is skipped here.
         if (snrt_is_dm_core() && (s == 0 || M6_nb_l3 > 1)) {
             gather_in_tile(ptr_in, s, 0);
             gather_tw1(ptr_tw1, 0);
             gather_tw2(ptr_tw2, 0);
-            snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            snrt_dma_start_1d(psum_g1, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
 
         for (uint32_t lt = 0; lt < M6_nb_l3; lt++) {
             uint32_t lt_next = lt + 1;  // tile prefetched behind this tile's compute
+            uint8_t* H2c     = ptr_H2s[lt & 1];
 
             if (snrt_global_core_idx() == 0) {
-                // gemm1 (in_tile -> P): start, then program cmul1's streamer behind the run.
-                CFG_GEMM_P(ptr_weight1, ptr_in, 1, ptr_P);
+                // gemm1 (in_tile -> psum): start, then program cmul1's streamer behind the run.
+                CFG_GEMM_P(ptr_weight1, ptr_in, 1, psum_g1);
                 set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, M6_dModel_slice * L2 * M6_l3_tile);
                 start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
-                set_simd_streamer_csr((uint32_t)ptr_P, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts, (uint32_t)ptr_tw1,
-                                      M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts, (uint32_t)ptr_H1, M6_W3_2_ss, M6_W3_2_tb,
+                set_simd_streamer_csr((uint32_t)psum_g1, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts, (uint32_t)ptr_tw1,
+                                      M6_R13_2_ss, M6_R13_2_tb, M6_R13_2_ts, (uint32_t)H2c, M6_W3_2_ss, M6_W3_2_tb,
                                       M6_W3_2_ts);
                 wait_simbacore_and_streamer();
                 simbacore_cycles += read_simbacore_perf_counter();
 
-                // cmul1 (P, tw1 -> H1): start, then program noop1's streamer behind the run.
+                // cmul1 (psum, tw1 -> H2): the fused W3 split write deinterleaves re/im.
                 set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
                 start_simbacore_and_streamers(0, 0, 0, 0);
-                set_simd_streamer_no_b((uint32_t)ptr_H1, M6_R7_2B_ss, M6_R7_2B_tb, M6_R7_2B_ts, (uint32_t)ptr_H2,
-                                       M6_W3_2B_ss, M6_W3_2B_tb, M6_W3_2B_ts);
                 wait_simbacore_and_streamer();
                 simbacore_cycles += read_simbacore_perf_counter();
             }
-            snrt_cluster_hw_barrier();  // A: P free (cmul1 read it), H1 ready; in & tw1 consumed
-
-            // Hidden behind noop1: zero P for gemm2 + prefetch next tile's in & tw1.
-            if (snrt_is_dm_core()) {
-                snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
-                if (lt_next < M6_nb_l3) {
-                    gather_in_tile(ptr_in, s, lt_next);
-                    gather_tw1(ptr_tw1, lt_next);
-                }
+            // Hidden behind gemm1+cmul1 (nb_l3==1): zero gemm2's psum (the other slot).
+            if (snrt_is_dm_core() && M6_nb_l3 == 1) {
+                snrt_dma_start_1d(psum_g2, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
                 snrt_dma_wait_all();
             }
-            if (snrt_global_core_idx() == 0) {
-                // noop1 (H1 -> H2)
-                set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
-                start_simbacore_and_streamers(0, 0, 0, 0);
-                wait_simbacore_and_streamer();
-                simbacore_cycles += read_simbacore_perf_counter();
+            // Hidden behind gemm1+cmul1 (nb_l3>1): assemble the previous tile's H2 [re|im]
+            // halves into the full H2's re/im regions (cmul1 writes the other slot) +
+            // gather this tile's tw2 (its buffer is free since the previous cmul2).
+            if (snrt_is_dm_core() && M6_nb_l3 > 1 && lt > 0) {
+                uint8_t* H2p = ptr_H2s[(lt - 1) & 1];
+                snrt_dma_start_1d(ptr_H2_full + (lt - 1) * M6_h2_half_bytes, H2p, M6_h2_half_bytes);
+                snrt_dma_start_1d(ptr_H2_full + M6_h2_im_region + (lt - 1) * M6_h2_half_bytes,
+                                  H2p + M6_h2_half_bytes, M6_h2_half_bytes);
+                gather_tw2(ptr_tw2, lt);
+                snrt_dma_wait_all();
             }
-            snrt_cluster_hw_barrier();  // B: P zeroed, H2 ready, next in & tw1 prefetched
+            snrt_cluster_hw_barrier();  // A: H2 ready, gemm1 psum free; in & tw1 consumed
+
+            // Serial DMA window (nb_l3>1): zero the shared psum for gemm2 (only free once
+            // cmul1 is done; nothing to hide behind).
+            if (M6_nb_l3 > 1) {
+                if (snrt_is_dm_core()) {
+                    snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                    snrt_dma_wait_all();
+                }
+                snrt_cluster_hw_barrier();  // B: psum zeroed
+            }
 
             if (snrt_global_core_idx() == 0) {
-                // gemm2 (H2 -> P): start, then program cmul2's streamer behind the run.
-                CFG_GEMM_P(ptr_weight2, ptr_H2, 3, ptr_P);
+                // gemm2 (H2 -> psum): start, then program cmul2's streamer behind the run.
+                CFG_GEMM_P(ptr_weight2, H2c, 3, psum_g2);
                 set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L2, 1, 2 * L2_padded, 1,
                                   M6_dModel_slice * L1 * M6_l3_tile);
                 start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
-                set_simd_streamer_csr((uint32_t)ptr_P, M6_R7_4_ss, M6_R7_4_tb, M6_R7_4_ts, (uint32_t)ptr_tw2,
-                                      M6_R13_4_ss, M6_R13_4_tb, M6_R13_4_ts, (uint32_t)ptr_H1, M6_W3_4_ss, M6_W3_4_tb,
-                                      M6_W3_4_ts);
-                wait_simbacore_and_streamer();
-                simbacore_cycles += read_simbacore_perf_counter();
-
-                // cmul2 (P, tw2 -> H1): start, then program noop2's streamer behind the run.
-                // For nb_l3==1 the on-chip H2 layout equals H2_full's [re|im] regions, so noop2
+                // For nb_l3==1 the on-chip H2 layout equals H2_full's [re|im] regions, so cmul2
                 // writes straight into H2_full and the separate H2-assembly DMA is skipped.
-                set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
-                start_simbacore_and_streamers(0, 0, 0, 0);
-                uint8_t* noop2_out = (M6_nb_l3 == 1) ? ptr_H2_full : ptr_H2;
-                set_simd_streamer_no_b((uint32_t)ptr_H1, M6_R7_4B_ss, M6_R7_4B_tb, M6_R7_4B_ts, (uint32_t)noop2_out,
-                                       M6_W3_4B_ss, M6_W3_4B_tb, M6_W3_4B_ts);
+                uint8_t* cmul2_out = (M6_nb_l3 == 1) ? ptr_H2_full : H2c;
+                set_simd_streamer_csr((uint32_t)psum_g2, M6_R7_4_ss, M6_R7_4_tb, M6_R7_4_ts, (uint32_t)ptr_tw2,
+                                      M6_R13_4_ss, M6_R13_4_tb, M6_R13_4_ts, (uint32_t)cmul2_out, M6_W3_4_ss,
+                                      M6_W3_4_tb, M6_W3_4_ts);
                 wait_simbacore_and_streamer();
                 simbacore_cycles += read_simbacore_perf_counter();
-            }
-            snrt_cluster_hw_barrier();  // C: P free (cmul2 read it), H1 ready; tw2 consumed
 
-            // Hidden behind noop2 compute: prefetch next tile's tw2 + zero its gemm1 psum, and
-            // (nb_l3==1) zero the partition-3 psum. noop2 only touches H1->H2_full; ptr_P3 aliases
-            // ptr_in/tw/P which noop2 does not read, so the fill is conflict-free here.
-            if (snrt_is_dm_core()) {
-                if (lt_next < M6_nb_l3) {
-                    gather_tw2(ptr_tw2, lt_next);
-                    snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
-                }
-                if (M6_nb_l3 == 1) snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
-                snrt_dma_wait_all();
-            }
-            if (snrt_global_core_idx() == 0) {
-                // noop2 (H1 -> H2 tile)
-                set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
+                // cmul2 (psum, tw2 -> H2/H2_full): fused re/im split write.
+                set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
                 start_simbacore_and_streamers(0, 0, 0, 0);
                 wait_simbacore_and_streamer();
                 simbacore_cycles += read_simbacore_perf_counter();
                 asm volatile("fence" ::: "memory");
             }
-            snrt_cluster_hw_barrier();  // D: H2 ready; next tw2 + next psum prefetched
-
-            // Assemble this l3-tile's H2 into the full TCDM H2: [re|im] halves to the re/im
-            // regions so partition3 reads [re(all m3) | im(all m3)]. Skipped for nb_l3==1:
-            // noop2 already wrote H2_full directly (its layout equals the assembled H2).
-            if (snrt_is_dm_core() && M6_nb_l3 > 1) {
-                snrt_dma_start_1d(ptr_H2_full + lt * M6_h2_half_bytes, ptr_H2, M6_h2_half_bytes);
-                snrt_dma_start_1d(ptr_H2_full + M6_h2_im_region + lt * M6_h2_half_bytes, ptr_H2 + M6_h2_half_bytes,
-                                  M6_h2_half_bytes);
+            // Hidden behind gemm2+cmul2 (nb_l3==1): zero the partition-3 psum (= gemm1's
+            // slot, free since cmul1 finished).
+            if (snrt_is_dm_core() && M6_nb_l3 == 1) {
+                snrt_dma_start_1d(psum_p3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
                 snrt_dma_wait_all();
             }
-            snrt_cluster_hw_barrier();
+            // Hidden behind gemm2+cmul2 (nb_l3>1): prefetch the next tile's in & tw1
+            // (dead since this tile's gemm1/cmul1).
+            if (snrt_is_dm_core() && M6_nb_l3 > 1 && lt_next < M6_nb_l3) {
+                gather_in_tile(ptr_in, s, lt_next);
+                gather_tw1(ptr_tw1, lt_next);
+                snrt_dma_wait_all();
+            }
+            snrt_cluster_hw_barrier();  // C: H2/H2_full ready, gemm2 psum free; tw2 consumed
+
+            // Serial DMA window (nb_l3>1): zero the psum for the next tile's gemm1 (only
+            // free once cmul2 is done). This tile's H2 assembly rides behind the next
+            // tile's gemm1+cmul1 (or the pre-partition3 window for the last tile).
+            if (M6_nb_l3 > 1) {
+                if (snrt_is_dm_core() && lt_next < M6_nb_l3) {
+                    snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                    snrt_dma_wait_all();
+                }
+                snrt_cluster_hw_barrier();  // D: next psum ready
+            }
         }
 
         // --- partition 3: K-tile the 2*L3 contraction over nb_l3 chunks from the TCDM H2,
         //     accumulating NO_REQUANT and requantising on the last (see doc). ---
-        // For nb_l3==1 the psum was already zeroed under the noop2 window above.
+        // For nb_l3>1: assemble the last l3-tile's H2, then zero the psum. The zero comes
+        // second because the P3 overlay may extend upward into the H2 slots.
+        // For nb_l3==1 the psum was already zeroed under the cmul2 window above.
         if (snrt_is_dm_core() && M6_nb_l3 > 1) {
-            snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
+            uint8_t* H2p = ptr_H2s[(M6_nb_l3 - 1) & 1];
+            snrt_dma_start_1d(ptr_H2_full + (M6_nb_l3 - 1) * M6_h2_half_bytes, H2p, M6_h2_half_bytes);
+            snrt_dma_start_1d(ptr_H2_full + M6_h2_im_region + (M6_nb_l3 - 1) * M6_h2_half_bytes,
+                              H2p + M6_h2_half_bytes, M6_h2_half_bytes);
+            snrt_dma_wait_all();
+            snrt_dma_start_1d(psum_p3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
 
         // Prefetch the next slice's input and zero its gemm1 psum behind partition3's compute
-        // (a long window). Safe for nb_l3==1 because P3 is now a separate buffer, so ptr_in/P
-        // are dead here; twiddles are slice-independent (already resident). Lifts the whole
-        // prologue (gather + 128 KiB P-zero) off the critical path for slices > 0.
+        // (a long window). Safe for nb_l3==1 because the next gemm1 psum (= this slice's gemm2
+        // slot) is dead since cmul2 and ptr_in is dead here; twiddles are slice-independent
+        // (already resident). Lifts the whole prologue off the critical path for slices > 0.
         if (snrt_is_dm_core() && M6_nb_l3 == 1 && s + 1 < M6_nb_d) {
             gather_in_tile(ptr_in, s + 1, 0);
-            snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            snrt_dma_start_1d(psum_g2, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         if (snrt_global_core_idx() == 0) {
             for (uint32_t kc = 0; kc < M6_nb_l3; kc++) {
                 CFG_GEMM_P(ptr_weight3 + kc * M6_weight3_kchunk_bytes, ptr_H2_full + kc * M6_h2_kchunk_bytes, 5,
-                           ptr_P3);
+                           psum_p3);
                 uint32_t mode = (kc + 1 == M6_nb_l3) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT;
                 set_simbacore_csr(mode, 2 * L3, 1, 2 * L3_padded / M6_nb_l3, 1, M6_dModel_slice * L1 * L2);
                 start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
@@ -237,7 +252,7 @@ int test() {
 
         // Scatter this slice's partition-3 output into its d-slice of the full L3 output.
         if (snrt_is_dm_core()) {
-            snrt_dma_start_2d(ptr_output_l3 + s * M6_out_block_slice, ptr_P3, M6_out_block_slice,
+            snrt_dma_start_2d(ptr_output_l3 + s * M6_out_block_slice, psum_p3, M6_out_block_slice,
                               /*dst_stride=*/M6_out_block_full, /*src_stride=*/M6_out_block_slice,
                               /*repeat=*/M6_out_nblk);
             snrt_dma_wait_all();

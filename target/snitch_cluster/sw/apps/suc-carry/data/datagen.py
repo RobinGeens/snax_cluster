@@ -45,6 +45,36 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         self.build_Phase2_data()
         self._emit_suc_carry()
 
+    def read_and_format_vector(self, mode_id, type, tensor_name):
+        if self.bc_swizzle and mode_id == 2 and tensor_name == "dt_BC":
+            # R7 reads the BC slots through the AGU swizzle. main.c aligns both BC slots to
+            # 2 KiB, so a BC window's permutation depends only on its position within the
+            # slot: pre-swizzle the BC part of every window in the L3 image. dt stays
+            # logical (R2 reads its own identity-mapped slot).
+            su = self.seqLenUnroll
+            dt_win = su * self.dtRank * FP8 // 8
+            bc_win = su * (2 * self.dState) * FP8 // 8
+            comb_win = dt_win + bc_win
+            win_per_l_tile = (self.seqLen // self.kwargs["nb_l_tiles"]) // su
+            assert bc_win % 256 == 0, f"BC window {bc_win} must be a whole number of 256 B rows"
+            data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            raw = bytearray(v & 0xFF for v in data)
+            assert len(raw) % comb_win == 0
+            for g in range(len(raw) // comb_win):
+                src = raw[g * comb_win + dt_win : g * comb_win + dt_win + bc_win]
+                slot_off = (g % win_per_l_tile) * bc_win
+                out = bytearray(bc_win)
+                for r in range(bc_win // 256):
+                    key = ((slot_off + r * 256) >> 8) & 7
+                    for c in range(8):
+                        out[r * 256 + (c ^ key) * 32 : r * 256 + (c ^ key) * 32 + 32] = src[
+                            r * 256 + c * 32 : r * 256 + c * 32 + 32
+                        ]
+                raw[g * comb_win + dt_win : g * comb_win + dt_win + bc_win] = out
+            self.format_vector(type, f"M{mode_id}_{tensor_name}", list(raw))
+            return
+        return super().read_and_format_vector(mode_id, type, tensor_name)
+
     def _pad_win(self, raw):
         assert raw % self.bc_matrix_bytes == 0, f"{raw} not a multiple of bc_matrix_bytes {self.bc_matrix_bytes}"
         return (raw // self.bc_matrix_bytes) * self.bc_matrix_stride
@@ -119,7 +149,9 @@ class DataGenerator(_main_tiled_datagen.DataGenerator):
         for name in ("R13", "W3"):
             emit(f"int32_t M2_{name}_state_tb[] = {{{state_beats}, 1, 1, 1}};")
             emit(f"int32_t M2_{name}_state_ts[] = {{{state_beat_bytes}, 0, 0, 0}};")
-            emit(f"int32_t M2_{name}_state_ss[] = {{{BANK_BYTES}}};")
+        emit(f"int32_t M2_R13_state_ss[] = {{{BANK_BYTES}}};")
+        # W3 has a [2, 2] spatial split: stride pair [s, 2s] = a linear 4-lane sweep
+        emit(f"int32_t M2_W3_state_ss[] = {{{BANK_BYTES}, {2 * BANK_BYTES}}};")
 
 
 if __name__ == "__main__":

@@ -4,8 +4,12 @@
 # Not released under license. All rights reserved.
 #
 # Author: Robin Geens <robin.geens@kuleuven.be>
+#
+# Parallel OSGEMM + ISGEMM, tiled along dInner, with the AGU XOR bank swizzle on the
+# live streamer ports. See docs/dataflow/22_agu_xor_swizzle.md.
 
 import pathlib
+import random
 import sys
 import os
 import hjson
@@ -17,8 +21,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../../ut
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../main/data"))
 sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 
-from datagen_base import DataGeneratorBase, FP8, BF16  # type: ignore[import]
+from datagen_base import DataGeneratorBase, NB_TEST_SAMPLES, FP8, BF16  # type: ignore[import]
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
+
+SB = 256  # swizzle permutes 32 B chunks within each 256 B TCDM row
+WIN = 2048  # swizzle key period: bits [10:8] of the address
+
+
+def swz(a: int) -> int:
+    """XOR bank swizzle, must match the AGU's XorBankSwizzleMapping: addr[7:5] ^= addr[10:8]."""
+    return (a & ~0xE0) | ((((a >> 5) ^ (a >> 8)) & 0x7) << 5)
 
 
 class DataGenerator(DataGeneratorBase):
@@ -34,19 +46,96 @@ class DataGenerator(DataGeneratorBase):
 
     def run(self):
         self.emit_combined_mode()
+        self.compute_layout()
         self.build_osgemm_data()
         self.build_isgemm_data()
-        self._run_memory_model()
+        self.emit_layout()
 
-    def _run_memory_model(self):
-        import importlib.util
-        app_dir = os.path.dirname(os.path.abspath(__file__))
-        spec = importlib.util.spec_from_file_location("memory_model", os.path.join(app_dir, "memory_model.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        from memory_model_base import run_model_from_datagen
-        comment = run_model_from_datagen(mod.build_report, app_dir)
-        self.lines_params.append(comment)
+    # ---------------- TCDM layout with per-stream swizzle phases ----------------
+
+    def _alloc(self, size: int, phase: int) -> int:
+        assert size % SB == 0, f"buffer size {size} is not a multiple of {SB}"
+        off = self._cursor + ((phase * SB - self._cursor) % WIN)
+        self._cursor = off + size
+        return off
+
+    def compute_layout(self):
+        L = self.kwargs["seqLen"]
+        dModel = self.kwargs["dModel"]
+        dInner = self.kwargs["dInner"]
+        nb = self.kwargs["nb_tiles"]
+
+        self.len_a_os = L * dModel * FP8 // 8
+        self.len_b_os_tile = dModel * dInner * FP8 // 8 // nb
+        self.len_d_os_tile = L * dInner * FP8 // 8 // nb
+        self.len_a_is_tile = L * dInner * FP8 // 8 // nb
+        self.len_b_is_tile = dInner * dModel * FP8 // 8 // nb
+        self.len_cd = L * dModel * BF16 // 8
+
+        # One distinct bits[10:8] phase per concurrently-live stream, so lockstep sweeps
+        # land in disjoint bank groups. Ping-pong halves share their stream's phase. The
+        # psum pair R13/W3 stays identity-mapped (a swizzled same-buffer RMW pair
+        # collides with itself, see the docs).
+        self._cursor = 0
+        self.off_a_os = self._alloc(self.len_a_os, 0)  # R0
+        self.off_b_os = [self._alloc(self.len_b_os_tile, 1) for _ in range(2)]  # R1
+        self.off_a_is = [self._alloc(self.len_a_is_tile, 2) for _ in range(2)]  # R11
+        self.off_b_is = [self._alloc(self.len_b_is_tile, 3) for _ in range(2)]  # R12
+        self.off_cd = self._alloc(self.len_cd, 4)  # R13 + W3, identity
+        self.off_d_os = [self._alloc(self.len_d_os_tile, 5) for _ in range(2)]  # W0
+        self.peak_bytes = self._cursor + WIN  # + slack for aligning the runtime base
+
+    def emit_layout(self):
+        self.format("uint32_t", "SWZ_off_a_os", self.off_a_os)
+        for i in range(2):
+            self.format("uint32_t", f"SWZ_off_b_os_{i}", self.off_b_os[i])
+            self.format("uint32_t", f"SWZ_off_a_is_{i}", self.off_a_is[i])
+            self.format("uint32_t", f"SWZ_off_b_is_{i}", self.off_b_is[i])
+            self.format("uint32_t", f"SWZ_off_d_os_{i}", self.off_d_os[i])
+        self.format("uint32_t", "SWZ_off_cd", self.off_cd)
+        self.lines_params.append(f"#define L1_TCDM_PEAK_BYTES {self.peak_bytes}u")
+
+    # ---------------- pre-swizzled DMA images and sample indices ----------------
+
+    @staticmethod
+    def _swizzle_block(raw: bytes, base: int) -> bytes:
+        assert base % SB == 0, f"buffer base {base} is not {SB} B aligned"
+        assert len(raw) % SB == 0
+        out = bytearray(len(raw))
+        for o in range(0, len(raw), 32):
+            p = swz(base + o) - base
+            out[p : p + 32] = raw[o : o + 32]
+        return bytes(out)
+
+    def emit_swizzled(self, ctype: str, name: str, elem_bytes: int, tile_bases: list[int], tile_len: int | None = None):
+        """Emit tensor `name` with each tile pre-swizzled for its TCDM destination, so a
+        plain 1-D DMA lands every element at its swizzled physical address.
+        tile_len in bytes; tile i is DMA'd to tile_bases[i % len(tile_bases)]."""
+        vals = self._read_data_int(f"{name}.bin")
+        raw = b"".join(int(v).to_bytes(elem_bytes, "little") for v in vals)
+        tl = tile_len if tile_len is not None else len(raw)
+        assert len(raw) % tl == 0
+        out = b"".join(
+            self._swizzle_block(raw[i * tl : (i + 1) * tl], tile_bases[i % len(tile_bases)])
+            for i in range(len(raw) // tl)
+        )
+        elems = [int.from_bytes(out[i * elem_bytes : (i + 1) * elem_bytes], "little") for i in range(len(vals))]
+        self.format_vector(ctype, name, elems)
+
+    def emit_samples_swz(self, mode_id: int, tensor: str, size: int, tile_bases: list[int], tile_len: int | None = None):
+        """Byte-sampled result check: logical index (into the golden) plus its swizzled
+        twin (into the result image, which lives at the swizzled addresses)."""
+        idx = sorted(random.randint(0, size - 1) for _ in range(NB_TEST_SAMPLES))
+        tl = tile_len if tile_len is not None else size
+        idx_swz = []
+        for k in idx:
+            t, r = divmod(k, tl)
+            base = tile_bases[t % len(tile_bases)]
+            idx_swz.append(t * tl + swz(base + r) - base)
+        self.format_vector("int32_t", f"M{mode_id}_test_samples_{tensor}", idx)
+        self.format_vector("int32_t", f"M{mode_id}_test_samples_{tensor}_swz", idx_swz)
+
+    # ---------------- modes ----------------
 
     def emit_combined_mode(self):
         """Compute IS_OSGEMM mode value = OSGEMM | ISGEMM (both cores, oscore output to mem)."""
@@ -86,7 +175,6 @@ class DataGenerator(DataGeneratorBase):
         assert N % nb_tiles == 0, f"N ({N}) must be divisible by nb_tiles ({nb_tiles})"
 
         N_tile = N // nb_tiles
-        dInner_tile = dInner // nb_tiles
 
         streamers = {
             "R0": (
@@ -106,20 +194,23 @@ class DataGenerator(DataGeneratorBase):
         len_a = M * K * a_in_width // 8
         len_b = K * N * b_array_width // 8
         len_d = M * N * d_array_width // 8
-        assert len_b % nb_tiles == 0
-        assert len_d % nb_tiles == 0
-        len_b_tile = len_b // nb_tiles
-        len_d_tile = len_d // nb_tiles
+        assert (len_a, len_b // nb_tiles, len_d // nb_tiles) == (
+            self.len_a_os,
+            self.len_b_os_tile,
+            self.len_d_os_tile,
+        )
 
         specs = [("a", len_a), ("b", len_b), ("d", len_d)]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
-        tile_scalars = {"length_b_tile": len_b_tile, "length_d_tile": len_d_tile}
+        tile_scalars = {"length_b_tile": len_b // nb_tiles, "length_d_tile": len_d // nb_tiles}
         scalars = {**lengths, **deltas, **tile_scalars}
 
-        test_data = {name: "uint8_t" for name in ("A", "B", "D")}
-        tests = {"D": seqLen * dInner}
+        self.build_mode(mode_id, streamers, scalars=scalars, test_data={}, tests={})
 
-        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
+        self.emit_swizzled("uint8_t", "M3_A", 1, [self.off_a_os])
+        self.emit_swizzled("uint8_t", "M3_B", 1, self.off_b_os, self.len_b_os_tile)
+        self.read_and_format_vector(mode_id, "uint8_t", "D")
+        self.emit_samples_swz(mode_id, "D", len_d, self.off_d_os, self.len_d_os_tile)
 
     def build_isgemm_data(self):
         """ISGEMM (mode 4): A_is(seqLen x dInner) x B_is(dInner x dModel) + C = D_is(seqLen x dModel).
@@ -172,20 +263,26 @@ class DataGenerator(DataGeneratorBase):
         len_a = seqLen * dInner * FP8 // 8
         len_b = dInner * dModel * FP8 // 8
         len_cd = seqLen * dModel * BF16 // 8
-        assert len_a % nb_tiles == 0
-        assert len_b % nb_tiles == 0
-        len_a_tile = len_a // nb_tiles
-        len_b_tile = len_b // nb_tiles
+        assert (len_a // nb_tiles, len_b // nb_tiles, len_cd) == (
+            self.len_a_is_tile,
+            self.len_b_is_tile,
+            self.len_cd,
+        )
 
         specs = [("a", len_a), ("b", len_b), ("cd", len_cd)]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
-        tile_scalars = {"length_a_tile": len_a_tile, "length_b_tile": len_b_tile}
+        tile_scalars = {"length_a_tile": len_a // nb_tiles, "length_b_tile": len_b // nb_tiles}
         scalars = {**lengths, **deltas, **tile_scalars}
 
-        test_data = {**{name: "uint8_t" for name in ("A", "B", "D")}, "C": "uint16_t"}
-        tests = {"D": seqLen * dModel}
+        self.build_mode(mode_id, streamers, scalars=scalars, test_data={}, tests={})
 
-        self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
+        self.emit_swizzled("uint8_t", "M4_A", 1, self.off_a_is, self.len_a_is_tile)
+        self.emit_swizzled("uint8_t", "M4_B", 1, self.off_b_is, self.len_b_is_tile)
+        # CD (psum) is identity-mapped: plain images and plain sample indices
+        self.read_and_format_vector(mode_id, "uint16_t", "C")
+        self.read_and_format_vector(mode_id, "uint8_t", "D")
+        idx = sorted(random.randint(0, len_cd - 1) for _ in range(NB_TEST_SAMPLES))
+        self.format_vector("int32_t", f"M{mode_id}_test_samples_D", idx)
 
 
 if __name__ == "__main__":

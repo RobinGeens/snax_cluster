@@ -21,11 +21,15 @@
 
 All FFT programs implement an **EinFFT-style partitioned DFT**: a length-`L`
 complex DFT is run as a sequence of small IS-core matmuls interleaved with
-SIMD Hadamards (CMul) and SIMD reorders (Noop deinterleave of re/im). The
+SIMD Hadamards (CMul) and re/im deinterleaves. The
 streamer chain is fully on-chip — there are no software byte reorders
 between stages (the one exception is `fft-4way`'s reorder2 `m3↔m4`
 transpose, a scalar C loop in the un-tiled validation harness — see that
-section).
+section). In `fft-tiled` and `fft-3way-tiled` the deinterleave is fused into
+the CMul itself: the W3 writer's `[2, 2]` spatial loop (`ss = [8, re_region_size]`, 
+temporal stride 16 B) scatters each 32 B CMul output beat's re half into the first output region and its im half into the second, 
+so no separate SIMD-Noop pass exists there. The un-tiled apps (`fft`, `fft-3way`, `fft-4way`) still run
+the deinterleave as a dedicated SIMD Noop pass.
 
 **The no-software-reorder trick.** The data generator emits inputs in a
 byte layout chosen so each SIMD-Noop deinterleave output is *already* in
@@ -66,12 +70,12 @@ scratchpad, which is also colloquially called "L1".)
 Tiles use different axes per phase, because the two phases have different
 constraints:
 
-- **Phase A** (partition 1 + hadamard + reorder) is **dModel-tiled**. Each
-  tile DMAs a `dModel`-slice of the input in, runs the three accelerator
-  stages on per-tile TCDM slots, and spills the per-tile reorder output up to
-  an L3 spill buffer. The on-chip reorder emits col-major per d-tile; the
-  spill writes it into the L3 buffer in `flattenB` (K-tile-major) order — the
-  layout the Phase B IS-core reads (see below).
+- **Phase A** (partition 1 + hadamard with fused re/im deinterleave) is
+  dModel-tiled. Each tile DMAs a `dModel`-slice of the input in, runs the two
+  accelerator stages on per-tile TCDM slots, and spills the per-tile deinterleaved
+  CMul output up to an L3 spill buffer. The fused CMul write emits col-major per
+  d-tile; the spill writes it into the L3 buffer in `flattenB` (K-tile-major)
+  order — the layout the Phase B IS-core reads (see below).
 - **Phase B** (partition 2) is **K-tiled**, mirroring `isgemm-tiled`. The
   `partition2_out` psum stays FULL in TCDM and accumulates across tiles;
   non-final tiles run in no-requant mode, final tile applies the requant.
@@ -85,13 +89,13 @@ its `B` input (the `2·L2 × L1·dModel` stacked re/im matrix) in `flattenB`
 K-tiles laid out **outermost**, each followed by its full `L1·dModel` N-sweep.
 When `L2 == seqLenUnroll` each re/im half is exactly one K-tile and `flattenB`
 collapses to plain col-major reals-then-imags, so the Phase A spill is a single
-contiguous 1D DMA. When `L2 > seqLenUnroll` the col-major reorder output no
+contiguous 1D DMA. When `L2 > seqLenUnroll` the col-major tile output no
 longer matches `flattenB`, so the Phase A spill **scatters** each
 `seqLenUnroll`-element block `reals[m·L2 + k2·seqLenUnroll … ][d]` into its
 `flattenB` block `(k2, d, m)` (a `k2 × dModel_tile` loop of block-granular 2D
 DMAs). Phase B then reads each K-slice as a contiguous L3 chunk. This keeps the
-finicky on-chip reorder streamers (`R7_2B`/`W3_2B`) L2-agnostic and folds the
-K-tile reorder into the already-present spill DMA.
+fused CMul writer L2-agnostic and folds the K-tile reorder into the
+already-present spill DMA.
 
 | Tensor                            | Phase | Lifecycle                                                          |
 | --------------------------------- | ----- | ------------------------------------------------------------------ |
@@ -99,8 +103,7 @@ K-tile reorder into the already-present spill DMA.
 | `twiddles`                        | A     | **shared** — depends only on `(l1, l2)`, not `d`                   |
 | `in_tile`                         | A     | **tiled** — per-tile dModel-slice (single-buffered)                |
 | `partition1_out_tile`             | A     | **tiled** — per-tile psum slot                                     |
-| `hadamard_out_tile`               | A     | **tiled** — per-tile intermediate                                  |
-| `had_reord_a_tile`                | A     | **tiled** — per-tile reorder output                                |
+| `had_reord_a_tile`                | A     | **tiled** — per-tile deinterleaved CMul output                     |
 | `hadamard_reordered_l3`           | A→B   | **L3 spill** — assembled across Phase A tiles, consumed in Phase B |
 | `had_reord_b_ktile`               | B     | **tiled** — per-K-tile B slot                                      |
 | `partition2_out`                  | B     | **FULL accumulator** — psum across K-tiles, final FFT output       |
@@ -144,11 +147,12 @@ Per outer slice (`nb_tiles_A` = number of slices, must divide `dModel`):
 
 1. For each l3-tile, DMA-gather the tile's input + twiddles into contiguous
    tile-local buffers (for `nb_l3 = 1` this is the whole `dM`-channel slice).
-2. Run the 5-step kernel (partition1 → hadamard1 → reorder1 → partition2 →
-   hadamard2 → reorder2) per l3-tile, assembling the full `[re|im]` H2; then run
+2. Run the 4-step kernel (partition1 → hadamard1 → partition2 → hadamard2, each
+   hadamard with the fused re/im deinterleave write) per l3-tile, assembling the
+   full `[re|im]` H2; then run
    **partition3** as a K-tiled (over `nb_l3`) accumulation reading that H2.
    Descriptors are the un-tiled `fft-3way` descriptors with `dModel → dM`,
-   `L3 → l3_tile`.
+   `L3 → l3_tile` and the fused W3 split write on the hadamards.
 3. **Scatter** `partition3_out` into its d-slice of the full L3 output. The output
    is flattened `K_M_N` (`d` outer in the column axis, `Mu = seqLenUnroll`), so a
    d-slice is `M_3 = 2·L3/seqLenUnroll` strided row-blocks, **not** one contiguous
@@ -165,8 +169,9 @@ The full output is assembled in L3 and verified there (scalar reads).
 
 **TCDM footprint.** Stages 1-4 use **tile-local** buffers (one l3-tile at a time):
 gathered `in_tile`/`tw1_tile`/`tw2_tile`, a BF16 per-tile psum `P_tile`
-(`slot_size_tile = 2·Lt·dM·2`, reused by gemm1/2), and two FP8 hadamard scratch
-buffers `H1`/`H2` (each `slot_size_tile/2`). The assembled full **H2**
+(`slot_size_tile = 2·Lt·dM·2`, reused by gemm1/2), and one FP8 hadamard scratch
+buffer `H2` (`slot_size_tile/2`, cmul1's deinterleaved output = gemm2's input;
+cmul2 writes `H2_full` directly for `nb_l3 = 1`). The assembled full **H2**
 (`2·L·dM` FP8) is resident from stages 1-4 into partition3, and sits **below** the
 stages-1-4 scratch. Partition3's psum **P3** (full BF16, `2·L·dM·2`) overlays the
 now-dead scratch and may spill upward into free TCDM without touching `H2_full`, so
@@ -179,34 +184,40 @@ by the TCDM budget, not by the scratch size.
 | `weight1/2/3` | all slices | **shared** — preloaded once, broadcast over `d` |
 | `in_tile`, `tw1_tile`, `tw2_tile` | per l3-tile | gathered from `dft_in`/`twiddles` |
 | `P_tile` (partition psum) | per l3-tile | BF16 `slot_size_tile`; gemm1→cmul1, gemm2→cmul2 |
-| `H1` (CMul out), `H2` (reorder out) | per l3-tile | FP8 `slot_size_tile/2` each |
+| `H2` (cmul1 out, deinterleaved) | per l3-tile | FP8 `slot_size_tile/2` |
 | `H2_full` (`[re|im]` partition-3 input) | stages 1-4 → partition3 | FP8 `2·L·dM`, assembled on-chip |
 | `P3` (partition-3 psum) | partition3 | BF16 `2·L·dM·2`, overlays dead stage scratch |
 | `output` (full `partition3_out`) | L3 | assembled by the per-slice 2-D scatter |
 
-**Latency hiding (DMA + CSR).** Right-sizing the FP8 scratch frees the headroom for
-two overlaps that the old 2-slot ping-pong could not afford:
+**Latency hiding (DMA + CSR).**
 
-- **DMA behind compute.** Once a partition psum has been consumed by its CMul, the DM
-  core re-zeros `P` for the next gemm *during* the following reorder (NOOP) step, and
-  prefetches the next slice's input in the same window. Only the per-slice output
-  scatter stays on the critical path. (The gemms read-accumulate the psum via R13/W3
-  on the same `P` pointer, so each gemm needs a zeroed target — `K_1=1` but
-  `K_2=K_3=2`, so the zero is not removable, only hideable.)
+- **Psum zero-fills behind compute.** Each gemm read-accumulates its psum via R13/W3,
+  so each needs a zeroed target (`K_1=1` but `K_2=K_3=2` — the zero is not removable,
+  only hideable). For `nb_l3 = 1` the two slot-sized psum buffers alternate roles each
+  slice (gemm1 + partition3 share one, gemm2 the other), so every zero-fill and the
+  next slice's input gather hide behind a compute window; only the per-slice output
+  scatter stays on the critical path. For `nb_l3 > 1` a single tile psum is shared, so
+  its two zeros run in short dedicated DMA windows after each cmul; everything else
+  hides behind compute.
+- **H2 ping-pong (`nb_l3 > 1`).** The cmuls write one H2 slot per tile (alternating)
+  while the previous tile's H2-assembly DMA drains the other behind the next
+  gemm1+cmul1; the last tile's assembly folds into the pre-partition3 window. The
+  next tile's in/tw1 gathers ride behind gemm2+cmul2 and its tw2 gather behind the
+  next gemm1+cmul1, so no gather is ever exposed. (`fft-3way-tiled-async` does the
+  same with its per-tile H2 stage-out to L3, folding the last stage-out ahead of the
+  first N-tile gather — the DMA engine runs transfers in issue order.)
 - **CSR setup behind the accelerator.** The streamer latches its config at `start`
   (verified: programming a step's CSRs — including disabling the *running* gemm's
   R11/R12 ports — mid-run does not disturb it), so each step's ~50 streamer-CSR writes
   are issued while the previous step still runs. The 6-write simbacore MODE CSR stays
   serial (issued right before each `start`).
 
-These cut the Snitch overhead from **~136% to ~107%** (`dModel=96`: 585k→512k cycles),
-byte-identical output. The residual ~107% is the per-invocation **streamer fill/drain**
-(W3 writer + bank-transposer) across the 56 small accelerator invocations
-(8 slices × 7 steps): the streamer is busy ~1.9× the compute core, and that drain does
-**not** overlap — consecutive steps have true data deps *and* share the R13/W3 ports, so
-no streaming-chain is possible — and shrinks only with fewer invocations (capped by the
-512 KiB TCDM at `dM=12`). Reducing it further is an RTL-level concern (faster
-transposer/W3), not a SW one.
+The residual Snitch overhead is the per-invocation **streamer fill/drain**
+(W3 writer + bank-transposer) across the small accelerator invocations
+(5 per slice): that drain does **not** overlap — consecutive steps have true data deps
+*and* share the R13/W3 ports, so no streaming-chain is possible — and shrinks only with
+fewer invocations (capped by the 512 KiB TCDM at `dM=12`). Reducing it further is an
+RTL-level concern (faster transposer/W3), not a SW one.
 
 **Verification.** Only the final `partition3_out` is byte-checked (±1-LSB). Slicing
 is **exact**: the per-slice kernel is the un-tiled `fft-3way` kernel run on `dM`
@@ -233,10 +244,11 @@ The key structural fact: `m3` (the `L3` axis) is a batch factor for partitions 1
    tile-local buffers, on which the unchanged `L3=l3_tile` descriptors are correct.
 2. Each tile's reordered output is staged to L3 with its re/im halves split into the
    full-K order. Partition 3 contracts the complex `m3` axis, whose K dimension is
-   stacked `[re(all m3) | im(all m3)]`. A tile produces `[re(tile m3) | im(tile m3)]`, so
-   concatenating tiles would scramble K (`[re t0|im t0|re t1|im t1]`). Instead the noop2
-   output's re half goes to the L3 re region (`+ lt·h2_half`) and its im half to the im
-   region (`+ h2_im_region + lt·h2_half`), so L3 ends up as the correct
+   stacked `[re(all m3) | im(all m3)]`. A tile produces `[re(tile m3) | im(tile m3)]`
+   (cmul2's fused split write), so concatenating tiles would scramble K
+   (`[re t0|im t0|re t1|im t1]`). Instead the stage-out sends the tile's re half to the
+   L3 re region (`+ lt·h2_half`) and its im half to the im region
+   (`+ h2_im_region + lt·h2_half`), so L3 ends up as the correct
    `[re t0|re t1|…|im t0|im t1|…]`.
 3. Partition 3 N-tiles its output batch (`N_3 = dM·L1·L2`) into `nb_ntile` chunks. Each
    chunk gathers its full-K `H2` `N`-run back from L3 into a small TCDM buffer, then

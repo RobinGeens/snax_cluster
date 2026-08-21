@@ -112,8 +112,8 @@ Adding a new "bender_target" also involves adding the corresponding file list in
                 snax_acc_name: "snax_simbacore",
                 bender_target: ["snax_simbacore"],
                 snax_tcdm_ports: 34, // Must match the sum of all streamer ports // ! this fails VERY quietly
-                //                             R0      R1       R2-6    R7      R8-11   R12     R13     W0-3     W4
-                sparse_interconnect_config:  [[2, 2], [4, 4],  [5, 1], [4, 1], [4, 1], [4, 4], [4, 4], [3, 1], [4, 4]],
+                //                             R0      R1       R2-6    R7      R8-11   R12     R13     W0-2     W3
+                sparse_interconnect_config:  [[2, 2], [4, 4],  [5, 1], [4, 1], [4, 1], [4, 4], [4, 4], [3, 1], [4, 2]],
                 snax_wide_tcdm_ports: 0,
                 snax_num_rw_csr: 7, // Must match the number in Simbacore shell wrapper
                 snax_num_ro_csr: 5,
@@ -160,15 +160,18 @@ Adding a new "bender_target" also involves adding the corresponding file list in
             num_channel:          [ 2,   4,   1,   1,   1,   1,   1,    4,    1,   1,   1,   1,   4,   4 ],
             fifo_depth:           [ 8,   3,   8,   1,   6,   3,   2,    4,    1,   6,   7,   2,   6,   4 ],
             configurable_channel: [ 0,   0,   0,   0,   0,   0,   0,    0,    0,   0,   0,   0,   0,   0 ],
-            delayed_start:        [ 0,   0,   0,   0,   0,   0,   0,    0,    0,   0,   1,   1,   0,   0 ]
+            delayed_start:        [ 0,   0,   0,   0,   0,   0,   0,    0,    0,   0,   1,   1,   0,   0 ],
+            // Per-port runtime address remap (ADDR_REMAP_INDEX csr): 256 = identity, 0 = XOR bank swizzle, -1 = half-preserving, -2 = deep (all upper bits in the key)
+            tcdm_logic_word_size: [[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2]]
         },
         data_writer_params: {
-            spatial_bounds:       [[1], [1], [1], [4]],
+            spatial_bounds:       [[1], [1], [1], [2, 2]],
             temporal_dim:         [ 4,   4,   4,   4 ],
             num_channel:          [ 1,   1,   1,   4 ],
             fifo_depth:           [ 4,   8,   3,   4 ],
             configurable_channel: [ 0,   0,   0,   0 ],
-            delayed_start:        [ 0,   0,   0,   0 ]
+            delayed_start:        [ 0,   0,   0,   0 ],
+            tcdm_logic_word_size: [[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2],[256,0,-1,-2]]
         },
         snax_library_name: "simbacore"
     }

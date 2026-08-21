@@ -7,6 +7,9 @@
 // Both cores share a single simbacore kernel call per tile. Tiles along dInner:
 //   OSGEMM: dInner is the output N dimension (each tile = different columns)
 //   ISGEMM: dInner is the reduction K dimension (each tile accumulates into CD)
+// The live streamer ports read/write through the AGU XOR bank swizzle; buffers sit at
+// distinct swizzle phases and the data.h DMA images are pre-swizzled, goldens stay
+// logical. See docs/dataflow/22_agu_xor_swizzle.md.
 //
 // Pipeline (3 stages):
 //   stage 1 : DMA transfer_in  (B_os tile, A_is tile, B_is tile)
@@ -17,6 +20,26 @@
 #include "snax-simbacore-lib.h"
 
 #define NB_STAGES 3
+#define SWZ_WIN 2048u
+
+// check_result_sample with separate golden (logical) and result (swizzled) indices
+static uint32_t check_sample_swz(const uint8_t* out, const uint8_t* gold, const int32_t* idx, const int32_t* idx_swz,
+                                 int32_t n, const char* name) {
+    const int32_t tolerance = 1;
+    uint32_t err            = 0;
+    printf("Checking results: sampling %d elements\r\n", n);
+    for (int i = 0; i < n; i++) {
+        uint8_t o    = out[idx_swz[i]];
+        uint8_t g    = gold[idx[i]];
+        bool zeros   = (o == 0 && g == 128) || (o == 128 && g == 0);  // +0 == -0
+        int16_t diff = (int16_t)o - (int16_t)g;
+        if (!zeros && (diff < -tolerance || diff > tolerance)) {
+            err++;
+            printf("FAIL %s[%d] = %d,\tref = %d\r\n", name, idx[i], o, g);
+        }
+    }
+    return err;
+}
 
 int test_iosgemm_tiled() {
     int err = 0;
@@ -28,29 +51,16 @@ int test_iosgemm_tiled() {
     }
     snrt_cluster_hw_barrier();
 
-    void* tcdm_base_ptr = snrt_l1_next();
+    // Layout comes from datagen (distinct swizzle phase per stream); the base must be
+    // aligned to the swizzle key period so the datagen phases hold.
+    uintptr_t tcdm_base = ((uintptr_t)snrt_l1_next() + SWZ_WIN - 1) & ~(uintptr_t)(SWZ_WIN - 1);
 
-    // OSGEMM buffers: A_os shared across tiles, B_os and D_os ping-ponged
-    uint8_t* ptr_a_os    = (uint8_t*)tcdm_base_ptr;
-    uint8_t* ptr_b_os[2] = {
-        ptr_a_os + M3_length_a,
-        ptr_a_os + M3_length_a + M3_length_b_tile,
-    };
-    uint8_t* ptr_d_os[2] = {
-        ptr_b_os[1] + M3_length_b_tile,
-        ptr_b_os[1] + M3_length_b_tile + M3_length_d_tile,
-    };
-
-    // ISGEMM buffers: A_is and B_is ping-ponged, CD_is full (accumulator)
-    uint8_t* ptr_a_is[2] = {
-        ptr_d_os[1] + M3_length_d_tile,
-        ptr_d_os[1] + M3_length_d_tile + M4_length_a_tile,
-    };
-    uint8_t* ptr_b_is[2] = {
-        ptr_a_is[1] + M4_length_a_tile,
-        ptr_a_is[1] + M4_length_a_tile + M4_length_b_tile,
-    };
-    uint16_t* ptr_cd_is = (uint16_t*)(ptr_b_is[1] + M4_length_b_tile);
+    uint8_t* ptr_a_os    = (uint8_t*)(tcdm_base + SWZ_off_a_os);
+    uint8_t* ptr_b_os[2] = {(uint8_t*)(tcdm_base + SWZ_off_b_os_0), (uint8_t*)(tcdm_base + SWZ_off_b_os_1)};
+    uint8_t* ptr_d_os[2] = {(uint8_t*)(tcdm_base + SWZ_off_d_os_0), (uint8_t*)(tcdm_base + SWZ_off_d_os_1)};
+    uint8_t* ptr_a_is[2] = {(uint8_t*)(tcdm_base + SWZ_off_a_is_0), (uint8_t*)(tcdm_base + SWZ_off_a_is_1)};
+    uint8_t* ptr_b_is[2] = {(uint8_t*)(tcdm_base + SWZ_off_b_is_0), (uint8_t*)(tcdm_base + SWZ_off_b_is_1)};
+    uint16_t* ptr_cd_is  = (uint16_t*)(tcdm_base + SWZ_off_cd);
 
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
@@ -84,6 +94,14 @@ int test_iosgemm_tiled() {
                          (uint32_t)ptr_cd_is, M4_W3_ss, M4_W3_tb, M4_W3_ts, M4_W3_en         // W3: iscore CD
         );
         set_simbacore_csr(IS_OSGEMM_NO_REQUANT, seqLen, dModel, dInner_tile, 1, dModel);
+
+        // XOR bank swizzle on the live ports (data.h images are pre-swizzled). The psum
+        // pair R13/W3 stays identity-mapped.
+        write_csr(ADDR_REMAP_INDEX_READER_0, 1);
+        write_csr(ADDR_REMAP_INDEX_READER_1, 1);
+        write_csr(ADDR_REMAP_INDEX_READER_11, 1);
+        write_csr(ADDR_REMAP_INDEX_READER_12, 1);
+        write_csr(ADDR_REMAP_INDEX_WRITER_0, 1);
     }
 
     snrt_cluster_hw_barrier();
@@ -164,7 +182,7 @@ int test_iosgemm_tiled() {
         printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles_total);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
         printf("DMA latency hiding: tile=%s\n", _dma_done < _compute_done ? "ok" : "STALL");
-        err += check_result_sample(l3_d_os, M3_D, M3_test_samples_D, nb_test_samples, "osgemm_out");
+        err += check_sample_swz(l3_d_os, M3_D, M3_test_samples_D, M3_test_samples_D_swz, nb_test_samples, "osgemm_out");
         err += check_result_sample((uint8_t*)ptr_cd_is, M4_D, M4_test_samples_D, nb_test_samples, "isgemm_out");
 
         printf("Test IS+OSGeMM tiled: seqLen=%d, dModel=%d, dInner=%d, nb_tiles=%d\n", seqLen, dModel, dInner,

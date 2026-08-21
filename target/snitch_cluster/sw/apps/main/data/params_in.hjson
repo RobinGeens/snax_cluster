@@ -3,7 +3,8 @@
     "dModel": 48,
     "dtRank": 24,
     // BC bank-conflict fix: pad each bank-transpose matrix in the BC region of dt_BC (multiple of 4)
-    "bc_pad_banks": 4,
+    "bc_pad_banks": 0,
+    "bc_swizzle": 1,
     "safe_to_start_r10": -1,
     "safe_to_start_r11": -1,
 }

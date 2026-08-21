@@ -23,14 +23,15 @@
                 {
                     name: main C
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
                     nb_tiles: 16 // power of 2. 8 too small
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                     safe_to_start_r10: 11
-                    safe_to_start_r11: 6000 // 8350
+                    safe_to_start_r11: 6000
                 }
                 // {
                 //     name: IN main C
@@ -46,12 +47,13 @@
                 {
                     name: main D
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 48
                     dModel: 528
                     dtRank: 24
                     nb_tiles: 11
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                     safe_to_start_r10: 5
                     safe_to_start_r11: 3000
                 }
@@ -63,14 +65,14 @@
                 {
                     name: main C
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
                     nb_tiles: 16
                     nb_l_tiles: 12
                     nb_slots: 2
-                    bc_pad_banks: 0
+                    bc_swizzle: 1
                     safe_to_start_r10: 8
                     safe_to_start_r11: 6000
                 }
@@ -256,7 +258,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 12 // L_tile=64
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
             ]
         }
@@ -269,13 +272,14 @@
                 {
                     name: SUC/in proj D
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 1024
                     dModel: 528
                     dtRank: 24
                     nb_tiles: 11
                     nb_l_tiles: 16
                     nb_slots: 2
+                    bc_swizzle: 1
                     safe_to_start_r10: 27
                     safe_to_start_r11: 0 // not used
                 }
@@ -294,7 +298,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 128 // L_tile=256
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
                 {
                     name: SUC B
@@ -305,7 +310,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 128 // L_tile=128
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
             ]
         }
@@ -323,7 +329,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 128 // L_tile=32 (double-buffer footprint bound at dInner=768)
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
 
                 // ImageNet
@@ -337,7 +344,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 14 // L_tile=224
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
 
             ]
@@ -491,7 +499,7 @@
                 {
                     name: fft A
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 4096,
                     dModel: 24, // x4
                     L1: 16,
@@ -504,7 +512,7 @@
                 {
                     name: fft C
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 4096,
                     dModel: 16,
                     L1: 16,
@@ -516,7 +524,7 @@
                 {
                     name: fft A
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,
@@ -528,7 +536,7 @@
                 {
                     name: fft B
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 16384,
                     dModel: 8, // x24
                     L1: 32,
@@ -545,7 +553,7 @@
                 {
                     name: fft A
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,
@@ -938,7 +946,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 14 // L_tile=224
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
             ]
         }
@@ -955,7 +964,8 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 7 // L_tile=112 (784=112*7)
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                 }
             ]
         }
@@ -966,24 +976,26 @@
                 {
                     name: main C
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 192 // x1
                     dModel: 336 // 320 -> mult of 24
                     dtRank: 24
                     nb_tiles: 14
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                     safe_to_start_r10: 11
                     safe_to_start_r11: 6000
                 }
                 {
                     name: main D
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 64 // 49 -> mult of 16
                     dModel: 456 // 448 -> mult of 24
                     dtRank: 24
                     nb_tiles: 19
-                    bc_pad_banks: 4
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
                     safe_to_start_r10: 5
                     safe_to_start_r11: 3000
                 }

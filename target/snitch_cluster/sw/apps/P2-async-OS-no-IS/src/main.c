@@ -106,7 +106,7 @@ int test_p2_async_no_is() {
     }
     snrt_cluster_hw_barrier();
 
-    void* tcdm_base_ptr = snrt_l1_next();
+    void* tcdm_base_ptr = (void*)(((uintptr_t)snrt_l1_next() + 2047u) & ~(uintptr_t)2047u);
 
     // B1: oscore_in is nb_slots ADJACENT ring slots (R0 stride-0 wrap walks them contiguously).
     uint8_t* ptr_oscore_in_base   = (uint8_t*)tcdm_base_ptr;
@@ -116,7 +116,9 @@ int test_p2_async_no_is() {
 
     // switchCore dt input: full but packed (per-window dt only) -> small. BC: nb_slots-slot async ring.
     uint8_t* ptr_dt_packed      = _ALIGN64(ptr_oscore_in_base + oscore_in_tcdm_bytes);
-    uint8_t* ptr_BC_ring        = _ALIGN64(ptr_dt_packed + M2_length_dt_packed);
+    // BC ring on a 2 KiB boundary: datagen pre-swizzles the BC windows against ring-relative
+    // positions (bc_swizzle, docs/dataflow/22_agu_xor_swizzle.md).
+    uint8_t* ptr_BC_ring = (uint8_t*)(((uintptr_t)(ptr_dt_packed + M2_length_dt_packed) + 2047u) & ~(uintptr_t)2047u);
     uint32_t bc_ring_tcdm_bytes = nb_slots * M2_length_BC_l_tile;
 
     uint8_t* pingpong_base_ptr = _ALIGN64(ptr_BC_ring + bc_ring_tcdm_bytes);
@@ -153,6 +155,7 @@ int test_p2_async_no_is() {
                                        (uint32_t)ptr_dt_bias, (uint32_t)ptr_x, (uint32_t)ptr_A, (uint32_t)ptr_BC_ring,
                                        (uint32_t)ptr_D, (uint32_t)ptr_y);
         set_simbacore_csr(M33_PHASE2_NO_ISCORE, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+        if (bc_swizzle) write_csr(ADDR_REMAP_INDEX_READER_7, 1);  // BC ring read through the XOR swizzle
     }
 
     // Preload: first nb_slots oscore_in + BC L-tiles into their rings; PACKED full dt extracted

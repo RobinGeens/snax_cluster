@@ -53,7 +53,8 @@ int test() {
     }
     snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles = 0;
+    uint32_t start_cycles     = 0;
+    uint32_t simbacore_cycles = 0;
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: 4-way partitioned FFT (L=%d, dModel=%d, L1=%d, L2=%d, L3=%d, L4=%d)\n\n",
                seqLen, dModel, L1, L2, L3, L4);
@@ -66,6 +67,7 @@ int test() {
         set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, (dModel * L2 * L3 * L4));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: p1\n");
 
         // ===== Step 2: hadamard 1 (CMUL) =====
@@ -75,6 +77,7 @@ int test() {
         set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: tw1\n");
 
         // ===== Step 2B: reorder 1 (NOOP deinterleave) =====
@@ -83,6 +86,7 @@ int test() {
         set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: reorder1\n");
         asm volatile("fence" ::: "memory");
 
@@ -93,6 +97,7 @@ int test() {
         set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L2, 1, 2 * L2_padded, 1, (dModel * L1 * L3 * L4));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: p2\n");
 
         // ===== Step 4: hadamard 2 (CMUL with twiddles2) =====
@@ -102,6 +107,7 @@ int test() {
         set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: tw2\n");
 
         // ===== Step 4B: reorder 2 = m3/m4 transpose (scalar, un-tiled validation only).
@@ -128,6 +134,7 @@ int test() {
         set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L3, 1, 2 * L3_padded, 1, (dModel * L1 * L2 * L4));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: p3\n");
 
         // ===== Step 6: hadamard 3 (CMUL with twiddles3) =====
@@ -137,6 +144,7 @@ int test() {
         set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: tw3\n");
 
         // ===== Step 6B: reorder 3 (NOOP deinterleave) =====
@@ -145,6 +153,7 @@ int test() {
         set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: reorder3\n");
         asm volatile("fence" ::: "memory");
 
@@ -155,9 +164,11 @@ int test() {
         set_simbacore_csr(M6_ISGEMM_SQ, 2 * L4, 1, 2 * L4_padded, 1, (dModel * L1 * L2 * L3));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
         printf("  step done: p4\n");
 
         uint32_t end_cycles = snrt_mcycle();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         // ----- Per-stage verification -----

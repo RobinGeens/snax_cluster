@@ -37,7 +37,7 @@ GENERATOR_ARGS += name=$(APP_NAME)
 
 # Only use data-shape args for the cache key
 DATAGEN_CACHE_DIR := $(CLUSTER_DIR)/.datagen_cache/$(APP_NAME)
-CACHE_ARGS        := $(filter-out nb_tiles% nb_l_tiles% nb_slots% nb_dt_tiles% nb_dt_slots% safe_to_start% force% name=%,$(GENERATOR_ARGS))
+CACHE_ARGS        := $(filter-out nb_tiles% nb_l_tiles% nb_slots% nb_dt_tiles% nb_dt_slots% safe_to_start% bc_swizzle% force% name=%,$(GENERATOR_ARGS))
 
 .PHONY: clean-cache cache-seed
 

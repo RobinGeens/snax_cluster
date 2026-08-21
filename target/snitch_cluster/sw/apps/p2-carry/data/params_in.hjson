@@ -4,5 +4,6 @@
   dtRank: 24
   nb_tiles: 1
   nb_l_tiles: 12
-  bc_pad_banks: 4
+  bc_pad_banks: 0
+  bc_swizzle: 1
 }

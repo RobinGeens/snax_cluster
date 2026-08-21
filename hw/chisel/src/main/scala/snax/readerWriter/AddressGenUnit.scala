@@ -182,15 +182,71 @@ class AddressGenUnit(param: AddressGenUnitParam, moduleNamePrefix: String = "unn
     }
   }
 
+  /** XOR bank swizzle, selected by setting tcdmLogicWordSize to 0: addr[7:5] ^= addr[10:8]. Rotates the 32 B four-bank
+    * group within each 256 B TCDM row by the row index, so equal-alignment streams based at different 256 B rows hit
+    * disjoint bank groups. Bits [4:0] are untouched: bank%4 is preserved (sparse interconnect legality up to access
+    * granularity 4). Hosts need to pre-swizzle DMA images with the same function.
+    */
+  def XorBankSwizzleMapping(inputAddress: UInt): UInt = {
+    require(param.tcdmPhysWordSize == 256)
+    require(inputAddress.getWidth >= 12)
+    Cat(
+      inputAddress(inputAddress.getWidth - 1, 8),
+      inputAddress(7, 5) ^ inputAddress(10, 8),
+      inputAddress(4, 0)
+    )
+  }
+
+  /** Half-preserving variant, selected by setting tcdmLogicWordSize to -1: addr[6:5] ^= addr[9:8]. Same idea but bit 7
+    * is untouched, so a skip-128 bank partition (low/high 16-bank halves selected by addr[7]) is preserved and the
+    * swizzle decorrelates streams within each half. Hosts need to pre-swizzle DMA images with the same function.
+    */
+  def HalfXorBankSwizzleMapping(inputAddress: UInt): UInt = {
+    require(param.tcdmPhysWordSize == 256)
+    require(inputAddress.getWidth >= 12)
+    Cat(
+      inputAddress(inputAddress.getWidth - 1, 7),
+      inputAddress(6, 5) ^ inputAddress(9, 8),
+      inputAddress(4, 0)
+    )
+  }
+
+  /** Deep variant, selected by setting tcdmLogicWordSize to -2: the key folds every address bit above the bank group,
+    * so any two addresses differing anywhere above bit 7 land in different bank groups (the plain swizzle's key
+    * repeats every 2 KiB, so spatial strides that are multiples of 2 KiB stay aliased). Hosts need to pre-swizzle DMA
+    * images with the same function.
+    */
+  def DeepXorBankSwizzleMapping(inputAddress: UInt): UInt = {
+    require(param.tcdmPhysWordSize == 256)
+    require(inputAddress.getWidth >= 12)
+    val w   = inputAddress.getWidth
+    // Fold bits [w-1:8] into 3-bit groups (zero-extend the top partial group)
+    val key = (8 until w by 3)
+      .map(lo => {
+        val hi = (lo + 2).min(w - 1)
+        inputAddress(hi, lo).pad(3)
+      })
+      .reduce(_ ^ _)
+    Cat(
+      inputAddress(w - 1, 8),
+      inputAddress(7, 5) ^ key,
+      inputAddress(4, 0)
+    )
+  }
+
   // The calling of the functions
   val remappedAddress = param.tcdmLogicWordSize.map { logicalWordSize =>
     currentAddress
       .map(i =>
-        AffineAddressMapping(
-          i,
-          param.tcdmPhysWordSize,
-          logicalWordSize
-        )
+        if (logicalWordSize == 0) XorBankSwizzleMapping(i)
+        else if (logicalWordSize == -1) HalfXorBankSwizzleMapping(i)
+        else if (logicalWordSize == -2) DeepXorBankSwizzleMapping(i)
+        else
+          AffineAddressMapping(
+            i,
+            param.tcdmPhysWordSize,
+            logicalWordSize
+          )
       )
       .reduce((a, b) => Cat(b, a))
   }

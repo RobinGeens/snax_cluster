@@ -48,7 +48,8 @@ int test() {
     }
     snrt_cluster_hw_barrier();
 
-    uint32_t start_cycles = 0;
+    uint32_t start_cycles     = 0;
+    uint32_t simbacore_cycles = 0;
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: 3-way partitioned FFT (L=%d, dModel=%d, L1=%d, L2=%d, L3=%d)\n\n",
                seqLen, dModel, L1, L2, L3);
@@ -61,6 +62,7 @@ int test() {
         set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L1, 1, L1_padded, 1, (dModel * L2 * L3));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
 
         // ===== Step 2: hadamard 1 (CMUL FP8) ==============================
         set_simd_streamer_csr((uint32_t)ptr_partition1_out, M6_R7_2_ss, M6_R7_2_tb, M6_R7_2_ts,
@@ -69,6 +71,7 @@ int test() {
         set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
 
         // ===== Step 2B: deinterleave re/im (SIMD NOOP) ====================
         set_simd_streamer_no_b((uint32_t)ptr_hadamard1_out, M6_R7_2B_ss, M6_R7_2B_tb, M6_R7_2B_ts,
@@ -76,6 +79,7 @@ int test() {
         set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
     }
     if (snrt_global_core_idx() == 0) {
         // ===== Step 3: partition 2 ====================================
@@ -88,6 +92,7 @@ int test() {
         set_simbacore_csr(M7_ISGEMM_SQ_TRANSPOSE, 2 * L2, 1, 2 * L2_padded, 1, (dModel * L1 * L3));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
 
         // ===== Step 4: hadamard 2 (CMUL FP8) ==========================
         set_simd_streamer_csr((uint32_t)ptr_partition2_out, M6_R7_4_ss, M6_R7_4_tb, M6_R7_4_ts,
@@ -96,6 +101,7 @@ int test() {
         set_simbacore_csr(M20_SIMD_CMUL_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
 
         // ===== Step 4B: deinterleave re/im (SIMD NOOP) ================
         set_simd_streamer_no_b((uint32_t)ptr_hadamard2_out, M6_R7_4B_ss, M6_R7_4B_tb, M6_R7_4B_ts,
@@ -103,6 +109,7 @@ int test() {
         set_simbacore_csr(M23_SIMD_NOOP_FP8, 0, 0, 0, 0, 0);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
     }
     snrt_cluster_hw_barrier();
 
@@ -117,8 +124,10 @@ int test() {
         set_simbacore_csr(M6_ISGEMM_SQ, 2 * L3, 1, 2 * L3_padded, 1, (dModel * L1 * L2));
         start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
         wait_simbacore_and_streamer();
+        simbacore_cycles += read_simbacore_perf_counter();
 
         uint32_t end_cycles = snrt_mcycle();
+        printf("[%d cc] Simbacore elapsed time: %u cycles\n", end_cycles, simbacore_cycles);
         printf("[%d cc] Snitch elapsed time: %u cycles\n", end_cycles, end_cycles - start_cycles);
 
         // ----- Verification --------------------------------------------------

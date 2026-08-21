@@ -93,8 +93,10 @@ int main() {
         p         = _ALIGN64(p + M2_length_oscore_in_l_tile);
         ptr_dt[s] = p;
         p         = _ALIGN64(p + M2_length_dt_l_tile);
-        ptr_BC[s] = p;
-        p         = _ALIGN64(p + M2_length_BC_l_tile);
+        // BC slots on a 2 KiB boundary: datagen pre-swizzles the BC windows against
+        // phase-0 slots (bc_swizzle, docs/dataflow/22_agu_xor_swizzle.md).
+        ptr_BC[s] = (uint8_t*)(((uintptr_t)p + 2047u) & ~(uintptr_t)2047u);
+        p         = _ALIGN64(ptr_BC[s] + M2_length_BC_l_tile);
         ptr_x[s]  = p;
         p         = _ALIGN64(p + M2_length_conv_l_tile);
         ptr_z[s]  = p;
@@ -125,6 +127,7 @@ int main() {
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: p2-carry (L=%d, dModel=%d, dInner=%d, NB=%u, L_tile=%u, dbuf)\n\n", seqLen, dModel,
                dInner, M2_NB_L_TILES, M2_L_tile);
+        if (bc_swizzle) write_csr(ADDR_REMAP_INDEX_READER_7, 1);  // BC read through the XOR swizzle
         start_cycles = snrt_mcycle();
     }
 

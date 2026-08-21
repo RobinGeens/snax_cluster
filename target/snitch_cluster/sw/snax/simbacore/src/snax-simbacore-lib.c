@@ -118,10 +118,11 @@ void set_isgemm_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32
     write_csr(T_STRIDE_BASE_READER_13 + 3, CD_ts[3]);
 
     // iscore output W3
-    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 2 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
                    "loop unroll mismatch");
-    write_csr(BASE_PTR_WRITER_3_LOW, CD_ptr);        // Base ptr
-    write_csr(S_STRIDE_BASE_WRITER_3, CD_ss[0]);     // Spatial stride
+    write_csr(BASE_PTR_WRITER_3_LOW, CD_ptr);            // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, CD_ss[0]);     // Spatial stride 0
+    write_csr(S_STRIDE_BASE_WRITER_3 + 1, CD_ss[1]);     // Spatial stride 1
     write_csr(T_BOUND_BASE_WRITER_3 + 0, CD_tb[0]);  // Temporal bound
     write_csr(T_BOUND_BASE_WRITER_3 + 1, CD_tb[1]);
     write_csr(T_BOUND_BASE_WRITER_3 + 2, CD_tb[2]);
@@ -182,10 +183,11 @@ void set_simd_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_t
     write_csr(T_STRIDE_BASE_READER_13 + 3, B_ts[3]);
 
     // Route output C to iscore out: W3
-    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 2 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
                    "loop unroll mismatch");
     write_csr(BASE_PTR_WRITER_3_LOW, C_ptr);         // Base ptr
-    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride 0
+    write_csr(S_STRIDE_BASE_WRITER_3 + 1, C_ss[1]);  // Spatial stride 1
     write_csr(T_BOUND_BASE_WRITER_3 + 0, C_tb[0]);   // Temporal bound
     write_csr(T_BOUND_BASE_WRITER_3 + 1, C_tb[1]);
     write_csr(T_BOUND_BASE_WRITER_3 + 2, C_tb[2]);
@@ -232,10 +234,11 @@ void set_simd_streamer_no_b(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32_
     write_csr(T_STRIDE_BASE_READER_7 + 3, A_ts[3]);
 
     // Route output C to iscore out: W3
-    _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+    _Static_assert(S_STRIDE_NUM_WRITER_3 == 2 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
                    "loop unroll mismatch");
     write_csr(BASE_PTR_WRITER_3_LOW, C_ptr);         // Base ptr
-    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, C_ss[0]);  // Spatial stride 0
+    write_csr(S_STRIDE_BASE_WRITER_3 + 1, C_ss[1]);  // Spatial stride 1
     write_csr(T_BOUND_BASE_WRITER_3 + 0, C_tb[0]);   // Temporal bound
     write_csr(T_BOUND_BASE_WRITER_3 + 1, C_tb[1]);
     write_csr(T_BOUND_BASE_WRITER_3 + 2, C_tb[2]);
@@ -588,10 +591,11 @@ void set_streamer_csr(
     }
 
     if (W3_en) {
-        _Static_assert(S_STRIDE_NUM_WRITER_3 == 1 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
+        _Static_assert(S_STRIDE_NUM_WRITER_3 == 2 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
                        "loop unroll mismatch");
         write_csr(BASE_PTR_WRITER_3_LOW, W3_ptr);         // Base ptr
-        write_csr(S_STRIDE_BASE_WRITER_3 + 0, W3_ss[0]);  // Spatial stride
+        write_csr(S_STRIDE_BASE_WRITER_3 + 0, W3_ss[0]);  // Spatial stride 0
+        write_csr(S_STRIDE_BASE_WRITER_3 + 1, W3_ss[1]);  // Spatial stride 1
         write_csr(T_BOUND_BASE_WRITER_3 + 0, W3_tb[0]);   // Temporal bound
         write_csr(T_BOUND_BASE_WRITER_3 + 1, W3_tb[1]);
         write_csr(T_BOUND_BASE_WRITER_3 + 2, W3_tb[2]);
@@ -777,6 +781,22 @@ uint32_t check_result_sample_u16_verbose(uint16_t* output, uint16_t* output_gold
 uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int32_t* sample_indices,
                                  int32_t test_sample_count, const char* tensor_name) {
     return check_result_sample_u16_verbose(output, output_golden, sample_indices, test_sample_count, tensor_name, true);
+}
+
+uint32_t check_result_sample_swz(const uint8_t* output, const uint8_t* output_golden, const int32_t* sample_indices,
+                                 const int32_t* sample_indices_swz, int32_t test_sample_count,
+                                 const char* tensor_name) {
+    uint32_t err = 0;
+    printf("Checking results: sampling %d elements\r\n", test_sample_count);
+    for (int i = 0; i < test_sample_count; i++) {
+        uint8_t output_value = output[sample_indices_swz[i]];
+        uint8_t golden_value = output_golden[sample_indices[i]];
+        if (!values_match_u8_lsb(output_value, golden_value)) {
+            err++;
+            printf("FAIL %s[%d] = %d,\tref = %d\r\n", tensor_name, sample_indices[i], output_value, golden_value);
+        }
+    }
+    return err;
 }
 
 // Initialize cycle counter (call once at program start)

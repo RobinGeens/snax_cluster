@@ -12,7 +12,8 @@ int test_phase1_and_2() {
     printf("This Snitch is awake and ready to roll!\r\n");
 
     // Allocation. Let's start by naively allocating space for each individual tensor.
-    void* tcdm_base_ptr = snrt_l1_next();
+    // Base is aligned to the swizzle key period so datagen's bc_swizzle row indices hold.
+    void* tcdm_base_ptr = (void*)(((uintptr_t)snrt_l1_next() + 2047) & ~(uintptr_t)2047);
     // Phase 1
     uint8_t* ptr_oscore_in        = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_in);      // P1 & P2
     uint8_t* ptr_oscore_weight_P1 = (uint8_t*)(tcdm_base_ptr + M1_addr_oscore_weight);  // Can be tiled an overwritten
@@ -71,6 +72,10 @@ int test_phase1_and_2() {
                             (uint32_t)ptr_conv_weight, (uint32_t)ptr_conv_bias,           //
                             (uint32_t)ptr_iscore_weight_P1, (uint32_t)ptr_iscore_out_P1,  //
                             (uint32_t)ptr_conv_out);
+        if (bc_swizzle) {  // produce dt_BC through the XOR swizzle
+            write_csr(ADDR_REMAP_INDEX_READER_13, 1);
+            write_csr(ADDR_REMAP_INDEX_WRITER_3, 1);
+        }
 
         set_simbacore_csr(M1_PHASE1, seqLen, dModel, dInner, dtRank, xProjDim);
         start_simbacore_and_streamers(M1_R10_en, 0, M1_R11_en, 0);
@@ -111,6 +116,12 @@ int test_phase1_and_2() {
                             (uint32_t)ptr_dt_weight_1, (uint32_t)ptr_dt_weight_2, (uint32_t)ptr_dt_bias,  //
                             (uint32_t)ptr_x, (uint32_t)ptr_A, (uint32_t)ptr_BC, (uint32_t)ptr_D,          //
                             (uint32_t)ptr_y, (uint32_t)ptr_iscore_weight_P2, (uint32_t)ptr_iscore_out_P2);
+        if (bc_swizzle) {  // read dt/BC through the swizzle; P2's own psum R13/W3 back to identity
+            write_csr(ADDR_REMAP_INDEX_READER_13, 0);
+            write_csr(ADDR_REMAP_INDEX_WRITER_3, 0);
+            write_csr(ADDR_REMAP_INDEX_READER_2, 1);
+            write_csr(ADDR_REMAP_INDEX_READER_7, 1);
+        }
 
         set_simbacore_csr(M2_PHASE2, seqLen, dModel, dInner, dtRank, dModel);
         start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);

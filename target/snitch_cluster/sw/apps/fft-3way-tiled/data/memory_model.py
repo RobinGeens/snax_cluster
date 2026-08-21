@@ -68,7 +68,9 @@ def build_report(params: dict) -> MemoryReport:
     tw1_tile = 2 * Lt * FP8 // 8
     tw2_tile = 2 * L2 * L3t * FP8 // 8
     slot_size_tile = align64(2 * Lt * dM * BF16 // 8)  # gemm1/2 psum per l3-tile
-    hsize_tile = slot_size_tile // 2  # FP8 cmul/noop scratch (H1, H2)
+    hsize_tile = slot_size_tile // 2  # FP8 cmul scratch (H2)
+    nb_l3 = L3 // l3_tile
+    n_h2 = 2 if nb_l3 > 1 else 1  # H2 ping-pong so the assembly DMA hides behind compute
     report.add_section(
         "Stages 1-4 tile-local scratch",
         [
@@ -76,8 +78,7 @@ def build_report(params: dict) -> MemoryReport:
             ("tw1_tile (gathered)", tw1_tile),
             ("tw2_tile (gathered)", tw2_tile),
             ("P_tile (gemm1/2 psum)", slot_size_tile),
-            ("H1_tile", hsize_tile),
-            ("H2_tile (noop1/noop2)", hsize_tile),
+            (f"H2_tile (cmul out, x{n_h2})", n_h2 * hsize_tile),
         ],
     )
 
@@ -99,9 +100,8 @@ def build_report(params: dict) -> MemoryReport:
     # partition3), making it additive.
     stages14 = (
         align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
-        + slot_size_tile + hsize_tile + align64(hsize_tile)
+        + slot_size_tile + n_h2 * align64(hsize_tile)
     )
-    nb_l3 = L3 // l3_tile
     p3_term = (stages14 + p3_full) if nb_l3 == 1 else max(stages14, p3_full)
     peak = weights + align64(full_h2) + p3_term
     report.add_peak("TCDM peak", peak)
