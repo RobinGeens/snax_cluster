@@ -76,12 +76,12 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
                             long sw_cyc) {
     for (int i = 0; i < NPORT; i++) p_[i] = ports[i];
     seqLen_ = cfg.seqLen; dInner_ = cfg.dInner; dModel_ = cfg.dModel; dFinal_ = cfg.dFinal;
-    en_os_  = (cfg.mode >> 19) & 1;
-    en_suc_ = (cfg.mode >> 18) & 1;
-    en_isc_ = (cfg.mode >> 17) & 1;
-    sw_mode_ = (cfg.mode >> 8) & 0x3;
+    en_os_  = (cfg.mode >> 21) & 1;
+    en_suc_ = (cfg.mode >> 20) & 1;
+    en_isc_ = (cfg.mode >> 19) & 1;
+    sw_mode_ = (cfg.mode >> 10) & 0x3;
     r10_cnt_ = r10_start_cnt; r11_cnt_ = r11_start_cnt;
-    if (std::getenv("MEMSIM_ENGDBG") && ((cfg.mode >> 18) & 1)) {
+    if (std::getenv("MEMSIM_ENGDBG") && ((cfg.mode >> 20) & 1)) {
         std::fprintf(stderr, "  [RELCNT] r10_cnt_=%ld r11_cnt_=%ld (app safe_to_start)\n", r10_cnt_, r11_cnt_);
         auto bk = [](uint64_t a){ return (int)((a>>3)&31); };
         const Agu& w = ports[P_R12];

@@ -210,21 +210,10 @@ int test_ss2d() {
         wait_simbacore_and_streamer();
         rms_cycles += read_simbacore_perf_counter();
 
-        // √
+        // 1/√  (single RSQRT pass: sqrt then reciprocal)
         set_simd_streamer_no_b((uint32_t)ptr_rms_vec, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,
                                (uint32_t)ptr_rms_vec, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
-        set_simbacore_simd_mode(M15_SIMD_SQRT_BF16);
-        start_simbacore_and_streamers(0, 0, 0, 0);
-        wait_simbacore_and_streamer();
-        rms_cycles += read_simbacore_perf_counter();
-
-        // 1/√
-        uint16_t one = fp32_to_bf16(1.0f);
-        for (int i = 0; i < simdLanes_bf16; i++) ptr_rms_c[i] = one;
-        set_simd_streamer_csr((uint32_t)ptr_rms_c, M12_R7_rms_ss, M12_R7_rms_tb, (int32_t*)zero_ts,
-                              (uint32_t)ptr_rms_vec, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts, (uint32_t)ptr_rms_vec,
-                              M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
-        set_simbacore_simd_mode(M14_SIMD_DIV_BF16);
+        set_simbacore_simd_mode(M45_SIMD_RSQRT_BF16);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
         rms_cycles += read_simbacore_perf_counter();

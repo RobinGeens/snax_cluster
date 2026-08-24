@@ -5,29 +5,18 @@
 //
 // RMSNorm plus residual, tiled in seqLen (out = rmsnorm(x)*weight + y)
 // See docs/dataflow/14_rmsnorm_tiled.md.
-// Six SIMD passes: the five-pass RMSNorm (Sqrt/Div fold via the sqrt(D) plus one big Add for the residual
-//   1. Rms : rms <- Sum(x^2)             (big: LtD)
-//   2. Sqrt: rms <- sqrt(rms)            (small: Lt) = sqrt(Sum x^2)
-//   3. Div : rms <- sqrt(D) / rms        (small: Lt) = sqrt(D)/sqrt(Sum x^2) = 1/rms_true
-//   4. Mul : x   <- x * rms              (big: 1/rms_true broadcast over D)
-//   5. Mul : x   <- x * weight           (big: per-channel weight)
-//   6. Add : x   <- x + y                (big: elementwise residual)
+// Four SIMD passes: RMSNorm with an Rsqrt pass and a fused FmaStream tail
+//   1. Rms      : rms <- Sum(x^2)            (big: LtD)
+//   2. Rsqrt    : rms <- 1/sqrt(rms)         (small: Lt)
+//   3. Mul      : x   <- x * rms             (big: broadcast over D)
+//   4. FmaStream: x   <- x * weight + y      (big: weight held per channel, y streamed; weight
+//                                             pre-folded with sqrt(D), resident as row 0 of the y slot)
 // Net: x * sqrt(D)/sqrt(Sum x^2) * weight + y = x / rms_true * weight + y.
 
-#include <math.h>
 #include <stdint.h>
 
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"
-
-/* BF16 = high 16 bits of IEEE 754 float (truncation, no rounding). */
-static inline uint16_t fp32_to_bf16(float f) {
-    union {
-        float f;
-        uint32_t u;
-    } x = {.f = f};
-    return (uint16_t)(x.u >> 16);
-}
 
 // Temporal strides for broadcast
 static const int32_t zero_ts[4] = {0, 0, 0, 0};
@@ -48,14 +37,14 @@ static inline void simd_wait(void) {
     while (read_csr(STREAMER_BUSY_CSR));
 }
 
-static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* ptr_rms, uint16_t* ptr_weight,
-                                  uint16_t* ptr_sqrtd) {
-    // Six SIMD passes (header). After each START the *next* pass's streamer program is written while
+static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* ptr_rms) {
+    // Four SIMD passes (header). After each START the *next* pass's streamer program is written while
     // the current pass computes -- the streamer latches config at the next START, so the ~48 per-port
     // writes hide behind compute (perf doc 08 section 1: CSR preload). The full per-port re-program
     // is kept every pass: a lean program leaves a streamer mis-armed.
 
     // 1. rms = Sum(x^2) per row
+    set_simbacore_simd_n_acc(dModel);  // Rms reduction length (pass 4 overwrites it)
     set_simd_streamer_no_b((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,  //
                            (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
     simd_start(M13_SIMD_RMS_BF16);
@@ -63,36 +52,24 @@ static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* pt
                            (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
     simd_wait();
 
-    // 2. rms = sqrt(rms)
-    simd_start(M15_SIMD_SQRT_BF16);
-    set_simd_streamer_csr((uint32_t)ptr_sqrtd, M12_R7_rms_ss, M12_R7_rms_tb, (int32_t*)zero_ts,  // preload pass 3
-                          (uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,        //
-                          (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
-    simd_wait();
-
-    // 3. rms = sqrt(D)/rms = 1/rms_true   (sqrt(D) numerator folds in the "* 1/D" of the true rms)
-    simd_start(M14_SIMD_DIV_BF16);
-    set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,                    // preload pass 4
+    // 2. rms = 1/sqrt(rms)   (single RSQRT pass; the "* 1/D" of the true rms is folded into weight)
+    simd_start(M45_SIMD_RSQRT_BF16);
+    set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,                    // preload pass 3
                           (uint32_t)ptr_rms, M12_R13_x_rms_ss, M12_R13_x_rms_tb, M12_R13_x_rms_ts,   //
                           (uint32_t)ptr_x, M12_W3_x_ss, M12_W3_x_tb, M12_W3_x_ts);
     simd_wait();
 
-    // 4. x = x * invrms   (1/rms broadcast over D, one per token)
+    // 3. x = x * invrms   (1/rms broadcast over D, one per token)
     simd_start(M10_SIMD_MUL_BF16);
-    set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_w_ss, M12_R7_x_w_tb, M12_R7_x_w_ts,           // preload pass 5
-                          (uint32_t)ptr_weight, M12_R13_x_w_ss, M12_R13_x_w_tb, M12_R13_x_w_ts,   //
+    set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_w_ss, M12_R7_x_w_tb, M12_R7_x_w_ts,  // preload pass 4
+                          (uint32_t)ptr_y, M12_R13_y_ss, M12_R13_y_tb, M12_R13_y_ts,     //
                           (uint32_t)ptr_x, M12_W3_x_w_ss, M12_W3_x_w_tb, M12_W3_x_w_ts);
     simd_wait();
 
-    // 5. x = x * weight   (per channel, stationary over L)
-    simd_start(M10_SIMD_MUL_BF16);
-    set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,      // preload pass 6
-                          (uint32_t)ptr_y, M12_R13_y_ss, M12_R13_y_tb, M12_R13_y_ts,   //
-                          (uint32_t)ptr_x, M12_W3_x_ss, M12_W3_x_tb, M12_W3_x_ts);
-    simd_wait();
-
-    // 6. x = x + y   (elementwise residual; y full-tile via R13)
-    simd_start(M8_SIMD_ADD_BF16);
+    // 4. x = x * weight + y   (FmaStream: weight row held per channel for n_acc = Lt/lanes
+    //    outputs, the channel's y rows streamed behind it)
+    set_simbacore_simd_n_acc(M12_L_tile / simdLanes_bf16);
+    simd_start(M49_SIMD_FMA_STREAM_BF16);
     simd_wait();
 
     // Drain the SIMD write buffer to TCDM before the DM core DMAs this slot out.
@@ -102,17 +79,17 @@ static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* pt
 int test() {
     int err = 0;
 
-    // TCDM layout: resident weight + sqrt(D) constant + one rms scratch + two x slots + two y slots.
-    void* base           = snrt_l1_next();
-    uint16_t* ptr_weight = (uint16_t*)base;
-    uint16_t* ptr_sqrtd  = (uint16_t*)((uint8_t*)ptr_weight + M12_length_weight);
-    uint16_t* ptr_rms    = (uint16_t*)((uint8_t*)ptr_sqrtd + simdLanes_bf16 * 2);
+    // TCDM layout: one rms scratch + two x slots + two y slots (each y slot: weight row + y tile).
+    void* base        = snrt_l1_next();
+    uint16_t* ptr_rms = (uint16_t*)base;
     uint16_t* ptr_x[2];
     ptr_x[0] = (uint16_t*)((uint8_t*)ptr_rms + M12_length_rms_tile);
     ptr_x[1] = (uint16_t*)((uint8_t*)ptr_x[0] + M12_length_x_tile);
-    uint16_t* ptr_y[2];
-    ptr_y[0] = (uint16_t*)((uint8_t*)ptr_x[1] + M12_length_x_tile);
-    ptr_y[1] = (uint16_t*)((uint8_t*)ptr_y[0] + M12_length_x_tile);
+    uint16_t* ptr_y[2];  // per slot: weight row at offset 0, y tile at offset length_weight
+    // +32 B: shift the y slots' bank group off the x slots' so the fused pass's three column
+    // walks (R7/W3 on x, R13 on y) don't contend for the same banks
+    ptr_y[0] = (uint16_t*)((uint8_t*)ptr_x[1] + M12_length_x_tile + 32);
+    ptr_y[1] = (uint16_t*)((uint8_t*)ptr_y[0] + M12_length_y_slot);
 
     uint32_t start_cycles           = 0;
     uint32_t simbacore_cycles_total = 0;
@@ -133,22 +110,13 @@ int test() {
         l3_out = (uint8_t*)snrt_l3alloc((uint32_t)nb_tiles * M12_length_x_tile);
     }
 
-    // Load resident weight + first x and y tiles.
+    // Load the folded weight row into both y slots + the first x and y tiles.
     if (snrt_is_dm_core()) {
-        snrt_dma_start_1d((uint8_t*)ptr_weight, (uint8_t*)M12_weight, M12_length_weight);
+        snrt_dma_start_1d((uint8_t*)ptr_y[0], (uint8_t*)M12_weight, M12_length_weight);
+        snrt_dma_start_1d((uint8_t*)ptr_y[1], (uint8_t*)M12_weight, M12_length_weight);
         snrt_dma_start_1d((uint8_t*)ptr_x[0], (uint8_t*)M12_x, M12_length_x_tile);
-        snrt_dma_start_1d((uint8_t*)ptr_y[0], (uint8_t*)M12_y, M12_length_x_tile);
+        snrt_dma_start_1d((uint8_t*)ptr_y[0] + M12_length_weight, (uint8_t*)M12_y, M12_length_x_tile);
         snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
-
-    if (snrt_global_core_idx() == 0) {
-        // Fill the Div-numerator lane constant with sqrt(D): folds the "* 1/D" of the true rms into
-        // the reciprocal pass, removing one SIMD pass per tile at no per-tile cost.
-        uint16_t sqrtd = fp32_to_bf16(sqrtf((float)dModel));
-        for (uint32_t i = 0; i < simdLanes_bf16; i++) ptr_sqrtd[i] = sqrtd;
-
-        set_simbacore_simd_n_acc(dModel);  // Rms reduction length, set once
     }
     snrt_cluster_hw_barrier();
 
@@ -164,13 +132,13 @@ int test() {
             if (n + 1 < nb_tiles) {
                 snrt_dma_start_1d((uint8_t*)ptr_x[other], (uint8_t*)M12_x + (n + 1) * M12_length_x_tile,
                                   M12_length_x_tile);
-                snrt_dma_start_1d((uint8_t*)ptr_y[other], (uint8_t*)M12_y + (n + 1) * M12_length_x_tile,
-                                  M12_length_x_tile);
+                snrt_dma_start_1d((uint8_t*)ptr_y[other] + M12_length_weight,
+                                  (uint8_t*)M12_y + (n + 1) * M12_length_x_tile, M12_length_x_tile);
             }
         }
 
         if (snrt_global_core_idx() == 0) {
-            normalize_tile(ptr_x[s], ptr_y[s], ptr_rms, ptr_weight, ptr_sqrtd);
+            normalize_tile(ptr_x[s], ptr_y[s], ptr_rms);
             simbacore_cycles_total += read_simbacore_perf_counter();
         }
 

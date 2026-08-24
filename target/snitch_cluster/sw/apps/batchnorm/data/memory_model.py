@@ -27,13 +27,12 @@ def build_report(params: dict) -> MemoryReport:
     report = MemoryReport("batchnorm", {"seqLen": L, "channels": D})
 
     bufs = [
-        ("x",     L * D * BF16 // 8),
-        ("scale", lanes * D * BF16 // 8),  # per-channel scalar, duplicated over lanes
-        ("shift", lanes * D * BF16 // 8),
-        ("out",   L * D * BF16 // 8),
+        ("x",          L * D * BF16 // 8),
+        ("scaleshift", 2 * lanes * D * BF16 // 8),  # per-channel scale/shift lane blocks, interleaved
+        ("out",        L * D * BF16 // 8),
     ]
     report.add_section("FULL resident (single SIMD pass)", bufs)
-    report.add_peak("Resident (x + scale + shift + out)", sequential_bytes([s for _, s in bufs]))
+    report.add_peak("Resident (x + scaleshift + out)", sequential_bytes([s for _, s in bufs]))
     return report
 
 

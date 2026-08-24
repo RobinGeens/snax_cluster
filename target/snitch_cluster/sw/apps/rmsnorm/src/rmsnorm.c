@@ -48,7 +48,6 @@ int test() {
     void* tcdm_base_ptr    = snrt_l1_next();
     uint16_t* ptr_x        = (uint16_t*)(tcdm_base_ptr + M12_addr_x);
     uint16_t* ptr_constant = (uint16_t*)(tcdm_base_ptr + M12_addr_d_inverse);
-    uint16_t* ptr_ones     = (uint16_t*)(tcdm_base_ptr + M12_addr_ones);
     uint16_t* ptr_weight   = (uint16_t*)(tcdm_base_ptr + M12_addr_weight);
     uint16_t* ptr_rms      = (uint16_t*)(tcdm_base_ptr + M12_addr_rms);
 
@@ -100,37 +99,18 @@ int test() {
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
 
-        // 3. Compute sqrt(Σ(x^2)/D)
+        // 3. Compute rms = 1 / sqrt(Σ(x^2) / D)  (single RSQRT pass: sqrt then reciprocal)
         set_simd_streamer_no_b((uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,   //
                                (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);  // We write inplace
 
-        set_simbacore_simd_mode(M15_SIMD_SQRT_BF16);
+        set_simbacore_simd_mode(M45_SIMD_RSQRT_BF16);
         start_simbacore_and_streamers(0, 0, 0, 0);
         wait_simbacore_and_streamer();
-
-        // This works fine
-        // err += check_result_sample_u16(ptr_rms, M12_denom, M12_test_samples_rms, nb_test_samples, "denom");
-
-        // 4. Compute rms = 1 / sqrt(Σ(x ^ 2) / D) Fill whole lane with ones.
-        uint16_t one = fp32_to_bf16(1.0f);
-        for (int i = 0; i < simdLanes_bf16; i++) ptr_ones[i] = one;
-
-        set_simd_streamer_csr((uint32_t)ptr_ones, M12_R7_rms_ss, M12_R7_rms_tb,
-                              (int32_t*)zero_ts,  // Same temporal bound, no stride
-                              (uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,   //
-                              (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);  // We write inplace
-
-        set_simbacore_simd_mode(M14_SIMD_DIV_BF16);
-        start_simbacore_and_streamers(0, 0, 0, 0);
-        wait_simbacore_and_streamer();
-
-        // batch_sqrt_div_cpu(ptr_rms, seqLen);
-        // printf("invRms (1/rms)\n");
 
         // err += check_result_all_u16(ptr_rms, M12_invRms, M12_length_rms);
         // err += check_result_sample_u16(ptr_rms, M12_invRms, M12_test_samples_rms, nb_test_samples, "invRms");
 
-        // 5. Multiply x by rms (inplace)
+        // 4. Multiply x by rms (inplace)
         set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,
                               // Slide over D (one rms norm per token)
                               (uint32_t)ptr_rms, M12_R13_x_rms_ss, M12_R13_x_rms_tb, M12_R13_x_rms_ts,  //
@@ -149,7 +129,7 @@ int test() {
         // err += check_result_sample_u16(ptr_x, M12_normalized, M12_test_samples_expected, nb_test_samples,
         // "normalized");
 
-        // 6. Multiply x by weight (inplace)
+        // 5. Multiply x by weight (inplace)
         set_simd_streamer_csr((uint32_t)ptr_x, M12_R7_x_w_ss, M12_R7_x_w_tb, M12_R7_x_w_ts,
                               // Keep weight stationary for L
                               (uint32_t)ptr_weight, M12_R13_x_w_ss, M12_R13_x_w_tb, M12_R13_x_w_ts,  //

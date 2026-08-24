@@ -5,8 +5,8 @@
 //
 // Standalone folded-BatchNorm + ReLU: out = ReLU(x * scale + shift), with per-channel
 // scale/shift. This is the SegFormer ConvModule tail that follows the 1x1-conv (= OS-core
-// GEMM, the existing osgemm app). Two SIMD passes: a per-channel multiply by scale, then a
-// per-channel add of shift fused with ReLU.
+// GEMM, the existing osgemm app). A single fused SIMD FmaHold+ReLU pass: the b-operand
+// stream carries one (scale, shift) pair per channel, held for the channel's L/lanes outputs.
 
 #include <stdint.h>
 
@@ -31,11 +31,10 @@ static inline void simd_wait(void) {
 int test() {
     int err = 0;
 
-    void* tcdm_base_ptr = snrt_l1_next();
-    uint16_t* ptr_x     = (uint16_t*)(tcdm_base_ptr + M10_addr_x);
-    uint16_t* ptr_scale = (uint16_t*)(tcdm_base_ptr + M10_addr_scale);
-    uint16_t* ptr_shift = (uint16_t*)(tcdm_base_ptr + M10_addr_shift);
-    uint16_t* ptr_out   = (uint16_t*)(tcdm_base_ptr + M10_addr_out);
+    void* tcdm_base_ptr      = snrt_l1_next();
+    uint16_t* ptr_x          = (uint16_t*)(tcdm_base_ptr + M10_addr_x);
+    uint16_t* ptr_scaleshift = (uint16_t*)(tcdm_base_ptr + M10_addr_scaleshift);
+    uint16_t* ptr_out        = (uint16_t*)(tcdm_base_ptr + M10_addr_out);
 
     uint32_t start_cycles = 0;
 
@@ -49,34 +48,25 @@ int test() {
         // Program pass-1's streamer config now so its ~45 CSR writes overlap the DM core's load
         // DMA below (CSR writes touch only streamer config, not TCDM) instead of sitting on the
         // critical path after the barrier.
-        set_simd_streamer_csr((uint32_t)ptr_x, M10_R7_xw_ss, M10_R7_xw_tb, M10_R7_xw_ts,            //
-                              (uint32_t)ptr_scale, M10_R13_vec_ss, M10_R13_vec_tb, M10_R13_vec_ts,  //
+        set_simd_streamer_csr((uint32_t)ptr_x, M10_R7_xw_ss, M10_R7_xw_tb, M10_R7_xw_ts,                 //
+                              (uint32_t)ptr_scaleshift, M10_R13_vec_ss, M10_R13_vec_tb, M10_R13_vec_ts,  //
                               (uint32_t)ptr_out, M10_W3_xw_ss, M10_W3_xw_tb, M10_W3_xw_ts);
     }
 
-    // Load activations + per-channel scale/shift from L3.
+    // Load activations + interleaved per-channel scale/shift from L3.
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_x, M10_x, M10_length_x);
-        snrt_dma_start_1d(ptr_scale, M10_scale, M10_length_scale);
-        snrt_dma_start_1d(ptr_shift, M10_shift, M10_length_shift);
+        snrt_dma_start_1d(ptr_scaleshift, M10_scaleshift, M10_length_scaleshift);
         snrt_dma_wait_all();
     }
 
     snrt_cluster_hw_barrier();
 
     if (snrt_global_core_idx() == 0) {
-        // Pass 1: out = x * scale. Pass-1's streamer config was already programmed (hidden behind
-        // the DMA). Right after START, preload pass-2's full streamer program: the streamer latches
-        // config at the next START, so these ~45 writes hide behind pass-1 compute. The full per-port
-        // reprogram is kept -- a lean partial program leaves a streamer mis-armed.
-        simd_start(M10_SIMD_MUL_BF16);
-        set_simd_streamer_csr((uint32_t)ptr_out, M10_R7_xw_ss, M10_R7_xw_tb, M10_R7_xw_ts,          //
-                              (uint32_t)ptr_shift, M10_R13_vec_ss, M10_R13_vec_tb, M10_R13_vec_ts,  //
-                              (uint32_t)ptr_out, M10_W3_xw_ss, M10_W3_xw_tb, M10_W3_xw_ts);
-        simd_wait();
-
-        // Pass 2: out = ReLU(out + shift)   (per-channel add, fused ReLU; in place)
-        simd_start(M10_SIMD_ADD_BF16_RELU);
+        // Single fused pass: out = ReLU(x * scale + shift). The R13 stream delivers one
+        // interleaved (scale, shift) pair per channel; n_acc = outputs per pair.
+        set_simbacore_simd_n_acc(seqLen / simdLanes_bf16);
+        simd_start(M48_SIMD_FMA_HOLD_BF16_RELU);
         simd_wait();
 
         uint32_t end_cycles = snrt_mcycle();

@@ -6,30 +6,30 @@
 
 enum : uint32_t {
     // Streamer per-port config block: readers R0..R13 then writers W0..W3,
-    // each 11 CSRs (base_ptr_lo/hi, s_stride(s), t_bound[4], t_stride[4]),
-    // except R7 which has 2 spatial strides (12 CSRs). Range [960, 1158].
+    // each 12 CSRs (base_ptr_lo/hi, s_stride(s), t_bound[4], t_stride[4], addr_remap_index),
+    // except R7 and W3 which have 2 spatial strides (13 CSRs). Range [960, 1177].
     SNAX_STREAMER_CFG_LO = 960,
-    SNAX_STREAMER_CFG_HI = 1158,
+    SNAX_STREAMER_CFG_HI = 1177,
 
-    SNAX_DELAYED_START_R10 = 1159,
-    SNAX_DELAYED_START_R11 = 1160,
-    SNAX_STREAMER_START = 1161,
-    SNAX_STREAMER_BUSY = 1162,   // RO
-    SNAX_STREAMER_PERF = 1163,   // RO
+    SNAX_DELAYED_START_R10 = 1178,
+    SNAX_DELAYED_START_R11 = 1179,
+    SNAX_STREAMER_START = 1180,
+    SNAX_STREAMER_BUSY = 1181,   // RO
+    SNAX_STREAMER_PERF = 1182,   // RO
 
-    // SimbaCore block = STREAMER_PERFORMANCE_COUNTER_CSR + 1 = 1164.
-    SNAX_MODE = 1164,
-    SNAX_SEQ_LEN = 1165,
-    SNAX_D_MODEL = 1166,
-    SNAX_DT_RANK = 1167,
-    SNAX_D_INNER = 1168,
-    SNAX_D_FINAL = 1169,
-    SNAX_SIMBACORE_START = 1170,
-    SNAX_SIMBACORE_BUSY = 1171,   // RO
-    SNAX_SIMBACORE_PERF = 1172,   // RO
-    SNAX_R10_GAUGE = 1173,        // RO: osCore output tiles
-    SNAX_R11_GAUGE = 1174,        // RO: SUC output elements
-    SNAX_ISCORE_TILE_CNT = 1175,  // RO: isCore output tiles
+    // SimbaCore block = STREAMER_PERFORMANCE_COUNTER_CSR + 1 = 1183.
+    SNAX_MODE = 1183,
+    SNAX_SEQ_LEN = 1184,
+    SNAX_D_MODEL = 1185,
+    SNAX_DT_RANK = 1186,
+    SNAX_D_INNER = 1187,
+    SNAX_D_FINAL = 1188,
+    SNAX_SIMBACORE_START = 1189,
+    SNAX_SIMBACORE_BUSY = 1190,   // RO
+    SNAX_SIMBACORE_PERF = 1191,   // RO
+    SNAX_R10_GAUGE = 1192,        // RO: osCore output tiles
+    SNAX_R11_GAUGE = 1193,        // RO: SUC output elements
+    SNAX_ISCORE_TILE_CNT = 1194,  // RO: isCore output tiles
 };
 
 // Offload latency for a SNAX CSR *write* (config/base-ptr/start), in core cycles.

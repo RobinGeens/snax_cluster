@@ -45,35 +45,45 @@ class DataGenerator(DataGeneratorBase):
         assert simdLanes == self.kwargs["seqLenUnroll"], "memory layout mismatch"
         assert L % simdLanes == 0, f"seqLen ({L}) must be a multiple of simdLanes ({simdLanes})"
 
-        simd_add_bf16_relu = self.kwargs["M40_SIMD_ADD_BF16_RELU"]
+        assert "M48_SIMD_FMA_HOLD_BF16_RELU" in self.kwargs, "FmaHold mode missing from generator output"
 
-        # Per-channel affine walk (mirrors rmsnorm step 6 "x * weight"):
+        specs = [
+            ("x", L * D * BF16 // 8),
+            ("scaleshift", 2 * simdLanes * D * BF16 // 8),  # per channel: scale block, shift block
+            ("out", L * D * BF16 // 8),
+        ]
+        lengths, deltas = self._collect_lengths_and_deltas(specs)
+
+        # Per-channel affine walk (bounds inner->outer; mirrors rmsnorm "x * weight"):
         #   x   : (L, D) BF16 in IS-core out layout = [L/lanes][D][lanes]
-        #   vec : per-channel scalar duplicated over the lanes, held stationary across L
+        #   vec : FmaHold b/c stream — one (scale, shift) lane-block pair per channel; the core
+        #         holds the pair for the channel's n_acc = L/lanes outputs
         xw = (
             [L // simdLanes, D],
             [D * simdLanes * BF16 // 8, simdLanes * BF16 // 8],
         )
         vec = (
-            [L // simdLanes, D],
-            [0, simdLanes * BF16 // 8],  # stay on this channel's lane block for all L
+            [2, D],
+            [simdLanes * BF16 // 8, 2 * simdLanes * BF16 // 8],
         )
         streamers = {
             "R7_xw": xw,    # activations (operand A)
-            "R13_vec": vec,  # scale / shift (operand B), per-channel duplicated
+            "R13_vec": vec,  # scale/shift interleaved (operands B/C)
             "W3_xw": xw,    # output
         }
 
-        specs = [
-            ("x", L * D * BF16 // 8),
-            ("scale", simdLanes * D * BF16 // 8),  # duplicated over lanes
-            ("shift", simdLanes * D * BF16 // 8),  # duplicated over lanes
-            ("out", L * D * BF16 // 8),
-        ]
-        lengths, deltas = self._collect_lengths_and_deltas(specs)
-        scalars = {**lengths, **deltas, "SIMD_ADD_BF16_RELU": simd_add_bf16_relu}
+        scalars = {**lengths, **deltas}
 
-        test_data = {name: "uint16_t" for name in ("x", "scale", "shift", "out")}
+        # Interleave the generator's scale/shift vectors per channel: [D][2][lanes]
+        scale = self._read_data_int(f"M{mode_id}_scale.bin")
+        shift = self._read_data_int(f"M{mode_id}_shift.bin")
+        scaleshift = []
+        for ch in range(D):
+            scaleshift += scale[ch * simdLanes:(ch + 1) * simdLanes]
+            scaleshift += shift[ch * simdLanes:(ch + 1) * simdLanes]
+        self.format_vector("uint16_t", f"M{mode_id}_scaleshift", scaleshift)
+
+        test_data = {name: "uint16_t" for name in ("x", "out")}
         tests = {"out": L * D}
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)

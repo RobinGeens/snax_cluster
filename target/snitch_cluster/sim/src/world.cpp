@@ -20,13 +20,13 @@ SimWorld::SimWorld() {
     for (int i = 0; i < 256; i++) csr_to_port_[i] = -1;
     uint32_t c = SNAX_STREAMER_CFG_LO;  // 960
     for (int p = 0; p < N_PORTS; p++) {
-        int n_s    = (p == 7) ? 2 : 1;  // only R7 has 2 spatial strides
+        int n_s    = (p == 7 || p == 17) ? 2 : 1;  // R7 and W3 have 2 spatial strides
         layout_[p] = {c, n_s};
-        int block  = 2 + n_s + 4 + 4;  // base_lo/hi + s_stride[n_s] + t_bound[4] + t_stride[4]
+        int block  = 2 + n_s + 4 + 4 + 1;  // base_lo/hi + s_stride[n_s] + t_bound[4] + t_stride[4] + addr_remap
         for (int k = 0; k < block; k++) csr_to_port_[(c - SNAX_STREAMER_CFG_LO) + k] = p;
         c += block;
     }
-    // c should now equal SNAX_DELAYED_START_R10 (1159).
+    // c should now equal SNAX_DELAYED_START_R10 (1178).
 }
 
 void SimWorld::decode_ports() {
@@ -228,9 +228,9 @@ void SimWorld::run_invocation(uint64_t at) {
     // bit18 en_suCore, bit17 en_isCore. MODE -- not the streamer ports -- distinguishes a SUC
     // scan from a GEMM/SIMD op: the ports (R6/R7) are reused across modes, so keying off them
     // mis-fires (an FFT SIMD pass enables R6/R7 with all core bits 0). See docs.
-    bool en_osCore = (cfg_.mode >> 19) & 1;
-    bool en_suCore = (cfg_.mode >> 18) & 1;
-    bool en_isCore = (cfg_.mode >> 17) & 1;
+    bool en_osCore = (cfg_.mode >> 21) & 1;
+    bool en_suCore = (cfg_.mode >> 20) & 1;
+    bool en_isCore = (cfg_.mode >> 19) & 1;
     bool is_simd   = !(en_osCore || en_suCore || en_isCore);  // SIMD: no GEMM subcore enabled
     osc_dur_       = en_osCore ? (uint64_t)M_i * osN * cfg_.dModel : 0;
     isc_dur_       = en_isCore ? (uint64_t)M_i * cfg_.dFinal * K_i : 0;
@@ -289,7 +289,7 @@ void SimWorld::run_invocation(uint64_t at) {
         long dma_ov = (dma_busy_until_ > accel_start_) ? (long)(dma_busy_until_ - accel_start_) : 0;
         // switchCore dt projection (Matmul) cycles: dt_delta = dt·Wᵀ streams ON-CHIP to the SUC, which
         // can't scan past it -> they are co-active. Cycles = seqLen·dInner·dtRank/(convUnroll·dtRankUnroll).
-        long sw_cyc = (((cfg_.mode >> 8) & 0x3) == 2 && dtRankUnroll_ && cfg_.dtRank)
+        long sw_cyc = (((cfg_.mode >> 10) & 0x3) == 2 && dtRankUnroll_ && cfg_.dtRank)
                           ? (long)((uint64_t)cfg_.seqLen * cfg_.dInner * cfg_.dtRank / (4u * dtRankUnroll_))
                           : 0;
         // Single cycle-exact engine (MEMSIM_ENGINE): configure now; advance_to steps it one cycle at a
@@ -371,7 +371,7 @@ void SimWorld::run_invocation(uint64_t at) {
         // both-core chained (PHASE1, IS_OSGEMM): osCore -> switchCore conv -> isCore pipeline,
         // stepped per cycle on the shared fabric (cyc_phase1) — the slowest stage, the lead-in/drain
         // and the cross-stage contention all emerge, no max-of-formulas, no fitted fill.
-        int sw_mode    = (cfg_.mode >> 8) & 0x3;  // m_switchCoreMode (1=Conv -> PHASE1)
+        int sw_mode    = (cfg_.mode >> 10) & 0x3;  // m_switchCoreMode (1=Conv -> PHASE1)
         long dma_ov    = (dma_busy_until_ > at) ? (long)(dma_busy_until_ - at) : 0;
         // Single cycle-exact engine (MEMSIM_ENGINE): the P1 pipeline runs real-time with DMA enqueued
         // live, so contention emerges (no deferred cycling-superbank approximation). Else legacy cyc_phase1.
@@ -556,7 +556,8 @@ void SimWorld::verify_layout() {
     // word written twice -- a permuted stride within the (correct) extent that the bounds check
     // can't see. Stride-0 dims are collapsed first (the accumulation pass, e.g. the isCore
     // K-reduction, legitimately holds the output address). Writer-only: readers re-read via
-    // stride-0 reuse, and no writer has n_s==2 (R7 is the only 2-spatial port, a reader).
+    // stride-0 reuse. The scan enumerates the 1-D spatial equivalent (s_stride[0] x nch); the
+    // [2,2]-spatial ports (R7/W3) use s1=2*s0 so the footprint is identical.
     auto alias_scan = [&](const Agu& a, long nch, int wport, bool do_report) -> bool {
         long b[4];  // collapse stride-0 (accumulation) dims
         for (int d = 0; d < 4; d++) b[d] = a.t_stride[d] == 0 ? 1 : (a.t_bound[d] ? a.t_bound[d] : 1);
@@ -865,11 +866,11 @@ void SimWorld::verify_datapath() {
     // (the stale/hazard check over the real per-cycle write + read schedules). Validated against
     // the vsim brackets (main R10=2, R11=5377 in 5300-hang/5400-safe). See cyc_phase2.cpp.
     if (phase2_) {
-        long sw_cyc = (((cfg_.mode >> 8) & 0x3) == 2 && dtRankUnroll_ && cfg_.dtRank)
+        long sw_cyc = (((cfg_.mode >> 10) & 0x3) == 2 && dtRankUnroll_ && cfg_.dtRank)
                           ? (long)((uint64_t)cfg_.seqLen * cfg_.dInner * cfg_.dtRank / (4u * dtRankUnroll_))
                           : 0;
-        bool en_osCore = (cfg_.mode >> 19) & 1;
-        bool en_isCore = (cfg_.mode >> 17) & 1;
+        bool en_osCore = (cfg_.mode >> 21) & 1;
+        bool en_isCore = (cfg_.mode >> 19) & 1;
         // Engine-based sweep (single stepper): run the engine at fixed (r10,r11) WITHOUT real-time
         // release -> it gates the SUC on g_r10>=r10 and the isCore on g_r11>=r11; result().stale_z/y
         // count reads of words their producer had not committed. bsearch the smallest zero-stale count.
@@ -956,14 +957,14 @@ void SimWorld::advance_to(uint64_t t) {
         accel_end_ = accel_start_ + r.busy;
         // SIMD (no GEMM subcore enabled) costs wall-clock (accel_end_) but does NOT tick the MambaCore
         // perf counter, so perf_ stays 0 for a SIMD pass; GEMM/SUC modes report busy.
-        bool is_simd = !(((cfg_.mode >> 19) & 1) || ((cfg_.mode >> 18) & 1) || ((cfg_.mode >> 17) & 1));
+        bool is_simd = !(((cfg_.mode >> 21) & 1) || ((cfg_.mode >> 20) & 1) || ((cfg_.mode >> 19) & 1));
         perf_      = is_simd ? 0u : (uint32_t)r.busy;
         // Stage-activity bars for the timeline plot: the engine reports the REAL per-stage windows
         // (osc_end / suc_start..suc_end / isc_start..isc_end / sw_start..sw_end), relative to
         // accel_start_. `ideal` = conflict-free MAC-group count -> the plot's utilization line.
         if (trace_on_) {
             long M_i = cfg_.seqLen / 16, osN = (cfg_.dInner >= 24) ? cfg_.dInner / 24 : 0;
-            bool en_os = (cfg_.mode >> 19) & 1, en_isc = (cfg_.mode >> 17) & 1;
+            bool en_os = (cfg_.mode >> 21) & 1, en_isc = (cfg_.mode >> 19) & 1;
             uint64_t osc_id = (uint64_t)M_i * osN * cfg_.dModel;
             uint64_t suc_id = (uint64_t)cfg_.seqLen * cfg_.dInner;
             uint64_t isc_id = (uint64_t)M_i * cfg_.dFinal * osN;
@@ -974,7 +975,7 @@ void SimWorld::advance_to(uint64_t t) {
                 if (r.sw_end > r.sw_start) rec(TR_SWITCHCORE, accel_start_ + r.sw_start, accel_start_ + r.sw_end, suc_id);
             } else {  // P1 / IS_OSGEMM: osCore/conv/isCore co-active across the invocation window
                 if (en_os) rec(TR_OSCORE, accel_start_, accel_end_, osc_id);
-                if (((cfg_.mode >> 8) & 0x3) == 1) rec(TR_SWITCHCORE, accel_start_, accel_end_, suc_id / 4);
+                if (((cfg_.mode >> 10) & 0x3) == 1) rec(TR_SWITCHCORE, accel_start_, accel_end_, suc_id / 4);
                 if (en_isc) rec(TR_ISCORE, accel_start_, accel_end_, isc_id);
             }
             // TCDM streamer-bandwidth demand over the real invocation window (run_invocation defers this

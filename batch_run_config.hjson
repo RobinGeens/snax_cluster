@@ -2,7 +2,7 @@
     // Max number of vsim runs allowed to execute at the same time
     max_parallel: 8
     // Per-run wall-clock cap in seconds. 0 = no timeout
-    timeout: 0 // suc-async 32k can take >12h
+    timeout: 0 // suc-carry 32k can take >12h
     // Per-build  wall-clock cap in seconds. 0 = no timeout
     build_timeout: 0
     // Global default for `force`
@@ -23,7 +23,7 @@
                 {
                     name: main C
                     model: Simba-L IN
-                    force: true
+                    force: false
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
@@ -47,7 +47,7 @@
                 {
                     name: main D
                     model: Simba-L IN
-                    force: true
+                    force: false
                     seqLen: 48
                     dModel: 528
                     dtRank: 24
@@ -65,7 +65,7 @@
                 {
                     name: main C
                     model: Simba-L IN
-                    force: true
+                    force: false
                     seqLen: 192
                     dModel: 384
                     dtRank: 24
@@ -196,6 +196,16 @@
                     nb_tiles: 8
                 }
                 // Sizes D
+                { // in proj
+                    name: P2 in proj D
+                    model: Simba-L CS
+                    force: false
+                    seqLen: 64 // x4
+                    dModel: 528
+                    dInner: 1056
+                    dtRank: 24
+                    nb_tiles: 22 // dInner / 48 per tile
+                }
                 { // out proj
                     name: P2 out proj D
                     model: Simba-L CS
@@ -264,28 +274,6 @@
             ]
         }
         {
-            // Simba-L CS (1024/528) stays on P2-async: p2-carry runs full dInner (nb_tiles=1), whose osCore
-            // weight (dModel*dInner = 528*1056 ~ 544 KiB) exceeds the 512 KiB TCDM. Needs dInner tiling in
-            // p2-carry (not yet supported).
-            app: P2-async-OS-no-IS
-            params: [
-                {
-                    name: SUC/in proj D
-                    model: Simba-L CS
-                    force: true
-                    seqLen: 1024
-                    dModel: 528
-                    dtRank: 24
-                    nb_tiles: 11
-                    nb_l_tiles: 16
-                    nb_slots: 2
-                    bc_swizzle: 1
-                    safe_to_start_r10: 27
-                    safe_to_start_r11: 0 // not used
-                }
-            ]
-        }
-        {
             // SUC-only, on-chip state carry, largest seqLen (dt is tiled per L-tile like BC, so it stays flat).
             app: suc-carry
             params: [
@@ -329,6 +317,19 @@
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 128 // L_tile=32 (double-buffer footprint bound at dInner=768)
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+                // Sizes D
+                {
+                    name: SUC D
+                    model: Simba-L CS
+                    force: false
+                    seqLen: 1024
+                    dModel: 528
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 32 // L_tile=32 (double-buffer footprint bound at dInner=1056)
                     bc_pad_banks: 0
                     bc_swizzle: 1
                 }
@@ -499,7 +500,7 @@
                 {
                     name: fft A
                     model: Simba-L IN
-                    force: true
+                    force: false
                     seqLen: 4096,
                     dModel: 24, // x4
                     L1: 16,
@@ -512,7 +513,7 @@
                 {
                     name: fft C
                     model: Simba-L CS
-                    force: true
+                    force: false
                     seqLen: 4096,
                     dModel: 16,
                     L1: 16,
@@ -524,7 +525,7 @@
                 {
                     name: fft A
                     model: Simba-L CS
-                    force: true
+                    force: false
                     seqLen: 65536
                     dModel: 1 // x 96
                     L1: 64,
@@ -536,7 +537,7 @@
                 {
                     name: fft B
                     model: Simba-L CS
-                    force: true
+                    force: false
                     seqLen: 16384,
                     dModel: 8, // x24
                     L1: 32,
@@ -545,25 +546,6 @@
                     nb_tiles_A: 8
                     l3_tile: 16
                 }
-            ]
-        }
-        {
-            app: fft-3way-tiled-async
-            params: [
-                {
-                    name: fft A
-                    model: Simba-L CS
-                    force: true
-                    seqLen: 65536
-                    dModel: 1 // x 96
-                    L1: 64,
-                    L2: 16,
-                    L3: 64,
-                    nb_tiles_A: 1
-                    l3_tile: 16
-                    nb_ntile: 4
-                }
-
             ]
         }
         {
@@ -976,7 +958,7 @@
                 {
                     name: main C
                     model: Simba-S IN
-                    force: true
+                    force: false
                     seqLen: 192 // x1
                     dModel: 336 // 320 -> mult of 24
                     dtRank: 24
@@ -989,7 +971,7 @@
                 {
                     name: main D
                     model: Simba-S IN
-                    force: true
+                    force: false
                     seqLen: 64 // 49 -> mult of 16
                     dModel: 456 // 448 -> mult of 24
                     dtRank: 24
