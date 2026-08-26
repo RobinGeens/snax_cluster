@@ -37,16 +37,15 @@ static inline void simd_wait(void) {
     while (read_csr(STREAMER_BUSY_CSR));
 }
 
-static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* ptr_rms) {
+static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* ptr_rms, uint16_t* ptr_x_next) {
     // Four SIMD passes (header). After each START the *next* pass's streamer program is written while
     // the current pass computes -- the streamer latches config at the next START, so the ~48 per-port
     // writes hide behind compute (perf doc 08 section 1: CSR preload). The full per-port re-program
-    // is kept every pass: a lean program leaves a streamer mis-armed.
+    // is kept every pass: a lean program leaves a streamer mis-armed. Pass 1's program (for the next
+    // tile's x slot) is preloaded during pass 4, so tile start only writes n_acc.
 
-    // 1. rms = Sum(x^2) per row
+    // 1. rms = Sum(x^2) per row (streamer program preloaded by the previous tile's pass 4)
     set_simbacore_simd_n_acc(dModel);  // Rms reduction length (pass 4 overwrites it)
-    set_simd_streamer_no_b((uint32_t)ptr_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,  //
-                           (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
     simd_start(M13_SIMD_RMS_BF16);
     set_simd_streamer_no_b((uint32_t)ptr_rms, M12_R7_rms_ss, M12_R7_rms_tb, M12_R7_rms_ts,  // preload pass 2
                            (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
@@ -70,6 +69,8 @@ static inline void normalize_tile(uint16_t* ptr_x, uint16_t* ptr_y, uint16_t* pt
     //    outputs, the channel's y rows streamed behind it)
     set_simbacore_simd_n_acc(M12_L_tile / simdLanes_bf16);
     simd_start(M49_SIMD_FMA_STREAM_BF16);
+    set_simd_streamer_no_b((uint32_t)ptr_x_next, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,  // preload next tile's pass 1
+                           (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
     simd_wait();
 
     // Drain the SIMD write buffer to TCDM before the DM core DMAs this slot out.
@@ -120,6 +121,11 @@ int test() {
     }
     snrt_cluster_hw_barrier();
 
+    // Prime tile 0's pass-1 streamer program (later tiles get it preloaded during pass 4).
+    if (snrt_global_core_idx() == 0)
+        set_simd_streamer_no_b((uint32_t)ptr_x[0], M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts,  //
+                               (uint32_t)ptr_rms, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
+
     // Double-buffered pipeline. While the SIMD core normalizes tile n (slot n&1), the DM core
     // (concurrently) DMAs tile n-1's result out and tile n+1's input in (both via slot (n+1)&1).
     for (uint32_t n = 0; n < nb_tiles; n++) {
@@ -138,7 +144,7 @@ int test() {
         }
 
         if (snrt_global_core_idx() == 0) {
-            normalize_tile(ptr_x[s], ptr_y[s], ptr_rms);
+            normalize_tile(ptr_x[s], ptr_y[s], ptr_rms, ptr_x[other]);  // dead preload on the last tile
             simbacore_cycles_total += read_simbacore_perf_counter();
         }
 

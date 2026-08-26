@@ -280,7 +280,7 @@
                 {
                     name: SUC A
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 32768 // x2
                     dModel: 96
                     dtRank: 24
@@ -292,7 +292,7 @@
                 {
                     name: SUC B
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 16384
                     dModel: 192
                     dtRank: 24
@@ -311,7 +311,7 @@
                 {
                     name: SUC C
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 4096
                     dModel: 384
                     dtRank: 24
@@ -324,7 +324,7 @@
                 {
                     name: SUC D
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 1024
                     dModel: 528
                     dtRank: 24
@@ -339,7 +339,7 @@
                 {
                     name: SUC A
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 3136
                     dModel: 96
                     dtRank: 24
@@ -358,7 +358,7 @@
                 {
                     name: einfft A
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 784 // x4
                     dModel: 96 // N=1 -> concat [W_re|W_im] gives real N=2 (no waste)
                     nb_tiles: 1
@@ -369,7 +369,7 @@
                 {
                     name: einfft A
                     model: Simba-L CS
-                    force: false
+                    force: true
                     seqLen: 512 // x64 -> 32768
                     dModel: 96
                     nb_tiles: 1
@@ -383,7 +383,7 @@
                 {
                     name: einfft B
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 192 // x4
                     dModel: 192
                 }
@@ -391,7 +391,7 @@
                 {
                     name: einfft C
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 96 // x2
                     dModel: 384
                 }
@@ -399,7 +399,7 @@
                 {
                     name: einfft D
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 48
                     dModel: 576
                 }
@@ -612,7 +612,7 @@
                 {
                     name: rms A
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 3136
                     dModel: 96
                     nb_tiles: 28 // L_tile=112
@@ -620,7 +620,7 @@
                 {
                     name: rms B
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 784
                     dModel: 192
                     nb_tiles: 7 // L_tile=112
@@ -628,7 +628,7 @@
                 {
                     name: rms C
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 192
                     dModel: 384
                     nb_tiles: 4 // L_tile=48
@@ -636,7 +636,7 @@
                 {
                     name: rms D
                     model: Simba-L IN
-                    force: false
+                    force: true
                     seqLen: 48
                     dModel: 512
                     nb_tiles: 3 // L_tile=16
@@ -845,7 +845,7 @@
                 {
                     name: einfft A
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 784 // x4
                     dModel: 96 // 64 -> mult of 96 (nBranches=4, dPerB mult 24)
                     nb_tiles: 1
@@ -858,21 +858,21 @@
                 {
                     name: einfft B
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 192 // x4.083333
                     dModel: 192 // 128 -> mult of 96
                 }
                 {
                     name: einfft C
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 96 // x2
                     dModel: 384 // 320 -> mult of 96
                 }
                 {
                     name: einfft D
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 48 // x1.020833
                     dModel: 576
                 }
@@ -884,7 +884,7 @@
                 {
                     name: rms A
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 3136 // x1
                     dModel: 64
                     nb_tiles: 28 // L_tile=112
@@ -892,7 +892,7 @@
                 {
                     name: rms B
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 784 // x1
                     dModel: 128
                     nb_tiles: 7 // L_tile=112
@@ -900,7 +900,7 @@
                 {
                     name: rms C
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 192 // x1
                     dModel: 320
                     nb_tiles: 4 // L_tile=48
@@ -908,7 +908,7 @@
                 {
                     name: rms D
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 48 // x1
                     dModel: 448
                     nb_tiles: 3 // L_tile=16
@@ -922,7 +922,7 @@
                 {
                     name: SUC A
                     model: Simba-S IN
-                    force: false
+                    force: true
                     seqLen: 3136 // x1
                     dModel: 72 // 64 -> mult of 24
                     dtRank: 24

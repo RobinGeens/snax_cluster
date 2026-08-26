@@ -179,21 +179,22 @@ class DataGenerator(DataGeneratorBase):
         r13_bias_tb = [Mu // (16 // conv_unroll), dim1_bound, N_os, 1]
         r13_bias_ts = [0, group_bytes, dim1_bound * group_bytes, 0]
 
-        # R7_widen reads rr/ii (skip-128, OS half); R7_bf16_skip reads the IS psum P
-        # (skip-128, IS half) in the folded imag narrow. The other SIMD streamers touch
-        # only contiguous staging/bias/output buffers and stay linear.
+        # R7_widen and R13_fp8_skip read rr/ii (skip-128, OS half) in the fused real
+        # pass1'; R7_bf16_skip reads the IS psum P (skip-128, IS half) in the folded
+        # imag narrow. The other SIMD streamers touch only contiguous staging/bias/output
+        # buffers and stay linear.
         r7_spatial = [BANK_BYTES, 2 * BANK_BYTES]
         r7_widen_skip_tb, r7_widen_skip_ts = skip128([n_fp8_cycles], [32])
+        r13_fp8_skip_tb, r13_fp8_skip_ts = skip128([n_fp8_cycles], [32])
         r7_bf16_skip_tb, r7_bf16_skip_ts = skip128([n_bf16_cycles], [32])
 
         simd_streamers = {
             "R7_widen": (r7_widen_skip_tb, r7_widen_skip_ts, r7_spatial),
+            "R13_fp8_skip": (r13_fp8_skip_tb, r13_fp8_skip_ts, [BANK_BYTES]),
             "W3_widen": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "R7_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], r7_spatial),
             "R7_bf16_skip": (r7_bf16_skip_tb, r7_bf16_skip_ts, r7_spatial),
-            "R13_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "R13_bias": (r13_bias_tb, r13_bias_ts, [BANK_BYTES]),
-            "W3_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "W3_fp8": ([n_fp8_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
         }
 
@@ -267,8 +268,10 @@ class DataGenerator(DataGeneratorBase):
             "length_bias_mini_branch": len_bias_mini_branch,
             "length_bias_im_branch": len_bias_im_branch,
             "IS_OSGEMM_NO_REQUANT": iosgemm_no_requant,
-            "SIMD_ADD_BF16_RELU": self.kwargs["M40_SIMD_ADD_BF16_RELU"],
             "SIMD_NOOP_BF16_REQUANT_RELU": noop_bf16_requant_relu,
+            "SIMD_SUB_FP8_REQUANT": self.kwargs["M51_SIMD_SUB_FP8_REQUANT"],
+            "SIMD_ADD_BF16_REQUANT": self.kwargs["M53_SIMD_ADD_BF16_REQUANT"],
+            "SIMD_ADD_BF16_RELU_REQUANT": self.kwargs["M54_SIMD_ADD_BF16_RELU_REQUANT"],
         }
 
         test_data = {name: "uint8_t" for name, _ in specs}

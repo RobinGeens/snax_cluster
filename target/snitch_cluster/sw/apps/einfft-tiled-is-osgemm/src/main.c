@@ -78,8 +78,6 @@ int main(void) {
     p                    = _ALIGN64(p + M3_length_cd);
     uint16_t* ptr_bf16_a = (uint16_t*)p;
     p                    = _ALIGN64(p + M3_length_bf16);  // real SIMD staging
-    uint16_t* ptr_bf16_b = (uint16_t*)p;
-    p                    = _ALIGN64(p + M3_length_bf16);
     uint16_t* ptr_b_re   = (uint16_t*)p;
     p                    = _ALIGN64(p + M3_length_bias_mini_branch);  // real bias (conv-walk)
     uint8_t* ptr_out_re  = p;
@@ -111,7 +109,7 @@ int main(void) {
         uint16_t* b_im_l3       = (layer == 0) ? M3_bias_1_imag_full : M3_bias_2_imag_full;
         uint8_t* out_re_l3      = l3_out_re[layer];
         uint8_t* out_im_l3      = l3_out_im[layer];
-        uint32_t add_bias_mode  = (layer == 0) ? M3_SIMD_ADD_BF16_RELU : M8_SIMD_ADD_BF16;  // real bias-add
+        uint32_t add_bias_mode  = (layer == 0) ? M3_SIMD_ADD_BF16_RELU_REQUANT : M3_SIMD_ADD_BF16_REQUANT;
         uint32_t narrow_im_mode = (layer == 0) ? M3_SIMD_NOOP_BF16_REQUANT_RELU : M24_SIMD_NOOP_BF16_REQUANT;
 
         for (uint32_t b = 0; b < M3_nBranches; b++) {
@@ -166,52 +164,21 @@ int main(void) {
                 run_iosgemm();  // P = b_im + ri + ir
                 simbacore_cycles += read_simbacore_perf_counter();
 
-                // ============ REAL fuse: out_re = ReLU?(rr - ii + b_re) ============
-                // ConvFormat FP8 chain (widen, SUB, bias-add, narrow) — same as einfft.
-                set_simbacore_csr(M25_SIMD_NOOP_FP8_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, 1);
-                // 1: widen rr -> bf16_a
-                set_simd_streamer_no_b((uint32_t)ptr_rr, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
-                                       (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
-                write_csr(MODE, M25_SIMD_NOOP_FP8_REQUANT);
+                // ============ REAL fuse (2 launches): out_re = ReLU?(widen(fp8(rr - ii)) + b_re) ============
+                // pass1': FP8 SUB + requant: rr - ii -> bf16_a
+                set_simbacore_csr(M3_SIMD_SUB_FP8_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, 1);
+                set_simd_streamer_csr((uint32_t)ptr_rr, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
+                                      (uint32_t)ptr_ii, M3_R13_fp8_ss, M3_R13_fp8_tb, M3_R13_fp8_ts,
+                                      (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
                 simd_pulse();
-                write_csr(BASE_PTR_READER_7_LOW, (uint32_t)ptr_ii);
-                write_csr(BASE_PTR_WRITER_3_LOW, (uint32_t)ptr_bf16_b);
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));
                 simbacore_cycles += read_simbacore_perf_counter();
-                // 2: widen ii -> bf16_b ; prep SUB streamers
-                simd_pulse();
+                // pass2': BF16 ADD bias + requant (+ ReLU in layer 1) -> out_re (FP8)
                 set_simd_streamer_csr((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
-                                      (uint32_t)ptr_bf16_b, M3_R13_bf16_ss, M3_R13_bf16_tb, M3_R13_bf16_ts,
-                                      (uint32_t)ptr_bf16_a, M3_W3_bf16_ss, M3_W3_bf16_tb, M3_W3_bf16_ts);
-                while (read_csr(SIMBACORE_BUSY));
-                while (read_csr(STREAMER_BUSY_CSR));
-                simbacore_cycles += read_simbacore_perf_counter();
-                // 3: SUB bf16_a - bf16_b -> bf16_a
-                write_csr(MODE, M9_SIMD_SUB_BF16);
-                simd_pulse();
-                while (read_csr(SIMBACORE_BUSY));
-                while (read_csr(STREAMER_BUSY_CSR));
-                simbacore_cycles += read_simbacore_perf_counter();
-                // 4: ADD bias (conv-walk R13) -> bf16_a ; prep narrow
-                write_csr(BASE_PTR_READER_13_LOW, (uint32_t)ptr_b_re);
-                write_csr(T_BOUND_BASE_READER_13 + 0, M3_R13_bias_tb[0]);
-                write_csr(T_BOUND_BASE_READER_13 + 1, M3_R13_bias_tb[1]);
-                write_csr(T_BOUND_BASE_READER_13 + 2, M3_R13_bias_tb[2]);
-                write_csr(T_BOUND_BASE_READER_13 + 3, M3_R13_bias_tb[3]);
-                write_csr(T_STRIDE_BASE_READER_13 + 0, M3_R13_bias_ts[0]);
-                write_csr(T_STRIDE_BASE_READER_13 + 1, M3_R13_bias_ts[1]);
-                write_csr(T_STRIDE_BASE_READER_13 + 2, M3_R13_bias_ts[2]);
-                write_csr(T_STRIDE_BASE_READER_13 + 3, M3_R13_bias_ts[3]);
+                                      (uint32_t)ptr_b_re, M3_R13_bias_ss, M3_R13_bias_tb, M3_R13_bias_ts,
+                                      (uint32_t)ptr_out_re, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
                 write_csr(MODE, add_bias_mode);
-                simd_pulse();
-                set_simd_streamer_no_b((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
-                                       (uint32_t)ptr_out_re, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
-                while (read_csr(SIMBACORE_BUSY));
-                while (read_csr(STREAMER_BUSY_CSR));
-                simbacore_cycles += read_simbacore_perf_counter();
-                // 5: narrow bf16_a -> out_re (FP8)
-                write_csr(MODE, M24_SIMD_NOOP_BF16_REQUANT);
                 simd_pulse();
                 while (read_csr(SIMBACORE_BUSY));
                 while (read_csr(STREAMER_BUSY_CSR));

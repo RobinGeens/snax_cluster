@@ -122,25 +122,42 @@ int main() {
         printf("\nStarting program: suc-carry (L=%d, dModel=%d, dInner=%d, NB=%u, L_tile=%u, bc=%u, dbuf)\n\n", seqLen,
                dModel, dInner, M2_NB_L_TILES, M2_L_tile, M2_BC_broadcast);
         if (bc_swizzle) write_csr(ADDR_REMAP_INDEX_READER_7, 1);  // BC read through the XOR swizzle
+        // One-time full config (slot 0); per tile only MODE, base pointers and the two boundary bounds change.
+        set_streamer_suc_carry((uint32_t)ptr_dt[0], (uint32_t)ptr_dt_w1, (uint32_t)ptr_dt_w2, (uint32_t)ptr_dt_bias,
+                               (uint32_t)ptr_A, (uint32_t)ptr_BC[0], (uint32_t)ptr_D, (uint32_t)ptr_x[0],
+                               (uint32_t)ptr_z[0], (uint32_t)ptr_y[0], (uint32_t)ptr_state, true,
+                               M2_NB_L_TILES > 1u);
+        write_csr(T_BOUND_BASE_READER_13, 0);  // no state load on tile 0
+        set_simbacore_csr(M34_SUC_ONLY_STATE_SAVE, M2_L_tile, dModel, dInner, dtRank, dModel);
         start_cycles = snrt_mcycle();
     }
 
     for (uint32_t lt = 0; lt < M2_NB_L_TILES; lt++) {
         uint32_t cur = lt & 1u;
 
-        // core 0: configure + (non-blocking) start the accelerator on the current slot.
+        // core 0: write MODE + start (config was preloaded), then preload the next tile's config
+        // while the accelerator runs.
         if (snrt_global_core_idx() == 0) {
-            bool load_en  = (lt != 0);
-            bool save_en  = (lt != M2_NB_L_TILES - 1u);
             uint32_t mode = (lt == 0)                    ? M34_SUC_ONLY_STATE_SAVE
                             : (lt == M2_NB_L_TILES - 1u) ? M36_SUC_ONLY_STATE_LOAD
                                                          : M35_SUC_ONLY_STATE_CARRY;
-            set_streamer_suc_carry((uint32_t)ptr_dt[cur], (uint32_t)ptr_dt_w1, (uint32_t)ptr_dt_w2,
-                                   (uint32_t)ptr_dt_bias, (uint32_t)ptr_A, (uint32_t)ptr_BC[cur], (uint32_t)ptr_D,
-                                   (uint32_t)ptr_x[cur], (uint32_t)ptr_z[cur], (uint32_t)ptr_y[cur],
-                                   (uint32_t)ptr_state, load_en, save_en);
-            set_simbacore_csr(mode, M2_L_tile, dModel, dInner, dtRank, dModel);
-            start_simbacore_and_streamers(M2_R10_en, 0, 0, 0);
+            write_csr(MODE, mode);
+            _set_streamer_start();
+            _set_simbacore_start();
+            write_csr(DELAYED_START_READER_10, 1);
+            write_csr(STREAMER_START_CSR, 0);
+            write_csr(SIMBACORE_START, 0);
+            write_csr(DELAYED_START_READER_10, 0);
+            if (lt + 1u < M2_NB_L_TILES) {
+                uint32_t nxt = cur ^ 1u;
+                write_csr(BASE_PTR_READER_2_LOW, (uint32_t)ptr_dt[nxt]);
+                write_csr(BASE_PTR_READER_7_LOW, (uint32_t)ptr_BC[nxt]);
+                write_csr(BASE_PTR_READER_9_LOW, (uint32_t)ptr_x[nxt]);
+                write_csr(BASE_PTR_READER_10_LOW, (uint32_t)ptr_z[nxt]);
+                write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y[nxt]);
+                if (lt == 0) write_csr(T_BOUND_BASE_READER_13, M2_R13_state_tb[0]);        // state load from tile 1
+                if (lt + 2u == M2_NB_L_TILES) write_csr(T_BOUND_BASE_WRITER_3, 0);         // no state save on last tile
+            }
         }
 
         // DM core (concurrent with compute): gather next tile + spill previous tile.
@@ -153,7 +170,8 @@ int main() {
 
         // core 0: wait for the accelerator to finish this tile.
         if (snrt_global_core_idx() == 0) {
-            wait_simbacore_and_streamer();
+            while (read_csr(SIMBACORE_BUSY));
+            while (read_csr(STREAMER_BUSY_CSR));
             asm volatile("fence" ::: "memory");
             simbacore_cycles += read_simbacore_perf_counter();
         }

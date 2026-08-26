@@ -9,7 +9,7 @@
 #   DMA x_re, x_im, bias_re_bcast, bias_im_bcast into TCDM.
 #   Weight tiles ping-ponged (W_re, W_im × 2).
 #   4 OSGEMM scratch buffers (rr, ii, ri, ir) at FULL per-branch size.
-#   2 BF16 staging buffers for SIMD fuse.
+#   1 BF16 staging buffer for the SIMD fuse.
 #   Output re/im DMA'd out to L3.
 #
 # Only ONE branch is resident at a time — peak = per-branch footprint.
@@ -88,7 +88,6 @@ def build_report(params: dict) -> MemoryReport:
 
     bf16_bufs = [
         ("bf16_a",  len_bf16),
-        ("bf16_b",  len_bf16),
     ]
     report.add_section("BF16 staging (TILE)", bf16_bufs)
 
@@ -98,7 +97,7 @@ def build_report(params: dict) -> MemoryReport:
         + align64(len_d_tile) * 2 * 2            # out_re_pp[2] + out_im_pp[2]
         + align64(len_w_branch_tile) * 2 * 2     # W_re_pp[2] + W_im_pp[2]
         + align64(len_d_tile) * 4                # rr, ii, ri, ir
-        + align64(len_bf16) * 2                  # bf16_a, bf16_b
+        + align64(len_bf16)                      # bf16_a
     )
 
     # L3 staging

@@ -69,7 +69,8 @@ are **no byte-shuffling C helpers in the program** (see §6.3).
 The OS-core writes its `D` output in **ConvFormat per branch** (see
 [memory_layouts/03](../../../chisel-ssm/docs/memory_layouts/03_conv_format.md)),
 and the SIMD streamers walk that buffer linearly (= same byte order)
-through widen → SUB/ADD → bias-add → narrow. Crucially, every staging
+through the fused SUB/ADD + requant and bias-add + requant launches.
+Crucially, every staging
 buffer carries data in **conv-walk byte order**: lane `k` of any SIMD
 launch reads byte `2k` (BF16) or byte `k` (FP8) of the buffer, which is
 the BF16-of-FP8-of conv-walk position `k`.
@@ -85,9 +86,9 @@ This is enabled by three coordinated decisions:
    `bias[branch][col(t)]`. The SIMD ADD step's R13 reads this linearly,
    so lane `k` of R13 supplies the right `bias[col]` for whatever
    logical `(row, col)` position lane `k` of R7 happens to be processing.
-3. **ReLU is folded into the SIMD launch** via a synthesized
-   `SIMD_ADD_BF16 + doRelu` mode (`M3_SIMD_ADD_BF16_RELU`, encoded in
-   `datagen.py`). No Snitch-side BF16 sign-bit clamp loop.
+3. **ReLU is folded into the SIMD launch** via the
+   `SIMD_ADD_BF16_RELU_REQUANT` mode. No Snitch-side BF16 sign-bit clamp
+   loop.
 
 Without these three, the program would need C helpers to gather
 ConvFormat → flat / scatter flat → flatA / broadcast bias / clamp BF16,
@@ -118,7 +119,7 @@ DMA'd into TCDM before the four OSGEMMs run. With `L=16, D=192`
   packs `W_re|W_im` adjacently and is double-buffered against the next tile.
 - Each tile's two OSGEMMs write two TILE-sized ConvFormat scratches
   (`out_A=[rr|ri]`, `out_B=[ir|ii]`; `rr/ri/ir/ii` are each `L × dPerB_tile`
-  halves), and the SIMD widen / SUB / ADD-with-bias / narrow chain runs
+  halves), and the 2-launch SIMD fuse (§6.7) runs
   **immediately for that tile** (per side, at tile bounds) before the next
   tile's OSGEMM. Output tiles are spilled to L3 as they are produced.
   Consequently the scratch, the BF16 staging, and the output buffers only
@@ -174,14 +175,12 @@ DMA-in W_re_branch, W_im_branch (full per-branch weight matrices)
    ii = x_im @ W_im
    ri = x_re @ W_im
 for side in {real, imag}:
-   widen pos (FP8 ConvFormat → BF16, NOOP_FP8_REQUANT)  pos→bf16_a
-   widen neg                                            neg→bf16_b
-   bf16 binop (SUB for real, ADD for imag)              bf16_a (±) bf16_b → bf16_a
-   bf16 ADD with bias broadcast (R13 reads bias_*_bcast)
-     layer 1: mode = SIMD_ADD_BF16 + doRelu (M3_SIMD_ADD_BF16_RELU)
-     layer 2: mode = SIMD_ADD_BF16
-                                                       bf16_a + bias → bf16_a
-   narrow BF16 → FP8 NOOP_BF16_REQUANT                 bf16_a → out_full_branch
+   FP8 binop + requant (SUB_FP8_REQUANT real,
+     ADD_FP8_REQUANT imag)                             pos (±) neg → bf16_a (BF16)
+   bf16 ADD bias + requant (R13 reads bias_*_bcast)
+     layer 1: SIMD_ADD_BF16_RELU_REQUANT
+     layer 2: SIMD_ADD_BF16_REQUANT
+                                                       bf16_a + bias → out_full_branch (FP8)
 ```
 
 `x_re/x_im` are FULL inputs (all 4 branches concatenated), pre-loaded
@@ -190,14 +189,14 @@ pre-loaded at boot; the four bias buffers (pre-expanded over L into
 conv-walk order) are pre-loaded too. Only the per-branch weight tiles
 are DMA'd inside the branch loop.
 
-All SIMD streamer strides — for widen, BF16 binop, narrow — come from
-`datagen.py` as `M3_R7_*`, `M3_R13_*`, `M3_W3_*` constants. The C side
-calls `set_simd_streamer_csr / set_simd_streamer_no_b` with those
-constants and then `write_csr(BASE_PTR_*, ...)` to rebind only the
-moving base pointers between launches.
+All SIMD streamer strides come from `datagen.py` as `M3_R7_*`,
+`M3_R13_*`, `M3_W3_*` constants. The C side calls
+`set_simd_streamer_csr` with those constants per launch (the FP8 and
+BF16 launches need different temporal bounds, so each launch rewrites
+its full streamer program).
 
-The four OS-core scratches (`rr / ii / ri / ir`) and the two BF16
-staging buffers (`bf16_a`, `bf16_b`) are per-branch — i.e., overwritten
+The four OS-core scratches (`rr / ii / ri / ir`) and the BF16
+staging buffer (`bf16_a`) are per-branch — i.e., overwritten
 each iteration. The four `output_{1,2}_{real,imag}` buffers in TCDM
 stay FULL (all 4 branches) for the whole program; the SIMD narrow at
 the end of each (layer, branch) writes 768 contiguous FP8 bytes into
@@ -246,7 +245,7 @@ staging / output stay one tile in size. It works for any
 | `l1_re/im[0..3]`, `l2_re/im[0..3]`  | `4 · L · (D/4)` each     | **FULL**, SIMD narrow writes into them in ConvFormat per branch            |
 | `W_re_branch`, `W_im_branch`        | `(D/4)²` each            | **per-branch**, re-DMA'd at every branch iteration                         |
 | `rr / ii / ri / ir`                 | `L · (D/4)`              | **per-branch scratch** (un-tiled, 4 bufs); in `einfft-tiled` packed as `out_A=[rr\|ri]`, `out_B=[ir\|ii]` (2 bufs), **per-TILE** `L · (D/4)/nb_tiles` each half |
-| `bf16_a`, `bf16_b`                  | `L · (D/4) · BF16` each  | **per-branch staging** (un-tiled); **per-TILE** in `einfft-tiled`           |
+| `bf16_a`                            | `L · (D/4) · BF16`       | **per-branch staging** (un-tiled); **per-TILE** in `einfft-tiled`           |
 
 In `einfft-tiled` the scratch, BF16 staging, and output buffers are
 TILE-sized (`/nb_tiles`) because the fuse runs per tile, and x / x2 /
@@ -273,25 +272,32 @@ against the ConvFormat reference; it is not re-read by layer 2.
 
 ## 6.7 SIMD pipeline per side
 
-A per-side fuse is 5 SIMD launches. All streamer configs are emitted by
+A per-side fuse is 2 SIMD launches. All streamer configs are emitted by
 `datagen.py`:
 
-| Step | Mode                       | R7 base   | R13 base                        | W3 base       |
-| ---- | -------------------------- | --------- | ------------------------------- | ------------- |
-| 1    | `NOOP_FP8_REQUANT`         | `pos`     | —                               | `bf16_a`      |
-| 2    | `NOOP_FP8_REQUANT`         | `neg`     | —                               | `bf16_b`      |
-| 3    | `SUB_BF16` / `ADD_BF16`    | `bf16_a`  | `bf16_b`                        | `bf16_a`      |
-| 4    | `ADD_BF16` (+ doRelu in L1) | `bf16_a` | `b_*_bc_branch` (conv-walk order) | `bf16_a`      |
-| 5    | `NOOP_BF16_REQUANT`        | `bf16_a`  | —                               | `out_branch`  |
+| Step | Mode                                    | R7 base  | R13 base                          | W3 base      |
+| ---- | --------------------------------------- | -------- | --------------------------------- | ------------ |
+| 1    | `SUB_FP8_REQUANT` / `ADD_FP8_REQUANT`   | `pos`    | `neg`                             | `bf16_a`     |
+| 2    | `ADD_BF16_REQUANT` (+ doRelu in L1)     | `bf16_a` | `b_*_bc_branch` (conv-walk order) | `out_branch` |
 
-Only step 1 needs a full `set_simd_streamer_no_b` (the previous launch
-was the OSGEMM, with different streamers active); steps 2–5 mostly
-rebind base pointers via `write_csr(BASE_PTR_*_LOW, ...)` and write
-the new `MODE` CSR. The mode for step 4 in layer 1 is the synthesized
-value `M3_SIMD_ADD_BF16_RELU = SIMD_ADD_BF16 | doRelu` emitted by
-datagen — the chisel `SimbaCoreMode.isKnown` table does not contain it,
-but the HW bits decode the same way the recognised modes do (the
-"`Unknown mode`" warning in the sim is purely informational).
+Step 1 runs on the FP8 SIMD core: the sub/add result is rounded to FP8
+first (the FP8 adder outputs FP8), then doRequant widens it exactly to
+BF16 in `bf16_a`. The golden generators mirror this rounding
+(`quantize(accType, quantize(inType, a ∓ b))`), so it is a real (small)
+numerics difference versus a BF16 subtract. Step 2 is the BF16 bias add
+(+ ReLU in layer 1) with doRequant narrowing straight to FP8 —
+bit-identical to the former separate ADD then `NOOP_BF16_REQUANT`
+passes.
+
+FP8-in/BF16-out requant launches run at 16 elems/cycle (bound by the
+BF16 output serializer), so step 1 costs about the same as one former
+widen pass; the fuse still saves three launches per side and drops the
+`bf16_b` staging buffer entirely. The two launches use different
+temporal-bound shapes (FP8 `n/32` beats vs BF16 `n/16` beats), so each
+launch programs its full R7/R13/W3 config with `set_simd_streamer_csr`.
+All four fused modes (`SIMD_SUB_FP8_REQUANT`, `SIMD_ADD_FP8_REQUANT`,
+`SIMD_ADD_BF16_REQUANT`, `SIMD_ADD_BF16_RELU_REQUANT`) are in
+`SimbaCoreMode.isKnown`.
 
 ## 6.8 Verification
 
@@ -315,7 +321,7 @@ The bank-conflict-free `einfft-double-conflictfree` variant is
 [20. Double GEMM, bank-conflict-free](20_double_gemm_conflict_free.md).
 
 - **REAL side → OS-core** (`rr = x_re·W_re`, `ii = x_im·W_im`): FP8 ConvFormat,
-  fused exactly like `einfft` (widen → SUB → bias-add → narrow).
+  fused exactly like `einfft` (FP8 SUB + requant → bias-add + requant, §6.7).
 - **IMAG side → IS-core** (`ri = x_re·W_im`, `ir = x_im·W_re`): raw BF16
   `flattenCD`, NO_REQUANT — so the intermediates are *not* re-quantized to FP8
   (strictly more accurate than the OS-only variant).

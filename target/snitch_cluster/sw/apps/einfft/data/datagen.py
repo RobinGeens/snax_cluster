@@ -144,14 +144,13 @@ class DataGenerator(DataGeneratorBase):
         n_bf16_cycles = n_elems // 16                     # BF16: 16 lanes/cycle
 
         simd_streamers = {
-            # Widen FP8 → BF16.
+            # Fused FP8 binop + requant: R7/R13 read FP8, W3 writes BF16.
             "R7_widen": ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
+            "R13_fp8":  ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "W3_widen": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            # BF16 binop (ADD / SUB).
+            # Fused BF16 bias-add + requant: R7/R13 read BF16, W3 writes FP8.
             "R7_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
             "R13_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            "W3_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
-            # Narrow BF16 → FP8.
             "W3_fp8":   ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
         }
 
@@ -187,7 +186,7 @@ class DataGenerator(DataGeneratorBase):
         per_branch_bytes = (
             _align64(len_w_branch) * 2 +                   # W_re + W_im
             _align64(len_d) * 4 +                          # rr, ii, ri, ir
-            _align64(len_bf16) * 2                         # bf16_a, bf16_b
+            _align64(len_bf16)                             # bf16_a
         )
         total_l1_bytes = _align64(shared_bytes) + per_branch_bytes
         assert total_l1_bytes <= self.TCDM_BYTES, (
@@ -246,7 +245,10 @@ class DataGenerator(DataGeneratorBase):
             "length_d":               len_d,
             "length_bf16":            len_bf16,
             "length_bias_bcast_branch": len_bias_bcast_branch,
-            "SIMD_ADD_BF16_RELU":     self.kwargs["M40_SIMD_ADD_BF16_RELU"],
+            "SIMD_SUB_FP8_REQUANT":   self.kwargs["M51_SIMD_SUB_FP8_REQUANT"],
+            "SIMD_ADD_FP8_REQUANT":   self.kwargs["M52_SIMD_ADD_FP8_REQUANT"],
+            "SIMD_ADD_BF16_REQUANT":  self.kwargs["M53_SIMD_ADD_BF16_REQUANT"],
+            "SIMD_ADD_BF16_RELU_REQUANT": self.kwargs["M54_SIMD_ADD_BF16_RELU_REQUANT"],
         }
 
         # ---- Test data + sampled checks ---------------------------------------
