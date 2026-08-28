@@ -6,6 +6,8 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "machine.hpp"  // Agu
@@ -25,9 +27,27 @@ using FifoRow = std::array<int16_t, 18>;
 // hjson.) Index = streamer port: readers R0..R13 = 0..13, writers W0..W3 = 14..17. The depths are
 // heterogeneous (osCore weight R1 = 3, dt_BC R7 = 4, isCore weight R12 = 6), so a uniform depth
 // over-hides contention on the shallow ports. KEEP THIS ARRAY IN SYNC WITH THE HJSON.
+// MEMSIM_STREAMER_DEPTHS="r0,..,r13,w0,..,w3" (18 ints) overrides the hjson depths for
+// what-if sweeps without a rebuild; malformed values are ignored with a warning.
 inline int snax_streamer_depth(int port_idx) {
-    static const int D[18] = {8, 3, 8, 1, 6, 3, 2, 4, 1, 6, 7, 2, 6, 4,  // R0..R13  (reader fifo_depth)
-                              4, 8, 3, 4};                                // W0..W3   (writer fifo_depth)
+    static const int* D = [] {
+        static int d[18] = {8, 3, 8, 1, 6, 3, 2, 4, 1, 6, 7, 2, 6, 4,  // R0..R13  (reader fifo_depth)
+                            4, 8, 3, 4};                                // W0..W3   (writer fifo_depth)
+        if (const char* e = std::getenv("MEMSIM_STREAMER_DEPTHS")) {
+            int v[18], n = 0;
+            const char* s = e;
+            while (n < 18 && *s) {
+                char* end;
+                long x = std::strtol(s, &end, 10);
+                if (end == s) break;
+                v[n++] = (int)x;
+                s = (*end == ',') ? end + 1 : end;
+            }
+            if (n == 18) { for (int i = 0; i < 18; i++) d[i] = v[i] > 0 ? v[i] : 1; }
+            else std::fprintf(stderr, "MEMSIM_STREAMER_DEPTHS: expected 18 ints, got %d -- ignored\n", n);
+        }
+        return d;
+    }();
     return (port_idx >= 0 && port_idx < 18) ? D[port_idx] : 4;
 }
 
@@ -176,6 +196,7 @@ struct CycReader {
     int addr_depth = 4;                     // request-side address FIFO (outstanding/unlanded)
     int reuse = 1;                          // replays per group (stride-0 dim0 bound)
     int port = 0;
+    int remap = 0;                          // AGU address remap (agu_swz)
 
     // per-lane pipelined state
     long lane_issued[8] = {0};             // groups this lane has had granted
@@ -243,6 +264,7 @@ struct CycWriter {
     int32_t sstride[2] = {8, 0};
     int sbound[2] = {1, 1};
     int port = 0;
+    int remap = 0;         // AGU address remap (agu_swz)
     int depth = 8;         // output-FIFO depth: a near-full writer (>= depth-1) asserts TCDM priority
     int ti[4] = {0, 0, 0, 0};
     bool lane_done[8] = {false};

@@ -69,7 +69,7 @@ int AccelEngine::r7bank(long st, int lane) const {
     int64_t toff = t0 * r7ts_[0] + t1 * r7ts_[1] + t2 * r7ts_[2] + t3 * r7ts_[3];
     int i = lane % 2, j = lane / 2;
     int64_t soff = (int64_t)i * p_[P_R7].s_stride[0] + (int64_t)j * p_[P_R7].s_stride[1];
-    return (int)(((uint32_t)(p_[P_R7].base + toff + soff) >> 3) & 31);
+    return (int)((agu_swz((uint32_t)(p_[P_R7].base + toff + soff), p_[P_R7].remap) >> 3) & 31);
 }
 
 void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_start_cnt, long r11_start_cnt,
@@ -141,7 +141,13 @@ void AccelEngine::configure(const Agu* ports, const SimbacoreCfg& cfg, long r10_
     r12_.configure(p_[P_R12], 4, 1, snax_streamer_depth(P_R12), T_R12);
     r13_en_ = p_[P_R13].enabled;  // isCore psum read-back — real TCDM contention
     if (r13_en_) r13_.configure(p_[P_R13], 4, 1, snax_streamer_depth(P_R13), T_R13);
-    w3_.configure(p_[P_W3], 4, 1, T_W3); w3_.depth = snax_streamer_depth(P_W3);
+    // SUC-only hidden-state carry: in_state via R13, out_state via W3, concurrent with the scan.
+    suc_state_ld_ = !en_isc_ && ((cfg.mode >> 1) & 1) && r13_en_;
+    suc_state_sv_ = !en_isc_ && (cfg.mode & 1) && p_[P_W3].enabled;
+    w3_.configure(p_[P_W3], 4, suc_state_sv_ ? 2 : 1, T_W3); w3_.depth = snax_streamer_depth(P_W3);
+    r13_pop_ = w3_push_ = 0;
+    r13_tot_ = r13_en_ ? r13_.total_read_groups() : 0;
+    w3st_tot_ = w3_.total_beats();
     wbpt_is_ = w3_.total_beats() / std::max(1L, n_tiles_is_); if (wbpt_is_ < 1) wbpt_is_ = 1;
     as_os_ = tiles_os_ = as_is_ = tiles_is_ = 0; os_owed_ = is_owed_ = 0;
     serDesA_ = (long)Mu * 24 / 8; isc_aload_ = serDesA_; isc_since_a_ = 0;  // isCore A=y s2p fill (48 beats)
@@ -248,11 +254,14 @@ bool AccelEngine::step_p1() {
     // isCore output W3: drip 1/cycle, hold a tile until its predecessor has drained (Array.scala:200
     // output-FIFO back-pressure) -> a full W3 stalls the isCore and W3 stays <= depth.
     if (is_owed_ > 0 && w3_.fifo_occ < w3_.depth) { w3_.push(1); is_owed_--; }
-    bool stream_ahead = (long double)as_is_ * iters_ <= (long double)sw_elem_ * n_tiles_is_ * K_is_;
+    // IS_OSGEMM (R11 enabled): the isCore GEMM is INDEPENDENT of the osCore one — its A comes from
+    // TCDM via R11 (which then gates the array like any operand), not from the osCore stream.
+    bool stream_ahead = r11p1_en_ || (long double)as_is_ * iters_ <= (long double)sw_elem_ * n_tiles_is_ * K_is_;
     if (tiles_is_ < n_tiles_is_ && stream_ahead && r12_.fifo_occ > 0 && (!r13_en_ || r13_.fifo_occ > 0)
+        && (!r11p1_en_ || r11_.fifo_occ > 0)
         && ((as_is_ + 1) % K_is_ != 0 || is_owed_ == 0)) {
         r12_.pop();
-        if (r11p1_en_ && r11_.fifo_occ > 0) r11_.pop();  // isCore A (paced to array, never gates)
+        if (r11p1_en_) r11_.pop();
         if (r13_en_) r13_.pop();
         if (++as_is_ % K_is_ == 0) { tiles_is_++; is_owed_ += wbpt_is_; g_iscore_++; }
     }
@@ -442,6 +451,7 @@ bool AccelEngine::step() {
     if (en_isc_) { r11_.land_reads(); if (r11_.done) r11_.reset();
                    r12_.land_reads(); if (r12_.done) r12_.reset();
                    if (r13_en_) r13_.land_reads(); }  // psum read-back is single-pass (no reset)
+    if (suc_state_ld_) r13_.land_reads();             // state-carry in_state stream
 
     // osCore disabled => z preloaded, release the SUC at once; isCore disabled => stays parked.
     bool suc_rel = !en_os_ || rel_r10_ || (g_r10_ >= r10_cnt_);
@@ -490,6 +500,16 @@ bool AccelEngine::step() {
         if ((out_su_ % 8) == 0) r10_.pop();
         if (++k7_ == delaySU) { k7_ = 0; have_bc_ = false; }
     }
+    // State carry: consume/produce state groups in proportion to scan progress (R13 one group
+    // ahead, W3 trailing), so the state traffic contends with R7/R10/W2 as in the RTL. The RTL
+    // hides most of the state streaming under the scan; the residual serial exposure at small
+    // L_tile (SUC C/D) is NOT modelled -> those rows sit ~-11% and are offset-calibrated.
+    if (suc_state_ld_ && r13_.fifo_occ > 0 && iters_ > 0
+        && (long double)r13_pop_ * iters_ <= (long double)out_su_ * r13_tot_ + iters_)
+        { r13_.pop(); r13_pop_++; }
+    if (suc_state_sv_ && w3_push_ < w3st_tot_ && iters_ > 0
+        && ((long double)w3_push_ + 1) * iters_ <= (long double)out_su_ * w3st_tot_)
+        { w3_.push(1); w3_push_++; }
     // isCore output W3: same physical back-pressure as W0 (drip 1/cycle, hold a tile until its
     // predecessor has drained out of the array's output registers; a full W3 stalls the isCore).
     if (is_owed_ > 0 && w3_.fifo_occ < w3_.depth) { w3_.push(1); is_owed_--; }
@@ -515,9 +535,11 @@ bool AccelEngine::step() {
 
     if (res_.osc_end == 0 && tiles_os_ == n_tiles_os_ && w0_.written >= Wz_) res_.osc_end = cyc_;
     if (res_.suc_end == 0 && out_su_ >= iters_) res_.suc_end = cyc_;
-    // isCore present => end when W3 drains; SUC-only (isCore disabled) => end when the SUC's W2 drains.
+    // isCore present => end when W3 drains; SUC-only (isCore disabled) => end when the SUC's W2 drains
+    // (and, with state save, the W3 out_state stream too).
     bool fin = en_isc_ ? (tiles_is_ == n_tiles_is_ && w3_.written >= w3_.total_beats())
-                       : (out_su_ >= iters_ && w2_.written >= w2_.total_beats());
+                       : (out_su_ >= iters_ && w2_.written >= w2_.total_beats()
+                          && (!suc_state_sv_ || w3_.written >= w3st_tot_));
     if (fin) {
         res_.busy = cyc_; res_.isc_end = cyc_;
         res_.sw_start = sw_first_; res_.sw_end = sw_last_;
@@ -537,7 +559,8 @@ bool AccelEngine::step() {
     w2_.propose(fabric_);
     if (sw_en_) { r2sw_.propose(fabric_); r3sw_.propose(fabric_); if (r5sw_.active) r5sw_.propose(fabric_); }
     if (isc_rel) { r11_.propose(fabric_); r12_.propose(fabric_); if (r13_en_) r13_.propose(fabric_); }
-    if (en_isc_) w3_.propose(fabric_);
+    if (suc_state_ld_) r13_.propose(fabric_);
+    if (en_isc_ || suc_state_sv_) w3_.propose(fabric_);
 
     bool g[64];
     fabric_.arbitrate(g);
@@ -559,7 +582,8 @@ bool AccelEngine::step() {
     if (isc_rel) { long off = word_off(r11_.ts, r11_.ti); long pp = r11_.pending_push; r11_.commit(fabric_, g, gi);
                    if (r11_.pending_push > pp && off >= 0 && off < Wy_ && !ywr_[off]) res_.stale_y++;
                    r12_.commit(fabric_, g, gi); if (r13_en_) r13_.commit(fabric_, g, gi); }
-    if (en_isc_) w3_.commit(fabric_, g, gi);
+    if (suc_state_ld_) r13_.commit(fabric_, g, gi);
+    if (en_isc_ || suc_state_sv_) w3_.commit(fabric_, g, gi);
     sample_fifo();
     return running_;
 }

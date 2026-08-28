@@ -39,6 +39,7 @@ void SimWorld::decode_ports() {
         for (int k = 0; k < n_s; k++) a.s_stride[k] = (int32_t)raw_[i + 2 + k];
         for (int k = 0; k < 4; k++) a.t_bound[k] = (int32_t)raw_[i + 2 + n_s + k];
         for (int k = 0; k < 4; k++) a.t_stride[k] = (int32_t)raw_[i + 2 + n_s + 4 + k];
+        a.remap = (int)raw_[i + 2 + n_s + 8];
         a.enabled = (a.t_bound[0] != 0);  // T_BOUND_BASE==0 is the disable convention
     }
 }
@@ -633,9 +634,9 @@ void SimWorld::verify_layout() {
 void SimWorld::verify_datapath() {
     const int Mu = 16, Nu = 24, CONV = 4;
     int M = cfg_.seqLen, K = cfg_.dModel, N = cfg_.dInner;  // dInner = per-tile N
-    if (M % Mu || N % Nu) {
+    if (M % Mu || N % Nu || !ports_[0].enabled || !ports_[14].enabled) {
         return;
-    }                                            // not an osCore GEMM shape
+    }                                            // not an osCore GEMM invocation (SUC-only has R0/W0 off)
     uint32_t Abase = (uint32_t)ports_[0].base;   // R0 oscore_in
     uint32_t Bbase = (uint32_t)ports_[1].base;   // R1 oscore_weight
     uint32_t Zbase = (uint32_t)ports_[14].base;  // W0 z output

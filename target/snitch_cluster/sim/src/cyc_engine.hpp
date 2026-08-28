@@ -94,6 +94,10 @@ class AccelEngine {
     bool w1_en_ = false, r13_en_ = false, p1sw_en_ = false;
     bool w0p1_en_ = false, r11p1_en_ = false;  // IS_OSGEMM: osCore spills via W0, isCore reads A via R11
     long osc_elem_ = 0, sw_elem_ = 0;   // elements osCore produced / switchCore produced (on-chip)
+    // SUC hidden-state carry (13_suc_carry.md, isCore idle): R13 streams in_state, W3 streams
+    // out_state, CONCURRENT with the scan (R13 leads by one group). Gated on the mode LSBs.
+    bool suc_state_ld_ = false, suc_state_sv_ = false;
+    long r13_pop_ = 0, w3_push_ = 0, r13_tot_ = 0, w3st_tot_ = 0;
 
     // ---- SUC: R7 dt_BC (manual per-lane) + R10(z) -> scan -> W2(y) ----
     static const int NCH7 = 4, RPR = 4, delaySU = 4;   // R7 lanes, BC-refresh groups, SUC FMA delay
