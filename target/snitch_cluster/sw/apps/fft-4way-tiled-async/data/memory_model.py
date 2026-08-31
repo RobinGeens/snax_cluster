@@ -29,15 +29,18 @@ def build_report(params: dict) -> MemoryReport:
     L1, L2, L3, L4 = params["L1"], params["L2"], params["L3"], params["L4"]
     nb_d = params["nb_tiles_A"]
     l3_tile = params.get("l3_tile", L3)
+    nb_m4 = params.get("nb_m4", 1)
+    nb_ntile = params.get("nb_ntile", 1)
     dM = dModel // nb_d
     L3t = l3_tile
-    Lt = L1 * L2 * L3t * L4
+    L4t = L4 // nb_m4
+    Lt = L1 * L2 * L3t * L4t
 
     L1p, L2p, L3p, L4p = _padded(L1), _padded(L2), _padded(L3), _padded(L4)
 
     report = MemoryReport("fft-4way-tiled-async", {
         "seqLen": L, "dModel": dModel, "L1": L1, "L2": L2, "L3": L3, "L4": L4,
-        "nb_tiles_A": nb_d, "dM": dM, "l3_tile": l3_tile,
+        "nb_tiles_A": nb_d, "dM": dM, "l3_tile": l3_tile, "nb_m4": nb_m4, "nb_ntile": nb_ntile,
     })
 
     len_w1 = 2 * L1 * L1p * FP8 // 8
@@ -49,41 +52,41 @@ def build_report(params: dict) -> MemoryReport:
         ("weight1", len_w1), ("weight2", len_w2), ("weight3", len_w3), ("weight4", len_w4),
     ])
 
-    # Stages 1-2: per l3-tile tile-local buffers.
+    # packed3 (assembled partition3 input) is resident across both phases.
+    packed3 = align64(2 * L * dM * FP8 // 8)
+
+    # Stages 1-2: per-tile local buffers (m3-blocks via l3_tile or m4-blocks via nb_m4).
     in_tile = Lt * dM * FP8 // 8
-    tw1_tile = 2 * L1 * L3t * L2 * FP8 // 8
-    tw2_tile = 2 * L2 * L3t * L4 * FP8 // 8
-    slot_tile = align64(2 * Lt * dM * BF16 // 8)   # gemm1/2 psum per l3-tile
+    tw1_tile = 2 * L1 * L2 * L3t * L4t * FP8 // 8
+    tw2_tile = 2 * L2 * L3t * L4t * FP8 // 8
+    slot_tile = align64(2 * Lt * dM * BF16 // 8)   # gemm1/2 psum per tile
     hsize_tile = slot_tile // 2                     # FP8 cmul/noop scratch (H1, H2)
-    packed_tile = align64(2 * Lt * dM * FP8 // 8)   # scalar-transpose output per tile
-    report.add_section("TCDM stages 1-2 (per l3-tile)", [
+    report.add_section("TCDM stages 1-2 (per tile + resident packed3)", [
+        ("packed3 (resident)", packed3),
         ("in_tile", in_tile), ("tw1_tile", tw1_tile), ("tw2_tile", tw2_tile),
-        ("P_tile (gemm1/2 psum)", slot_tile), ("H1_tile", hsize_tile),
-        ("H2_tile", hsize_tile), ("packed_tile", packed_tile),
+        ("P_tile (gemm1/2 psum)", slot_tile), ("H1_tile", hsize_tile), ("H2_tile", hsize_tile),
     ])
 
-    # Stages 3-4: full (assembled). These overlay the dead stages-1-2 scratch.
-    packed3 = align64(2 * L * dM * FP8 // 8)        # assembled partition3 input (gathered to TCDM)
-    P3 = align64(2 * L * dM * BF16 // 8)
-    H3 = align64(2 * L * dM * FP8 // 8)
-    packed4 = align64(2 * L * dM * FP8 // 8)
-    P4 = align64(2 * L * dM * BF16 // 8)
-    report.add_section("TCDM stages 3-4 (full, overlay stages 1-2)", [
-        ("packed3 (gemm3 input)", packed3), ("P3", P3), ("H3", H3),
+    # Stages 3-4: per (k1,k2) N-chunk. These overlay the dead stages-1-2 scratch.
+    P3 = align64(2 * L * dM * BF16 // (8 * nb_ntile))
+    H3 = align64(2 * L * dM * FP8 // (8 * nb_ntile))
+    packed4 = align64(2 * L * dM * FP8 // (8 * nb_ntile))
+    P4 = align64(2 * L * dM * BF16 // (8 * nb_ntile))
+    report.add_section("TCDM stages 3-4 (per N-chunk, overlay stages 1-2)", [
+        ("packed3 (resident)", packed3), ("P3", P3), ("H3", H3),
         ("packed4 (gemm4 input)", packed4), ("P4", P4),
     ])
 
     report.add_section("L3 staging (not counted in TCDM)", [
         ("partition4_out (L3)", 2 * L * dModel * BF16 // 8),
-        ("full packed3 (L3)", 2 * L * dM * FP8 // 8),
     ])
 
     stages12 = (
         align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
-        + slot_tile + hsize_tile + hsize_tile + packed_tile
+        + slot_tile + hsize_tile + hsize_tile
     )
-    stages34 = packed3 + P3 + H3 + packed4 + P4
-    peak = weights + max(stages12, stages34)
+    stages34 = P3 + H3 + packed4 + P4
+    peak = weights + packed3 + max(stages12, stages34)
     report.add_peak("TCDM peak", peak)
     return report
 

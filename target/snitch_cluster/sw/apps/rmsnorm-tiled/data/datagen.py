@@ -123,20 +123,9 @@ class DataGenerator(DataGeneratorBase):
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
 
-        # Fold sqrt(D) into the resident weight: the RSQRT pass yields 1/sqrt(Sum x^2), so the
-        # "* 1/D" of the true rms rides along as weight' = weight * sqrt(D) (BF16, folded here).
-        import math
-        import struct
-
-        def bf16_to_f(u):
-            return struct.unpack(">f", struct.pack(">I", u << 16))[0]
-
-        def f_to_bf16_rne(f):
-            u = struct.unpack(">I", struct.pack(">f", f))[0]
-            return ((u + 0x7FFF + ((u >> 16) & 1)) >> 16) & 0xFFFF
-
-        weight = self._read_data_int(f"M{mode_id}_weight.bin")
-        folded = [f_to_bf16_rne(bf16_to_f(w) * math.sqrt(D)) for w in weight]
+        # Weight arrives pre-folded with sqrt(D) from the generator: the RSQRT pass yields
+        # 1/sqrt(Sum x^2), so the "* 1/D" of the true rms rides along in the folded weight.
+        folded = self._read_data_int(f"M{mode_id}_weight_folded.bin")
         self.format_vector("uint16_t", f"M{mode_id}_weight", folded)
 
 

@@ -323,23 +323,39 @@ partitions — same nature as the 3-way's `~2/25` floor.
 
 The dModel-tile alone cannot fit `L = 65536`: it only slices `dM` and leaves the L-proportional
 buffers (`twiddles1 ≈ 2·L`, the BF16 partition psum `≈ 4·L·dM`, two FP8 hadamards `≈ 2·L·dM`)
-intact — peak `≈ 717 KiB > 512 KiB` even at `dM=1`. The async streams `m3` (the partition-3
-contraction) per `l3`-tile, but the whole partition-3 input stays TCDM-resident — no L3 spill.
-Stages 1–2 run per `l3`-tile on gathered tile-local buffers: the tile's input and twiddles are
-DMA-gathered from DRAM so the `m3`-block lands in K-position for partition 3. reorder2
-deinterleaves cmul2's re/im (DMA gather for `L3 == 16`, block-swap SIMD NOOP for `2·L3 ≤ 16`)
-and writes the tile's contribution into a persistent TCDM buffer `packed3`. Once all `l3`-tiles
-have accumulated into `packed3`, partition3 runs **once** as a single full-K (`2·L3_padded`)
-`ISGEMM_SQ_TRANSPOSE`, and `cmul3 → reorder3 → partition4` (contracts `m4`, already innermost)
-run **once** over the full buffer before the output scatter. Stage-3/4 N-tiling (`nb_ntile > 1`)
-is asserted unimplemented.
+intact — peak `≈ 717 KiB > 512 KiB` even at `dM=1`. Two tilings cut the peak; the whole
+partition-3 input (`packed3 = 2·L·dM` FP8) always stays TCDM-resident — no L3 spill.
+
+**Stages 1–2 tiling** (pick one axis; each tile runs p1 → cmul1 → reorder1 → p2 → cmul2 →
+reorder2 into `packed3`):
+- `l3_tile < L3`: stream `m3` (the partition-3 contraction) per `l3`-tile; the tile's input and
+  twiddles are DMA-gathered from DRAM so the `m3`-block lands in K-position for partition 3.
+- `nb_m4 > 1` (requires `L3 == 16`, `dM == 1`): stream `m4`-blocks instead. The tile's slices
+  are contiguous in the chip layouts (1-D input DMA, one chunk per `k1`/`k2` twiddle row), and
+  reorder2 scatters each `(k1,k2)`'s `L4t` m3-runs to their `m4` slots in `packed3`.
+
+**Stages 3–4 N-chunking** (`nb_ntile > 1`, requires `L4 == 16`, `nb_tiles_A == 1`): once
+`packed3` is assembled, `partition3 → cmul3 → reorder3 → partition4 → output scatter` run per
+`(k1,k2)` column chunk (`L1·L2/nb_ntile` a-values). The partition-3 B-walk reads the chunk's
+N-run inside each K-block of the resident `packed3` (the K stride stays the full-N block); the
+chunk buffers `P3/H3/packed4/P4` are private, and the scatter drains the chunk's slice of each
+`M_4` row-block (FP8 payload) to the L3 output. At `L = 65536 = 16⁴` with
+`nb_m4 = nb_ntile = 4` the peak is ≈ 325 KiB.
+
+**reorder1 / cmul2 regimes.** partition2's B needs its re/im K-tiles outermost. At `2·L2 ≤ 16`
+one block-swap SIMD NOOP emits the single mixed K-tile; at `L2 == 16` the halves are separate
+K-tiles, split by two 2-D DMAs (`seqLenUnroll`-byte chunks at `2·seqLenUnroll` source stride).
+cmul2's re/im spatial jump follows the same regime: `L2` rows within the block for `2·L2 ≤ 16`,
+the second row-block (half the FP8 payload) at `L2 == 16`.
 
 **reorder2 / reorder3 regimes.** Both deinterleave the cmul re/im into the next partition's
 K-blocks, in HW, picked by the contracted axis length:
 - axis `== 16` (`= seqLenUnroll`): re/im split into K-blocks via two DMA gathers (`Lx`-byte
-  chunks at `2·Lx` source stride).
+  chunks at `2·Lx` source stride); under `nb_m4` tiling per `(k1,k2)`, at the tile's `m4`
+  offset.
 - `2·axis ≤ 16` (`K = 1`): the split degenerates to the block-swap SIMD NOOP (reuses
   reorder1's `R7_2B/W3_2B`), writing the N-major next-partition input directly.
 
-**Factorisation limits.** `L1` is a multiple of 16; `L3 ≤ 32` (`2·L3 ≤ 64`, one square tile), l3-tiled at `l3_tile=16`; `L2 ≤ 16` (`L2 > 16` is unsupported).
+**Factorisation limits.** `L1 == 16`; `L2 ≤ 16`; `L3 ≤ 32` (`2·L3 ≤ 64`, one square tile);
+`nb_m4` requires `L3 == 16`, `dM == 1` and `nb_l3 == 1`; `nb_ntile` requires `L4 == 16`.
 
