@@ -384,8 +384,8 @@ int test_ss2d_tiled() {
         rms_cycles += read_simbacore_perf_counter();
 
         // RMS: Σ(x²) per token
-        set_simd_streamer_no_b((uint32_t)ptr_rms_x, M12_R7_x_ss, M12_R7_x_tb, M12_R7_x_ts, (uint32_t)ptr_rms_vec,
-                               M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
+        set_simd_streamer_no_b((uint32_t)ptr_rms_x, M12_R7_rms_x_ss, M12_R7_rms_x_tb, M12_R7_rms_x_ts,
+                               (uint32_t)ptr_rms_vec, M12_W3_rms_ss, M12_W3_rms_tb, M12_W3_rms_ts);
         set_simbacore_simd_mode(M13_SIMD_RMS_BF16);
         set_simbacore_simd_n_acc(dInner);
         start_simbacore_and_streamers(0, 0, 0, 0);

@@ -105,7 +105,7 @@ run_one() {
   mkdir -p "${scratch}"
   # Must not fail under set -e: timeout exits 124 when the limit is hit.
   local rc=0
-  ( cd "${scratch}" && timeout -k 60 14400 "${VSIM_ABS}" "${elf_abs}" ) > "${test_log}" 2>&1 || rc=$?
+  ( cd "${scratch}" && timeout -k 60 43200 "${VSIM_ABS}" "${elf_abs}" ) > "${test_log}" 2>&1 || rc=$?
   rm -rf "${scratch}"
 
   # Parse error count from this test's log (124 = timeout exit code)

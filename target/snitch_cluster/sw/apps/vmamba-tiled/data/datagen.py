@@ -352,16 +352,23 @@ class DataGenerator(MainTiledDataGenerator):
             "W3_x": bounds_LD,
             "R7_rms": bounds_L,
             "W3_rms": bounds_L,
+            # Sum-of-squares reduction: accumulate D channels (inner loop) per token-group
+            # (outer loop). Channel stride is L (tokens are contiguous per channel in the (D,L)
+            # buffer), not simdLanes — the two coincide only at seqLen==16.
+            "R7_rms_x": ([D, L // simdLanes_bf16],
+                         [L * BF16 // 8, simdLanes_bf16 * BF16 // 8]),
+            # x*(1/rms): x streams channel-major (token-group inner); broadcast invRms so each
+            # token-group's 16 lanes pair with their own rms value (inner=token-group, outer=channel).
             "R13_x_rms": (
-                [D, L // simdLanes_bf16],
-                [0, simdLanes_bf16 * BF16 // 8],
+                [L // simdLanes_bf16, D],
+                [simdLanes_bf16 * BF16 // 8, 0],
             ),
-            "R7_x_w": ([L // simdLanes_bf16, D],
-                       [D * simdLanes_bf16 * BF16 // 8, simdLanes_bf16 * BF16 // 8]),
+            # x*weight: x streams channel-major; weight (16 copies per channel) is reused across
+            # the token-groups of a channel (inner=token-group@0, outer=channel).
+            "R7_x_w": bounds_LD,
             "R13_x_w": ([L // simdLanes_bf16, D],
                         [0, simdLanes_bf16 * BF16 // 8]),
-            "W3_x_w": ([L // simdLanes_bf16, D],
-                       [D * simdLanes_bf16 * BF16 // 8, simdLanes_bf16 * BF16 // 8]),
+            "W3_x_w": bounds_LD,
             "W3_narrow": ([n_fp8_cycles, 1, 1, 1], [simd_fp8_lanes, 0, 0, 0],
                           [BANK_BYTES]),
         }
