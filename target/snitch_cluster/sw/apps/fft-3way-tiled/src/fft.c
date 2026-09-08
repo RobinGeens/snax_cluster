@@ -108,7 +108,7 @@ int test() {
             gather_in_tile(ptr_in, s, 0);
             gather_tw1(ptr_tw1, 0);
             gather_tw2(ptr_tw2, 0);
-            snrt_dma_start_1d(psum_g1, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            simba_dma_fill_zero(psum_g1, M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -136,7 +136,7 @@ int test() {
             }
             // Hidden behind gemm1+cmul1 (nb_l3==1): zero gemm2's psum (the other slot).
             if (snrt_is_dm_core() && M6_nb_l3 == 1) {
-                snrt_dma_start_1d(psum_g2, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                simba_dma_fill_zero(psum_g2, M6_slot_size_tile);
                 snrt_dma_wait_all();
             }
             // Hidden behind gemm1+cmul1 (nb_l3>1): assemble the previous tile's H2 [re|im]
@@ -156,7 +156,7 @@ int test() {
             // cmul1 is done; nothing to hide behind).
             if (M6_nb_l3 > 1) {
                 if (snrt_is_dm_core()) {
-                    snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                    simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
                     snrt_dma_wait_all();
                 }
                 snrt_cluster_hw_barrier();  // B: psum zeroed
@@ -187,7 +187,7 @@ int test() {
             // Hidden behind gemm2+cmul2 (nb_l3==1): zero the partition-3 psum (= gemm1's
             // slot, free since cmul1 finished).
             if (snrt_is_dm_core() && M6_nb_l3 == 1) {
-                snrt_dma_start_1d(psum_p3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
+                simba_dma_fill_zero(psum_p3, M6_slot_size);
                 snrt_dma_wait_all();
             }
             // Hidden behind gemm2+cmul2 (nb_l3>1): prefetch the next tile's in & tw1
@@ -204,7 +204,7 @@ int test() {
             // tile's gemm1+cmul1 (or the pre-partition3 window for the last tile).
             if (M6_nb_l3 > 1) {
                 if (snrt_is_dm_core() && lt_next < M6_nb_l3) {
-                    snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                    simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
                     snrt_dma_wait_all();
                 }
                 snrt_cluster_hw_barrier();  // D: next psum ready
@@ -222,7 +222,7 @@ int test() {
             snrt_dma_start_1d(ptr_H2_full + M6_h2_im_region + (M6_nb_l3 - 1) * M6_h2_half_bytes,
                               H2p + M6_h2_half_bytes, M6_h2_half_bytes);
             snrt_dma_wait_all();
-            snrt_dma_start_1d(psum_p3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
+            simba_dma_fill_zero(psum_p3, M6_slot_size);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -233,7 +233,7 @@ int test() {
         // (already resident). Lifts the whole prologue off the critical path for slices > 0.
         if (snrt_is_dm_core() && M6_nb_l3 == 1 && s + 1 < M6_nb_d) {
             gather_in_tile(ptr_in, s + 1, 0);
-            snrt_dma_start_1d(psum_g2, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            simba_dma_fill_zero(psum_g2, M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         if (snrt_global_core_idx() == 0) {

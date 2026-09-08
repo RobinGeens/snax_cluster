@@ -110,7 +110,7 @@ int test() {
                 gather_tw1(ptr_tw1, lt);
                 gather_tw2(ptr_tw2, lt);
             }
-            snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -156,7 +156,7 @@ int test() {
         snrt_cluster_hw_barrier();
 
         if (snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -216,7 +216,7 @@ int test() {
     for (uint32_t c = 0; c < M6_nb_ntile; c++) {
         // partition 3 (K=2*L3_padded, bank-transposed)
         if (snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_slot_size_chunk);
+            simba_dma_fill_zero(ptr_P3, M6_slot_size_chunk);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -243,7 +243,7 @@ int test() {
             asm volatile("fence" ::: "memory");
         }
         if (snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_P4, (void*)snrt_zero_memory_ptr(), M6_slot_size_chunk);
+            simba_dma_fill_zero(ptr_P4, M6_slot_size_chunk);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();

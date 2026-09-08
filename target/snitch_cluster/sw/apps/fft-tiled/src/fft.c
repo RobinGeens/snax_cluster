@@ -82,9 +82,8 @@ int test() {
     // region. This way, we don't need to zero this region for each tile
     if (snrt_is_dm_core()) {
         for (int b = 0; b < 2; b++) {
-            snrt_dma_start_1d(ptr_partition1_out_tile[b], (void*)snrt_zero_memory_ptr(), M6_length_partition1_out_tile);
-            snrt_dma_start_1d(ptr_had_reord_a_tile[b], (void*)snrt_zero_memory_ptr(),
-                              M6_length_hadamard_reordered_tile);
+            simba_dma_fill_zero(ptr_partition1_out_tile[b], M6_length_partition1_out_tile);
+            simba_dma_fill_zero(ptr_had_reord_a_tile[b], M6_length_hadamard_reordered_tile);
         }
         snrt_dma_wait_all();
     }
@@ -222,7 +221,7 @@ int test() {
     // running serially before them.
     // ========================================================================
     if (snrt_is_dm_core()) {
-        snrt_dma_start_1d(ptr_partition2_out, (void*)snrt_zero_memory_ptr(), M6_length_partition2_out);
+        simba_dma_fill_zero(ptr_partition2_out, M6_length_partition2_out);
         snrt_dma_start_1d(ptr_had_reord_b_ktile, ptr_hadamard_reordered_l3, M6_length_hadamard_reordered_ktile);
     }
     if (snrt_global_core_idx() == 0) {

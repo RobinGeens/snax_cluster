@@ -88,6 +88,9 @@ uint32_t read_streamer_perf_counter();
 // Read performance counter of GEMM, a read-only CSR
 uint32_t read_simbacore_perf_counter();
 
+// Zero a TCDM buffer via the DMA
+void simba_dma_fill_zero(void* dst, uint32_t len);
+
 uint32_t check_result_all(uint8_t* output, uint8_t* output_golden, int32_t data_length);
 uint32_t check_result_all_u16(uint16_t* output, uint16_t* output_golden, int32_t data_length);
 uint32_t check_result_sample_verbose(uint8_t* output, uint8_t* output_golden, int32_t* sample_indices,
@@ -101,8 +104,7 @@ uint32_t check_result_sample_u16(uint16_t* output, uint16_t* output_golden, int3
 // For buffers living at AGU-swizzled addresses: golden read at the logical index,
 // result at its swizzled twin (both arrays come from datagen).
 uint32_t check_result_sample_swz(const uint8_t* output, const uint8_t* output_golden, const int32_t* sample_indices,
-                                 const int32_t* sample_indices_swz, int32_t test_sample_count,
-                                 const char* tensor_name);
+                                 const int32_t* sample_indices_swz, int32_t test_sample_count, const char* tensor_name);
 
 // Initialize cycle counter (call once at program start)
 void init_cycle_counter(void);

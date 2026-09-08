@@ -41,9 +41,9 @@ int test() {
         snrt_dma_start_1d(ptr_in, M6_dft_in, M6_length_in);
         snrt_dma_start_1d(ptr_twiddles1, M6_twiddles1, M6_length_twiddles1);
         snrt_dma_start_1d(ptr_twiddles2, M6_twiddles2, M6_length_twiddles2);
-        snrt_dma_start_1d(ptr_partition1_out, (void*)snrt_zero_memory_ptr(), M6_length_partition1_out);
-        snrt_dma_start_1d(ptr_partition2_out, (void*)snrt_zero_memory_ptr(), M6_length_partition2_out);
-        snrt_dma_start_1d(ptr_partition3_out, (void*)snrt_zero_memory_ptr(), M6_length_partition3_out);
+        simba_dma_fill_zero(ptr_partition1_out, M6_length_partition1_out);
+        simba_dma_fill_zero(ptr_partition2_out, M6_length_partition2_out);
+        simba_dma_fill_zero(ptr_partition3_out, M6_length_partition3_out);
         snrt_dma_wait_all();
     }
     snrt_cluster_hw_barrier();

@@ -100,7 +100,7 @@ int test() {
             gather_in_tile(ptr_in, s, 0);
             gather_tw1(ptr_tw1, 0);
             gather_tw2(ptr_tw2, 0);
-            snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -142,7 +142,7 @@ int test() {
             // Serial DMA window: zero P for gemm2 (only free once cmul1 read it; nothing to
             // hide behind). The next tile's in & tw1 gathers ride behind gemm2+cmul2 instead.
             if (snrt_is_dm_core()) {
-                snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
                 snrt_dma_wait_all();
             }
             snrt_cluster_hw_barrier();  // B: P zeroed
@@ -178,7 +178,7 @@ int test() {
             // cmul2 is done). This tile's H2 stage-out rides behind the next tile's
             // gemm1+cmul1 (or ahead of the first N-tile gather for the last tile).
             if (snrt_is_dm_core() && lt_next < M6_nb_l3) {
-                snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
                 snrt_dma_wait_all();
             }
             snrt_cluster_hw_barrier();  // D: next psum ready
@@ -200,7 +200,7 @@ int test() {
                 snrt_dma_start_2d(ptr_h2ntile, ptr_h2_l3 + nt * M6_ntile_n_off, M6_h2_gather_chunk,
                                   /*dst_stride=*/M6_h2_gather_chunk, /*src_stride=*/M6_h2_gather_src_stride,
                                   /*repeat=*/M6_h2_gather_kreps);
-                snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_p3_ntile_bytes);
+                simba_dma_fill_zero(ptr_P3, M6_p3_ntile_bytes);
                 snrt_dma_wait_all();
             }
             snrt_cluster_hw_barrier();

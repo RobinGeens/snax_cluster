@@ -120,10 +120,10 @@ void set_isgemm_streamer_csr(uint32_t A_ptr, int32_t* A_ss, int32_t* A_tb, int32
     // iscore output W3
     _Static_assert(S_STRIDE_NUM_WRITER_3 == 2 && T_BOUND_NUM_WRITER_3 == 4 && T_STRIDE_NUM_WRITER_3 == 4,
                    "loop unroll mismatch");
-    write_csr(BASE_PTR_WRITER_3_LOW, CD_ptr);            // Base ptr
-    write_csr(S_STRIDE_BASE_WRITER_3 + 0, CD_ss[0]);     // Spatial stride 0
-    write_csr(S_STRIDE_BASE_WRITER_3 + 1, CD_ss[1]);     // Spatial stride 1
-    write_csr(T_BOUND_BASE_WRITER_3 + 0, CD_tb[0]);  // Temporal bound
+    write_csr(BASE_PTR_WRITER_3_LOW, CD_ptr);         // Base ptr
+    write_csr(S_STRIDE_BASE_WRITER_3 + 0, CD_ss[0]);  // Spatial stride 0
+    write_csr(S_STRIDE_BASE_WRITER_3 + 1, CD_ss[1]);  // Spatial stride 1
+    write_csr(T_BOUND_BASE_WRITER_3 + 0, CD_tb[0]);   // Temporal bound
     write_csr(T_BOUND_BASE_WRITER_3 + 1, CD_tb[1]);
     write_csr(T_BOUND_BASE_WRITER_3 + 2, CD_tb[2]);
     write_csr(T_BOUND_BASE_WRITER_3 + 3, CD_tb[3]);
@@ -670,6 +670,20 @@ uint32_t read_streamer_perf_counter() {
 uint32_t read_simbacore_perf_counter() {
     uint32_t perf_counter = read_csr(SIMBACORE_PERFORMANCE_COUNTER);
     return perf_counter;
+}
+
+#if __has_include("occamy_base_addr.h")
+#include "occamy_base_addr.h"
+#endif
+
+void simba_dma_fill_zero(void* dst, uint32_t len) {
+#ifdef WIDE_ZERO_MEM_BASE_ADDR
+    uint64_t dst_wide = (uint64_t)(uintptr_t)dst + ((uint64_t)snrt_cluster_base_addrh() << 32);
+    snrt_dma_start_1d_wideptr(dst_wide, WIDE_ZERO_MEM_BASE_ADDR, len);
+#else
+    // There is no zero memory in the standalone cluster, this window just reads zeros from the TB memory
+    snrt_dma_start_1d(dst, (void*)snrt_zero_memory_ptr(), len);
+#endif
 }
 
 static const int32_t TOLERANCE = 1;

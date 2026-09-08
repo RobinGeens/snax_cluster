@@ -65,6 +65,8 @@ cache-seed:
 # main.c compile with mismatched buffer sizes → TCDM overflow. The sanity check then refuses
 # any params.hjson whose seqLen/dModel disagree with the requested params, turning a silent
 # corruption into a loud build failure.
+# sbt runs with -batch and closed stdin: a failed project load then fails the build instead
+# of spinning forever on the interactive "(r)etry?" prompt while holding the flock.
 $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 	@set -e; \
 	mkdir -p "$(DATAGEN_CACHE_DIR)"; \
@@ -81,7 +83,7 @@ $(DATA_H): $(WORKLOAD_PARAMS) $(DATAGEN_PY) $(DATAGEN_DEPS)
 		echo "[DATAGEN CACHE] Miss ($(APP_NAME)) — running sbt"; \
 		echo "  Scala $(GENERATOR_CLASS) $(GENERATOR_ARGS)"; \
 		rm -rf "$(SBT_GEN_DIR)"; \
-		( cd $(CHISEL_SSM) && sbt "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)" ); \
+		( cd $(CHISEL_SSM) && sbt -batch "test:runMain $(GENERATOR_CLASS) $(GENERATOR_ARGS)" < /dev/null ); \
 		if [ ! -f "$(DATA_CFG)" ]; then \
 			echo "[DATAGEN CACHE] ERROR: sbt produced no $(DATA_CFG) for $(APP_NAME) — check params_in.hjson" >&2; \
 			exit 1; \

@@ -2,9 +2,11 @@
     // Max number of vsim runs allowed to execute at the same time
     max_parallel: 8
     // Per-run wall-clock cap in seconds. 0 = no timeout
-    timeout: 0 // suc-carry 32k can take >12h
+    timeout: 80000
     // Per-build  wall-clock cap in seconds. 0 = no timeout
-    build_timeout: 0
+    build_timeout: 21600 // 6h hard stop
+    vsim_vmem_gb: 48
+    vsim_fsize_gb: 32
     // Global default for `force`
     force: false
 
