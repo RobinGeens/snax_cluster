@@ -52,4 +52,11 @@ setsid nohup bash -c '
 
 echo "Regression tests started in background (PID ${RT_PID})." >&2
 echo "  Log:  ${BG_LOG}" >&2
-echo "  Stop: kill ${RT_PID}   (its traps + the watchdog then reap every child)" >&2
+
+# Relay the run's summary/build-log paths: the run has no controlling terminal
+# (setsid), so it can only print them into BG_LOG. Echo them here once they appear.
+for _ in $(seq 1 20); do
+  grep -q '^Build log:' "${BG_LOG}" 2>/dev/null && break
+  sleep 0.5
+done
+grep -E '^(Summary file|Build log):' "${BG_LOG}" >&2 || true
