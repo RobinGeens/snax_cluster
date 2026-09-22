@@ -70,7 +70,7 @@ Adding a new "bender_target" also involves adding the corresponding file list in
             register_offload_req: true,
             register_offload_rsp: true,
             register_ext_narrow: true,
-            register_ext_wide: true
+            register_ext_wide: false
         },
         hives: [
             {

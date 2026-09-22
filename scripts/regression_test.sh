@@ -105,12 +105,14 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
+# Children must not inherit the lock fd (8>&-): an inherited flock keeps the
+# lock held by any surviving child after this script is killed.
 echo "Cloning repository into ${WORK_DIR} (committed state only) ..." >&2
-git clone --local --no-hardlinks "${ORIG_ROOT}" "${WORK_DIR}" 2>&1 >&2
+git clone --local --no-hardlinks "${ORIG_ROOT}" "${WORK_DIR}" 2>&1 >&2 8>&-
 
 # Populate submodules (they are not pulled in by `git clone --local`).
 echo "Initializing submodules ..." >&2
-git -C "${WORK_DIR}" submodule update --init --recursive >&2
+git -C "${WORK_DIR}" submodule update --init --recursive >&2 8>&-
 
 echo "Temporary clone ready at ${WORK_DIR}" >&2
 
@@ -120,7 +122,7 @@ echo "Temporary clone ready at ${WORK_DIR}" >&2
 build_rc=0
 setsid env CONTAINER_NAME_PREFIX="${CONTAINER_PREFIX}" \
   timeout -k 120 "${BUILD_TIMEOUT}" bash "${WORK_DIR}/scripts/build_sim.sh" \
-  > "${BUILD_LOG}" 2>&1 < /dev/null &
+  > "${BUILD_LOG}" 2>&1 < /dev/null 8>&- &
 build_pid=$!
 echo "${build_pid}" >> "${PIDS_FILE}"
 wait "${build_pid}" || build_rc=$?
@@ -218,7 +220,7 @@ run_one() {
 
 running=0
 for name in "${TESTS[@]}"; do
-  run_one "${name}" &
+  run_one "${name}" 8>&- &
   running=$((running + 1))
   if [ "${running}" -ge "${JOBS}" ]; then
     wait -n || true
