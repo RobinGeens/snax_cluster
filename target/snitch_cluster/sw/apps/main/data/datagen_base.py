@@ -138,9 +138,9 @@ class DataGeneratorBase(ABC):
 
     def format_spatial_strides(self, streamer_name: str, mode_id: int, strides: list[int]):
         assert isinstance(strides, list), f"{streamer_name}: Spatial strides must be a list, got {type(strides)}"
-        if streamer_name.startswith("R7") and len(strides) != 2:
-            raise ValueError(f"{streamer_name}: R7 must have 2 spatial strides, got {len(strides)}")
-        elif not streamer_name.startswith("R7") and len(strides) != 1:
+        if self._has_2d_spatial(streamer_name) and len(strides) != 2:
+            raise ValueError(f"{streamer_name}: R7/W3 must have 2 spatial strides, got {len(strides)}")
+        elif not self._has_2d_spatial(streamer_name) and len(strides) != 1:
             raise ValueError(f"{streamer_name}: Must have 1 spatial stride, got {len(strides)}")
 
         # self.format("uint32_t", f"M{mode_id}_{streamer_name}_ss0", stride)
@@ -205,12 +205,18 @@ class DataGeneratorBase(ABC):
         self.format_spatial_strides(name, mode_id, spatial_strides)
         self.enable_channel(name, mode_id)
 
+    @staticmethod
+    def _has_2d_spatial(name: str) -> bool:
+        """R7 and W3 have [2, 2] spatial bounds in hardware; all other streamers have 1 spatial dim."""
+        return name.startswith("R7") or name.startswith("W3")
+
     def process_spatial_stride(self, name: str, spatial_stride_raw: list[int] | int):
         """User input can be integer or list. Output must be a list with the length equal to the spatial loop bounds.
 
-        Only R7 has 2 loop bounds, all other streamers have 1 loop bound.
+        For the 2D-spatial streamers, an integer stride s expands to [s, 2*s], which is
+        equivalent to a 1D spatial loop of bound 4 with stride s.
         """
-        if not name.startswith("R7"):
+        if not self._has_2d_spatial(name):
             if isinstance(spatial_stride_raw, int):
                 return [spatial_stride_raw]
             elif isinstance(spatial_stride_raw, list):
@@ -224,9 +230,11 @@ class DataGeneratorBase(ABC):
                 # TODO we have hardcodeded loopsize 2
                 return [spatial_stride_raw, 2 * spatial_stride_raw]
             elif isinstance(spatial_stride_raw, list):
+                if len(spatial_stride_raw) == 1:  # [s] behaves like a 1D spatial loop of bound 4
+                    return [spatial_stride_raw[0], 2 * spatial_stride_raw[0]]
                 assert (
                     len(spatial_stride_raw) == 2
-                ), f"{name}: Spatial stride must be a list with length 2, got {len(spatial_stride_raw)}"
+                ), f"{name}: Spatial stride must be a list with length 1 or 2, got {len(spatial_stride_raw)}"
                 return spatial_stride_raw
         raise ValueError(f"{name}: Spatial stride must be an integer or a list, got {type(spatial_stride_raw)}")
 

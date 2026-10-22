@@ -2,5 +2,5 @@
     seqLen: 64
     dModel: 96
     dtRank: 24
-    nb_tiles: 16
+    nb_tiles: 8
 }

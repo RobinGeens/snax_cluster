@@ -25,8 +25,17 @@ struct Agu {                            // one streamer port descriptor
     int n_s = 0;
     int32_t t_bound[4] = {0, 0, 0, 0};
     int32_t t_stride[4] = {0, 0, 0, 0};
+    int remap = 0;                      // ADDR_REMAP_INDEX: 0=identity, 1=XOR bank swizzle, 2=half
     bool enabled = false;
 };
+
+// AGU address remap (AddressGenUnit.scala): applied to every generated address.
+//   1: addr[7:5] ^= addr[10:8]   2: addr[6:5] ^= addr[9:8]
+inline uint32_t agu_swz(uint32_t a, int remap) {
+    if (remap == 1) return a ^ ((a >> 3) & 0xE0u);
+    if (remap == 2) return a ^ ((a >> 3) & 0x60u);
+    return a;
+}
 
 struct SimbacoreCfg {
     uint32_t mode = 0, seqLen = 0, dModel = 0, dtRank = 0, dInner = 0, dFinal = 0;

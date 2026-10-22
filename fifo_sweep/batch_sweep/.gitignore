@@ -1,0 +1,9 @@
+# regenerable working data (build_rows.py / sweep runs / memsim evaluations)
+rows.json
+weights.json
+eval_cache.json
+oat.json
+*_trace.json
+*_points.json
+frontier.json
+__pycache__/

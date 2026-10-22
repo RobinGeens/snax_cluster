@@ -13,7 +13,9 @@
 > [9. Async tiling](09_async_tiling.md) ·
 > [Memory simulator](../../target/snitch_cluster/sim/docs/memsim.md) (simulator internals) ·
 > [12. SUC async](12_suc_async.md) ·
+> [13. SUC carry](13_suc_carry.md) ·
 > [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
+> [15. p2-carry](15_p2_carry.md) ·
 > [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
 > [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
 
@@ -68,7 +70,9 @@ for the exact streamer/CSR programming see the program sources.
 | `SUC-tiled` | SUC only, dInner-tiled | [4](04_mamba_main.md) |
 | `suc-async` | SUC only, async rings on `BC`, `x`, `z`, `y` (`dt` full) | [12](12_suc_async.md) |
 | `suc-async-dt` | `suc-async` plus an async `dt` ring; for the largest `seqLen` | [12](12_suc_async.md) |
+| `suc-carry` | SUC only, L-tiled with on-chip state carry (no `BC` ring); double-buffered | [13](13_suc_carry.md) |
 | `P2-async-OS-no-IS` | P2 minus the IS-core; `oscore_in` async input ring | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
+| `p2-carry` | Full P2 sequence-tiled with SSM state carry (no async rings) + fused output projection; replaces `P2-async-OS-no-IS` + a separate out-proj | [15](15_p2_carry.md) |
 
 ### FFT
 

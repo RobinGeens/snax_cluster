@@ -57,7 +57,7 @@ def build_report(params: dict) -> MemoryReport:
     tw1_tile = 2 * Lt * FP8 // 8
     tw2_tile = 2 * L2 * L3t * FP8 // 8
     slot_size_tile = align64(2 * Lt * dM * BF16 // 8)   # gemm1/2 psum per l3-tile
-    hsize_tile = slot_size_tile // 2                     # FP8 cmul/noop scratch (H1, H2)
+    hsize_tile = slot_size_tile // 2                     # FP8 cmul scratch (H2, x2 ping-pong)
     full_h2 = 2 * L * dM * FP8 // 8                       # partition-3 input (staged to L3)
     h2_ntile = full_h2 // nb_ntile                       # one gathered N-tile of H2 (TCDM)
     p3_ntile = align64(2 * L * dM * BF16 // 8) // nb_ntile
@@ -66,8 +66,7 @@ def build_report(params: dict) -> MemoryReport:
         ("tw1_tile (gathered)", tw1_tile),
         ("tw2_tile (gathered)", tw2_tile),
         ("P_tile (gemm1/2 psum)", slot_size_tile),
-        ("H1_tile", hsize_tile),
-        ("H2_tile (noop1/noop2)", hsize_tile),
+        ("H2_tile (cmul out, x2)", 2 * hsize_tile),
     ])
     # Overlay the dead stages-1-4 scratch (ptr_h2ntile = ptr_in); not added to peak.
     report.add_section("TCDM partition 3 (overlays stages 1-4)", [
@@ -82,7 +81,7 @@ def build_report(params: dict) -> MemoryReport:
 
     stages14 = (
         align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
-        + slot_size_tile + hsize_tile + hsize_tile
+        + slot_size_tile + 2 * hsize_tile
     )
     partition3 = align64(h2_ntile) + p3_ntile
     peak = weights + max(stages14, partition3)

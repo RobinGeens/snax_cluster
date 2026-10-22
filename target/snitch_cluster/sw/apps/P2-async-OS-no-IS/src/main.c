@@ -51,9 +51,9 @@ static inline void refill_loop(uint8_t* os_slot_base, const uint8_t* l3_oscore_i
         if (snrt_global_core_idx() == 0) {
             uint32_t rdy_os, rdy_bc;
             do {
-                rdy_os = (r_os < os_visits) && (read_snax_csr_safe(R10_DELAY_GAUGE) >= (r_os + 1) * os_step);
-                rdy_bc = (r_bc < bc_visits) && (read_snax_csr_safe(R11_DELAY_GAUGE) >= (r_bc + 1) * bc_step);
-                if (r10_release_en && !r10_released && read_snax_csr_safe(R10_DELAY_GAUGE) >= r10_start_cnt) {
+                rdy_os = (r_os < os_visits) && (read_csr(R10_DELAY_GAUGE) >= (r_os + 1) * os_step);
+                rdy_bc = (r_bc < bc_visits) && (read_csr(R11_DELAY_GAUGE) >= (r_bc + 1) * bc_step);
+                if (r10_release_en && !r10_released && read_csr(R10_DELAY_GAUGE) >= r10_start_cnt) {
                     // release the SUC -> it pipelines behind the osCore
                     write_csr(DELAYED_START_READER_10, 1);
                     r10_released = 1;
@@ -88,7 +88,7 @@ static inline void refill_loop(uint8_t* os_slot_base, const uint8_t* l3_oscore_i
     snrt_cluster_hw_barrier();
 
     if (snrt_global_core_idx() == 0 && r10_release_en && !r10_released) {
-        while (read_snax_csr_safe(R10_DELAY_GAUGE) < r10_start_cnt);
+        while (read_csr(R10_DELAY_GAUGE) < r10_start_cnt);
         write_csr(DELAYED_START_READER_10, 1);
     }
 }
@@ -106,7 +106,7 @@ int test_p2_async_no_is() {
     }
     snrt_cluster_hw_barrier();
 
-    void* tcdm_base_ptr = snrt_l1_next();
+    void* tcdm_base_ptr = (void*)(((uintptr_t)snrt_l1_next() + 2047u) & ~(uintptr_t)2047u);
 
     // B1: oscore_in is nb_slots ADJACENT ring slots (R0 stride-0 wrap walks them contiguously).
     uint8_t* ptr_oscore_in_base   = (uint8_t*)tcdm_base_ptr;
@@ -116,7 +116,9 @@ int test_p2_async_no_is() {
 
     // switchCore dt input: full but packed (per-window dt only) -> small. BC: nb_slots-slot async ring.
     uint8_t* ptr_dt_packed      = _ALIGN64(ptr_oscore_in_base + oscore_in_tcdm_bytes);
-    uint8_t* ptr_BC_ring        = _ALIGN64(ptr_dt_packed + M2_length_dt_packed);
+    // BC ring on a 2 KiB boundary: datagen pre-swizzles the BC windows against ring-relative
+    // positions (bc_swizzle, docs/dataflow/22_agu_xor_swizzle.md).
+    uint8_t* ptr_BC_ring = (uint8_t*)(((uintptr_t)(ptr_dt_packed + M2_length_dt_packed) + 2047u) & ~(uintptr_t)2047u);
     uint32_t bc_ring_tcdm_bytes = nb_slots * M2_length_BC_l_tile;
 
     uint8_t* pingpong_base_ptr = _ALIGN64(ptr_BC_ring + bc_ring_tcdm_bytes);
@@ -153,6 +155,7 @@ int test_p2_async_no_is() {
                                        (uint32_t)ptr_dt_bias, (uint32_t)ptr_x, (uint32_t)ptr_A, (uint32_t)ptr_BC_ring,
                                        (uint32_t)ptr_D, (uint32_t)ptr_y);
         set_simbacore_csr(M33_PHASE2_NO_ISCORE, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+        if (bc_swizzle) write_csr(ADDR_REMAP_INDEX_READER_7, 1);  // BC ring read through the XOR swizzle
     }
 
     // Preload: first nb_slots oscore_in + BC L-tiles into their rings; PACKED full dt extracted

@@ -37,27 +37,25 @@ op.
 
 ## `rmsnorm`
 
-RMSNorm is fused into six SIMD launches with the intermediate `rms` buffer
+RMSNorm is fused into five SIMD launches with the intermediate `rms` buffer
 updated in place each step. The sequence per token is:
 
 1. `Rms`: `rms ← Σ x²`
 2. `Mul`: `rms *= 1/D` (D is broadcast from a one-lane constant in TCDM)
-3. `Sqrt`: `rms ← sqrt(rms)`
-4. `Div`: `rms ← 1 / rms`
-5. `Mul`: `x *= rms` (the rms scalar slides over D, one per token)
-6. `Mul`: `x *= weight` (weight is held stationary)
+3. `Rsqrt`: `rms ← 1 / sqrt(rms)` (one launch; the unit runs sqrt then reciprocal per element)
+4. `Mul`: `x *= rms` (the rms scalar slides over D, one per token)
+5. `Mul`: `x *= weight` (weight is held stationary)
 
 | Tensor      | Role                              | Lifecycle                                                  |
 | ----------- | --------------------------------- | ---------------------------------------------------------- |
-| `x`         | input activations and final output| DMA'd in; modified in place in steps 5–6                   |
+| `x`         | input activations and final output| DMA'd in; modified in place in steps 4–5                   |
 | `weight`    | RMSNorm scale                     | DMA'd in once                                              |
-| `rms`       | per-token denom (intermediate)    | written in step 1, updated in place through step 4         |
+| `rms`       | per-token denom (intermediate)    | written in step 1, updated in place through step 3         |
 | `d_inverse` | broadcast constant `1/D`          | built in TCDM by the compute core (no DMA)                 |
-| `ones`      | broadcast constant `1.0`          | built in TCDM by the compute core (no DMA)                 |
 
-The "broadcast a one-lane constant" pattern in steps 2 and 4 and the "slide
-one operand over D while the other walks the matrix" pattern in steps 5 and
-6 are both expressed by configuring the streamer's per-port temporal
+The "broadcast a one-lane constant" pattern in step 2 and the "slide
+one operand over D while the other walks the matrix" pattern in steps 4 and
+5 are both expressed by configuring the streamer's per-port temporal
 strides, not by software loops.
 
 ## `batchnorm`
@@ -67,18 +65,14 @@ per-channel `scale` and `shift`. This is the SegFormer ConvModule tail that
 follows the 1×1 conv (which is just an OS-core GeMM — the `osgemm` app); the
 two are separate apps, not a fused kernel.
 
-Two BF16 SIMD passes, same shape as the RMSNorm steps 5–6 "slide one operand
-over the channel axis while the other walks the matrix" pattern:
+A single fused BF16 pass (`SIMD_FMA_HOLD_BF16_RELU`): `out ← ReLU(x · scale + shift)`.
+The FmaHold b-operand stream delivers one interleaved `(scale, shift)` lane-block
+pair per channel (R13 walk `[2, D]` over the `[D][2][lanes]` buffer); the core
+latches the pair for the channel's `n_acc = seqLen/lanes` outputs, so the pass
+runs at the full one-output-per-cycle rate with almost no R13 traffic.
 
-1. `Mul`: `out ← x · scale` (per-channel multiply)
-2. `Add` + ReLU (`SIMD_ADD_BF16_RELU`): `out ← ReLU(out + shift)`, in place
-
-| Tensor      | Role                                  | Lifecycle                                      |
-| ----------- | ------------------------------------- | ---------------------------------------------- |
-| `x`         | input activations (`seqLen × channels`)| DMA'd in                                       |
-| `scale`     | per-channel multiplier                | DMA'd in once; slides over the channel axis    |
-| `shift`     | per-channel offset                    | DMA'd in once; slides over the channel axis    |
-| `out`       | output                                | written by pass 1, updated in place by pass 2  |
-
-The per-channel `scale`/`shift` broadcast is the streamer temporal-stride
-trick from RMSNorm, not a software loop.
+| Tensor       | Role                                    | Lifecycle                                    |
+| ------------ | --------------------------------------- | -------------------------------------------- |
+| `x`          | input activations (`seqLen × channels`) | DMA'd in                                     |
+| `scaleshift` | per-channel scale/shift, interleaved    | DMA'd in once; one pair read per channel     |
+| `out`        | output                                  | written by the single pass                   |

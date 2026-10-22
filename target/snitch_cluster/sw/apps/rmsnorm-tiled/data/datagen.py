@@ -76,8 +76,12 @@ class DataGenerator(DataGeneratorBase):
             # one x tile
             "R7_x": bounds_and_strides_LtD,
             "W3_x": bounds_and_strides_LtD,
-            # x + y residual add (y streamed full-tile, same layout as x)
-            "R13_y": bounds_and_strides_LtD,
+            # FmaStream b/c walk for the fused "x*weight + y" pass: per channel, the weight row
+            # prepended to the y slot (row 0), then the channel's Lt/lanes y rows
+            "R13_y": (
+                [1 + Lt // simdLanes, D],
+                [D * simdLanes * BF16 // 8, simdLanes * BF16 // 8],
+            ),
             # processing the per-row RMS vector (one tile)
             "R7_rms": bounds_and_strides_Lt,
             "W3_rms": bounds_and_strides_Lt,
@@ -106,16 +110,23 @@ class DataGenerator(DataGeneratorBase):
             "length_x_tile": Lt * D * BF16 // 8,
             "length_rms_tile": Lt * BF16 // 8,
             "length_weight": simdLanes * D * BF16 // 8,  # weights duplicated over simd lanes
+            # y slot = weight row (offset 0) + one y tile (offset length_weight)
+            "length_y_slot": (1 + Lt // simdLanes) * D * simdLanes * BF16 // 8,
             "L_tile": Lt,
         }
 
         # Golden data (full L x D). x/y/weight DMA'd from L3; out is the golden output (rmsnorm(x)*weight + y).
-        test_data = {name: "uint16_t" for name in ("x", "y", "weight", "out")}
+        test_data = {name: "uint16_t" for name in ("x", "y", "out")}
         tests = {
             "expected": L * D,
         }
 
         self.build_mode(mode_id, streamers, scalars=scalars, test_data=test_data, tests=tests)
+
+        # Weight arrives pre-folded with sqrt(D) from the generator: the RSQRT pass yields
+        # 1/sqrt(Sum x^2), so the "* 1/D" of the true rms rides along in the folded weight.
+        folded = self._read_data_int(f"M{mode_id}_weight_folded.bin")
+        self.format_vector("uint16_t", f"M{mode_id}_weight", folded)
 
 
 if __name__ == "__main__":

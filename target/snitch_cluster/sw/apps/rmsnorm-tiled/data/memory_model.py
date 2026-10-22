@@ -26,15 +26,13 @@ def build_report(params: dict) -> MemoryReport:
 
     report = MemoryReport("rmsnorm-tiled", {"seqLen": L, "dModel": D, "nb_tiles": nb_tiles, "L_tile": Lt})
 
+    y_slot = (SIMD_LANES_BF16 + Lt) * D * BF16 // 8  # weight row + one y tile
     bufs = [
-        ("weight",    SIMD_LANES_BF16 * D * BF16 // 8),
-        ("d_inverse", SIMD_LANES_BF16 * BF16 // 8),
-        ("ones",      SIMD_LANES_BF16 * BF16 // 8),
         ("rms",       Lt * BF16 // 8),
         ("x_slot0",   Lt * D * BF16 // 8),
         ("x_slot1",   Lt * D * BF16 // 8),
-        ("y_slot0",   Lt * D * BF16 // 8),
-        ("y_slot1",   Lt * D * BF16 // 8),
+        ("y_slot0",   y_slot),
+        ("y_slot1",   y_slot),
     ]
     report.add_section("Double-buffered L-tile pipeline", bufs)
     total = sequential_bytes([s for _, s in bufs])

@@ -47,6 +47,41 @@ class DataGenerator(_oscore_datagen.DataGenerator):
         self._emit_p2_rings()
         self._run_memory_model()
 
+    def read_and_format_vector(self, mode_id, type, tensor_name):
+        if self.bc_swizzle and mode_id == 2 and tensor_name == "dt_BC":
+            # R7 reads the BC ring through the AGU swizzle. main.c aligns the ring base to
+            # 2 KiB; L-tile lt refills slot lt % nb_slots (consistent because nb_l_tiles is
+            # a multiple of nb_slots), so every BC window's ring position - and hence its
+            # permutation - is fixed: pre-swizzle it in the combined L3 image. dt is packed
+            # into its own identity-mapped buffer and stays logical.
+            assert self.nb_l_tiles % self.nb_slots == 0, "slot assignment must be L-tile-stable"
+            FP8 = 8
+            su = self.seqLenUnroll
+            dt_win = su * self.dtRank * FP8 // 8
+            bc_win = su * (2 * self.dState) * FP8 // 8
+            comb_win = su * self.xProjDim * FP8 // 8
+            win_per_l_tile = self.L_tile // su
+            len_bc_l_tile = win_per_l_tile * bc_win
+            assert bc_win % 256 == 0, f"BC window {bc_win} must be a whole number of 256 B rows"
+            data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            raw = bytearray(v & 0xFF for v in data)
+            assert len(raw) % comb_win == 0
+            for g in range(len(raw) // comb_win):
+                lt, w = divmod(g, win_per_l_tile)
+                ring_off = (lt % self.nb_slots) * len_bc_l_tile + w * bc_win
+                src = raw[g * comb_win + dt_win : g * comb_win + dt_win + bc_win]
+                out = bytearray(bc_win)
+                for r in range(bc_win // 256):
+                    key = ((ring_off + r * 256) >> 8) & 7
+                    for c in range(8):
+                        out[r * 256 + (c ^ key) * 32 : r * 256 + (c ^ key) * 32 + 32] = src[
+                            r * 256 + c * 32 : r * 256 + c * 32 + 32
+                        ]
+                raw[g * comb_win + dt_win : g * comb_win + dt_win + bc_win] = out
+            self.format_vector(type, f"M{mode_id}_{tensor_name}", list(raw))
+            return
+        return super().read_and_format_vector(mode_id, type, tensor_name)
+
     def _emit_p2_rings(self):
         FP8 = 8
         su = self.seqLenUnroll

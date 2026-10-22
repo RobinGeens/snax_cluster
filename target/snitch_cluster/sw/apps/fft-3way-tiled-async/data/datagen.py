@@ -175,18 +175,10 @@ class DataGenerator(DataGeneratorBase):
                 [4 * BANK_BYTES, L2 * 4 * BANK_BYTES, seqLenUnroll * L2 * 4 * BANK_BYTES, 0],
             ),
             "W3_2": (
+                # Fused re/im deinterleave (W3 2-D spatial) → __flattenColMajor in H2.
                 [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
-                [4 * BANK_BYTES],
-            ),
-            # Step 2B: SIMD NOOP deinterleave re/im → __flattenColMajor.
-            "R7_2B": (
-                [Lt * dM * FP8 // (2 * suc_serial_width_BC), 2],
-                [8 * BANK_BYTES, 2 * BANK_BYTES],
-                [BANK_BYTES, 4 * BANK_BYTES],
-            ),
-            "W3_2B": (
-                [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
-                [4 * BANK_BYTES],
+                [2 * BANK_BYTES],
+                [BANK_BYTES, Lt * dM * FP8 // 8],
             ),
             # Step 3: partition 2.
             "R11_3": (
@@ -220,18 +212,10 @@ class DataGenerator(DataGeneratorBase):
                 [4 * BANK_BYTES, seqLenUnroll * 4 * BANK_BYTES, 0, 0],
             ),
             "W3_4": (
+                # Fused re/im deinterleave, as W3_2.
                 [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
-                [4 * BANK_BYTES],
-            ),
-            # Step 4B: SIMD NOOP deinterleave re/im → __flattenColMajor.
-            "R7_4B": (
-                [Lt * dM * FP8 // (2 * suc_serial_width_BC), 2],
-                [8 * BANK_BYTES, 2 * BANK_BYTES],
-                [BANK_BYTES, 4 * BANK_BYTES],
-            ),
-            "W3_4B": (
-                [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
-                [4 * BANK_BYTES],
+                [2 * BANK_BYTES],
+                [BANK_BYTES, Lt * dM * FP8 // 8],
             ),
             # Step 5: partition 3. L3 holds the full [re(all m3) | im(all m3)] K order (the re/im
             # halves of each l3-tile staged to their own regions). The IS-core can't contract the

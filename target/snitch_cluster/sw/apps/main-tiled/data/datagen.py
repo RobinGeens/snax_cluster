@@ -23,7 +23,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../../ut
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../main/data"))
 sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 
-from datagen_base import BANKWIDTH, DataGeneratorBase, BANK_BYTES, FP8, BF16  # type: ignore[import]
+from datagen_base import BANKWIDTH, DataGeneratorBase, BANK_BYTES, FP8, BF16, NB_TEST_SAMPLES  # type: ignore[import]
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
@@ -47,6 +47,30 @@ class DataGenerator(DataGeneratorBase):
         self.build_Phase1_data()
         self.build_Phase2_data()
         self._run_memory_model()
+
+    @staticmethod
+    def _swz(a: int) -> int:
+        """AGU XOR bank swizzle (docs/dataflow/22_agu_xor_swizzle.md): addr[7:5] ^= addr[10:8]."""
+        return (a & ~0xE0) | ((((a >> 5) ^ (a >> 8)) & 0x7) << 5)
+
+    def _swizzle_u16_image(self, data, base):
+        """Pre-swizzle a uint16 DMA image against TCDM byte offset `base` (from a 2 KiB-aligned start)."""
+        raw = b"".join(int(v).to_bytes(2, "little") for v in data)
+        out = bytearray(len(raw))
+        for o in range(0, len(raw), 32):
+            p = self._swz(base + o) - base
+            out[p : p + 32] = raw[o : o + 32]
+        return [int.from_bytes(out[i * 2 : (i + 1) * 2], "little") for i in range(len(data))]
+
+    def read_and_format_vector(self, mode_id, type, tensor_name):
+        if self.bc_swizzle and mode_id == 1 and tensor_name == "iscore_bias":
+            # P1 R13/W3 access iscore_out through the swizzle: pre-swizzle the bias init
+            # image so the plain 1-D DMA lands it at the swizzled addresses.
+            data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            data = self._swizzle_u16_image(data, self._iscore_out_p1_addr)
+            self.format_vector(type, f"M{mode_id}_{tensor_name}", data)
+            return
+        return super().read_and_format_vector(mode_id, type, tensor_name)
 
     def _run_memory_model(self):
         import importlib.util
@@ -92,6 +116,10 @@ class DataGenerator(DataGeneratorBase):
         self.bc_pad_bytes = self.bc_pad_banks * BANK_BYTES
         self.bc_matrix_bytes = self.seqLenUnroll * BANK_BYTES  # one bank-transpose matrix
         self.bc_matrix_stride = self.bc_matrix_bytes + self.bc_pad_bytes
+        # Alternative BC bank-conflict fix at zero footprint: AGU XOR swizzle on the dt_BC
+        # producers/consumers (P1 W3/R13, P2 R7/R2). See docs/dataflow/22_agu_xor_swizzle.md.
+        self.bc_swizzle = int(self.kwargs.get("bc_swizzle", 0))
+        assert not (self.bc_swizzle and self.bc_pad_banks), "bc_swizzle and bc_pad_banks are mutually exclusive"
         # Phase1 psum write (W3/R13) split: (cycles-per-matrix, matrices) with a padded matrix stride
         self.psum_cycle_bytes = self.seqLenUnroll * BF16 // 8
         self.psum_cycles_per_matrix = self.bc_matrix_bytes // self.psum_cycle_bytes
@@ -279,6 +307,12 @@ class DataGenerator(DataGeneratorBase):
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
 
+        # main.c places iscore_out at (2 KiB-aligned base) + len_oscore_in: that offset is the
+        # swizzle-phase anchor for the bias image and the sampled check below.
+        self._iscore_out_p1_addr = len_oscore_in
+        if self.bc_swizzle:
+            assert len_oscore_in % 256 == 0 and len_iscore_out % 256 == 0
+
         tile_scalars = {
             "dInner_tile": self.dInner_tile,
             "length_oscore_weight_tile": len_oscore_weight // nb,
@@ -296,7 +330,7 @@ class DataGenerator(DataGeneratorBase):
         scalars = {**lengths, **deltas, **tile_scalars, **stride_scalars}
         self.phase1_scalars = scalars.copy()
 
-        tests = {"conv_out": self.seqLen * self.dInner, "iscore_out": self.seqLen * self.xProjDim}
+        tests = {"conv_out": self.seqLen * self.dInner}
 
         test_data = {
             name: "uint8_t"
@@ -314,6 +348,15 @@ class DataGenerator(DataGeneratorBase):
         test_data["iscore_bias"] = "uint16_t"
 
         self.build_mode(mode_id, streamers_bulk, scalars=scalars, test_data=test_data, tests=tests)
+
+        # iscore_out lives at swizzled addresses when bc_swizzle: emit the logical sample
+        # indices plus their swizzled twins (identity twins otherwise).
+        n = self.seqLen * self.xProjDim
+        idx = sorted(random.randint(0, n - 1) for _ in range(NB_TEST_SAMPLES))
+        base = self._iscore_out_p1_addr
+        idx_swz = [self._swz(base + k) - base for k in idx] if self.bc_swizzle else list(idx)
+        self.format_vector("int32_t", "M1_test_samples_iscore_out", idx)
+        self.format_vector("int32_t", "M1_test_samples_iscore_out_swz", idx_swz)
 
     # =========================================================================
     # Phase 2

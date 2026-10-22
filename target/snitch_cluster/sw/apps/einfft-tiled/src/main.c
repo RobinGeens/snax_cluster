@@ -20,6 +20,20 @@
 
 #define _ALIGN64(p) ((uint8_t*)(((uintptr_t)(p) + 63u) & ~(uintptr_t)63u))
 
+// Restore R13 to a safe disabled state: the bias walk leaves zero temporal strides,
+// and the stride-zero bug would turn the next launch's bound0=0 disable into bound=1.
+static inline void r13_safe_disable(void) {
+    write_csr(S_STRIDE_BASE_READER_13, 1);
+    write_csr(T_BOUND_BASE_READER_13 + 0, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 1, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 2, 0);
+    write_csr(T_BOUND_BASE_READER_13 + 3, 0);
+    write_csr(T_STRIDE_BASE_READER_13 + 0, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 1, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 2, 1);
+    write_csr(T_STRIDE_BASE_READER_13 + 3, 1);
+}
+
 int main(void) {
     int err = 0;
 
@@ -74,8 +88,6 @@ int main(void) {
     uint8_t* ptr_outB    = p_after;
     p_after              = _ALIGN64(p_after + M3_length_d_cat);
     uint16_t* ptr_bf16_a = (uint16_t*)p_after;
-    p_after              = _ALIGN64(p_after + M3_length_bf16);
-    uint16_t* ptr_bf16_b = (uint16_t*)p_after;
 
     uint32_t simbacore_cycles = 0, start_cycles = 0;
 
@@ -99,7 +111,7 @@ int main(void) {
         uint8_t* layer_b_im_l3   = (layer == 0) ? (uint8_t*)M3_bias_1_imag_mini : (uint8_t*)M3_bias_2_imag_mini;
         uint8_t* layer_out_re_l3 = (layer == 0) ? l3_out_l1_re : l3_out_l2_re;
         uint8_t* layer_out_im_l3 = (layer == 0) ? l3_out_l1_im : l3_out_l2_im;
-        uint32_t add_bias_mode   = (layer == 0) ? M3_SIMD_ADD_BF16_RELU : M8_SIMD_ADD_BF16;
+        uint32_t add_bias_mode   = (layer == 0) ? M3_SIMD_ADD_BF16_RELU_REQUANT : M3_SIMD_ADD_BF16_REQUANT;
 
         for (uint32_t b = 0; b < M3_nBranches; b++) {
             int bbuf           = b & 1;
@@ -165,13 +177,15 @@ int main(void) {
                     while (read_csr(STREAMER_BUSY_CSR));
                     simbacore_cycles += read_simbacore_perf_counter();
 
-                    // B ; preload SIMD widen streamers for side 0 (fuse follows; rr = out_A[0])
+                    // B ; preload the full side-0 pass1' program (R7=rr, R13=ii, W3=bf16_a)
                     _set_streamer_start();
                     _set_simbacore_start();
                     write_csr(STREAMER_START_CSR, 0);
                     write_csr(SIMBACORE_START, 0);
-                    set_simd_streamer_no_b((uint32_t)ptr_outA, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
-                                           (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
+                    set_simd_streamer_csr((uint32_t)ptr_outA, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
+                                          (uint32_t)(ptr_outB + M3_length_d_tile), M3_R13_fp8_ss, M3_R13_fp8_tb,
+                                          M3_R13_fp8_ts,  //
+                                          (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
                     while (read_csr(SIMBACORE_BUSY));
                     while (read_csr(STREAMER_BUSY_CSR));
                     simbacore_cycles += read_simbacore_perf_counter();
@@ -183,84 +197,40 @@ int main(void) {
                     uint8_t* ptr_ir = ptr_outB;
                     uint8_t* ptr_ii = ptr_outB + M3_length_d_tile;
 
-                    // ---- SIMD fuse for this tile (both sides) ----
+                    // ---- SIMD fuse for this tile (both sides, 2 launches each) ----
                     for (int side = 0; side < 2; side++) {
                         uint8_t* pos     = (side == 0) ? ptr_rr : ptr_ri;
                         uint8_t* neg     = (side == 0) ? ptr_ii : ptr_ir;
                         uint16_t* bias_b = ((side == 0) ? ptr_b_re_pp[bbuf] : ptr_b_im_pp[bbuf]);
                         // tile slice of the mini bias (d3-major, contiguous)
-                        bias_b         = (uint16_t*)((uint8_t*)bias_b + tile * M3_length_bias_mini_tile);
-                        uint8_t* out_t = (side == 0) ? ptr_out_re_pp[obuf] : ptr_out_im_pp[obuf];
-                        uint32_t binop = (side == 0) ? M9_SIMD_SUB_BF16 : M8_SIMD_ADD_BF16;
+                        bias_b             = (uint16_t*)((uint8_t*)bias_b + tile * M3_length_bias_mini_tile);
+                        uint8_t* out_t     = (side == 0) ? ptr_out_re_pp[obuf] : ptr_out_im_pp[obuf];
+                        uint32_t binop_fp8 = (side == 0) ? M3_SIMD_SUB_FP8_REQUANT : M3_SIMD_ADD_FP8_REQUANT;
 
-                        // Widen pos -> bf16_a
+                        // pass1': FP8 binop + requant: pos (+/-) neg -> bf16_a
                         if (side == 0) {
-                            // Streamers preloaded during OSGEMM B (pos = rr = out_A[0])
-                            set_simbacore_csr(M25_SIMD_NOOP_FP8_REQUANT, seqLen, M3_dPerB_tile, M3_dPerB_tile, 1, 1);
+                            // Streamers preloaded during OSGEMM B
+                            set_simbacore_csr(binop_fp8, seqLen, M3_dPerB_tile, M3_dPerB_tile, 1, 1);
                         } else {
-                            set_simd_streamer_no_b((uint32_t)pos, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
-                                                   (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb,
-                                                   M3_W3_widen_ts);
-                            write_csr(MODE, M25_SIMD_NOOP_FP8_REQUANT);
+                            set_simd_streamer_csr((uint32_t)pos, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
+                                                  (uint32_t)neg, M3_R13_fp8_ss, M3_R13_fp8_tb, M3_R13_fp8_ts,
+                                                  (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb,
+                                                  M3_W3_widen_ts);
+                            write_csr(MODE, binop_fp8);
                         }
-
                         _set_streamer_start();
                         _set_simbacore_start();
                         write_csr(STREAMER_START_CSR, 0);
                         write_csr(SIMBACORE_START, 0);
-                        write_csr(BASE_PTR_READER_7_LOW, (uint32_t)neg);
-                        write_csr(BASE_PTR_WRITER_3_LOW, (uint32_t)ptr_bf16_b);
                         while (read_csr(SIMBACORE_BUSY));
                         while (read_csr(STREAMER_BUSY_CSR));
                         simbacore_cycles += read_simbacore_perf_counter();
 
-                        // Widen neg -> bf16_b ; prep binop streamers
-                        _set_streamer_start();
-                        _set_simbacore_start();
-                        write_csr(STREAMER_START_CSR, 0);
-                        write_csr(SIMBACORE_START, 0);
+                        // pass2': BF16 ADD bias + requant (+ ReLU in layer 1) -> out tile (FP8)
                         set_simd_streamer_csr((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
-                                              (uint32_t)ptr_bf16_b, M3_R13_bf16_ss, M3_R13_bf16_tb, M3_R13_bf16_ts,
-                                              (uint32_t)ptr_bf16_a, M3_W3_bf16_ss, M3_W3_bf16_tb, M3_W3_bf16_ts);
-                        while (read_csr(SIMBACORE_BUSY));
-                        while (read_csr(STREAMER_BUSY_CSR));
-                        simbacore_cycles += read_simbacore_perf_counter();
-
-                        // BF16 binop: bf16_a (+/-) bf16_b -> bf16_a
-                        write_csr(MODE, binop);
-                        _set_streamer_start();
-                        _set_simbacore_start();
-                        write_csr(STREAMER_START_CSR, 0);
-                        write_csr(SIMBACORE_START, 0);
-                        while (read_csr(SIMBACORE_BUSY));
-                        while (read_csr(STREAMER_BUSY_CSR));
-                        simbacore_cycles += read_simbacore_perf_counter();
-
-                        // Configure R13 mini-bias walk (tile slice)
-                        write_csr(BASE_PTR_READER_13_LOW, (uint32_t)bias_b);
-                        write_csr(T_BOUND_BASE_READER_13 + 0, M3_R13_bias_tb[0]);
-                        write_csr(T_BOUND_BASE_READER_13 + 1, M3_R13_bias_tb[1]);
-                        write_csr(T_BOUND_BASE_READER_13 + 2, M3_R13_bias_tb[2]);
-                        write_csr(T_BOUND_BASE_READER_13 + 3, M3_R13_bias_tb[3]);
-                        write_csr(T_STRIDE_BASE_READER_13 + 0, M3_R13_bias_ts[0]);
-                        write_csr(T_STRIDE_BASE_READER_13 + 1, M3_R13_bias_ts[1]);
-                        write_csr(T_STRIDE_BASE_READER_13 + 2, M3_R13_bias_ts[2]);
-                        write_csr(T_STRIDE_BASE_READER_13 + 3, M3_R13_bias_ts[3]);
-
-                        // BF16 ADD bias (+ ReLU in layer 1) ; prep narrow streamers
+                                              (uint32_t)bias_b, M3_R13_bias_ss, M3_R13_bias_tb, M3_R13_bias_ts,
+                                              (uint32_t)out_t, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
                         write_csr(MODE, add_bias_mode);
-                        _set_streamer_start();
-                        _set_simbacore_start();
-                        write_csr(STREAMER_START_CSR, 0);
-                        write_csr(SIMBACORE_START, 0);
-                        set_simd_streamer_no_b((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
-                                               (uint32_t)out_t, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
-                        while (read_csr(SIMBACORE_BUSY));
-                        while (read_csr(STREAMER_BUSY_CSR));
-                        simbacore_cycles += read_simbacore_perf_counter();
-
-                        // Narrow BF16 -> FP8 -> out tile
-                        write_csr(MODE, M24_SIMD_NOOP_BF16_REQUANT);
                         _set_streamer_start();
                         _set_simbacore_start();
                         write_csr(STREAMER_START_CSR, 0);
@@ -269,6 +239,7 @@ int main(void) {
                         while (read_csr(STREAMER_BUSY_CSR));
                         simbacore_cycles += read_simbacore_perf_counter();
                     }
+                    r13_safe_disable();
                 }
 
                 snrt_cluster_hw_barrier();

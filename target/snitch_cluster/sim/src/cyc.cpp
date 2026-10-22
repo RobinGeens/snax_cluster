@@ -67,6 +67,7 @@ void CycReader::configure(const Agu& a, int nch, int nsp, int fd, int prt) {
     data_depth = fd;       // response-side data FIFO depth (read-ahead vs consumer)
     addr_depth = fd;       // request-side address FIFO == data FIFO depth in the RTL (StreamParamGen)
     port = prt;
+    remap = a.remap;
     sstride[0] = a.s_stride[0];
     sstride[1] = a.s_stride[1];
     if (nsp == 2) { sbound[0] = 2; sbound[1] = 2; }
@@ -99,7 +100,7 @@ void CycReader::propose(Fabric& f) {
         long g = lane_issued[l];
         if (g - consumed >= data_depth) continue;        // data FIFO full
         if (g - lane_landed[l] >= addr_depth) continue;  // address FIFO full (outstanding cap)
-        uint32_t a = (uint32_t)lane_addr(g, l);
+        uint32_t a = agu_swz((uint32_t)lane_addr(g, l), remap);
         f.post((a >> 3) & 31, (port << 4) | l, prio);
     }
 }
@@ -133,7 +134,7 @@ bool CycReader::pop() {
 void CycWriter::configure(const Agu& a, int nch, int nsp, int prt) {
     base = a.base;
     for (int i = 0; i < 4; i++) { ts[i] = a.t_stride[i]; eb[i] = a.t_bound[i] ? a.t_bound[i] : 1; }
-    num_channel = nch; n_spatial = nsp; port = prt;
+    num_channel = nch; n_spatial = nsp; port = prt; remap = a.remap;
     sstride[0] = a.s_stride[0]; sstride[1] = a.s_stride[1];
     if (nsp == 2) { sbound[0] = 2; sbound[1] = 2; } else { sbound[0] = nch; sbound[1] = 1; }
     for (int i = 0; i < 4; i++) ti[i] = 0;
@@ -157,7 +158,7 @@ void CycWriter::propose(Fabric& f) {
     // stall the producing core, so it asserts TCDM priority to drain.
     int prio = (fifo_occ >= depth - 1) ? 1 : 0;
     for (int l = 0; l < num_channel; l++)
-        if (!lane_done[l]) { uint32_t a = (uint32_t)lane_addr(l); f.post((a >> 3) & 31, (port << 4) | l, prio); }
+        if (!lane_done[l]) { uint32_t a = agu_swz((uint32_t)lane_addr(l), remap); f.post((a >> 3) & 31, (port << 4) | l, prio); }
 }
 
 void CycWriter::commit(Fabric& f, const bool granted[64], int& grant_idx) {
@@ -181,10 +182,10 @@ uint64_t cyc_suc_duration(const Agu& r7_agu, int seqLen, int dInner_tile, uint32
     // run ahead (bounded by FIFO depth), so the bank-conflict magnitude (~1.75x at pad0/2 banks,
     // 1.0x at pad4/4 banks) comes from the per-cycle arbitration. See target/snitch_cluster/sim/docs/memsim.md.
     const int NCH = 4, delaySU = 4, RPR = 4;   // R7 group = 4 lanes; RPR groups (B+C) per delaySU
-    // RTL FIFO depths (Reader.scala/StreamParamGen): request-side addr FIFO = 4; response-side
-    // read-ahead = responser FIFO (4) + dataBuffer (4) = 8 (the 2-refresh cross-overlap). Do
-    // not change without RTL re-check.
-    const int ADDR_D = 4, DATA_D = 8;
+    // RTL FIFO depths (Reader.scala/StreamParamGen): request-side addr FIFO = fifo_depth[7]; response-
+    // side read-ahead = responser FIFO + dataBuffer = 2x (the 2-refresh cross-overlap). Do not change
+    // the 2x without RTL re-check.
+    const int ADDR_D = snax_streamer_depth(7), DATA_D = 2 * ADDR_D;
     uint64_t iters = (uint64_t)seqLen * (uint64_t)dInner_tile;
     if (iters == 0) return 0;
     int32_t ts[4];
@@ -199,7 +200,7 @@ uint64_t cyc_suc_duration(const Agu& r7_agu, int seqLen, int dInner_tile, uint32
         int64_t toff = t0 * ts[0] + t1 * ts[1] + t2 * ts[2] + t3 * ts[3];
         int i = lane % 2, j = lane / 2;
         int64_t soff = (int64_t)i * r7_agu.s_stride[0] + (int64_t)j * r7_agu.s_stride[1];
-        return (int)(((uint32_t)(r7_agu.base + toff + soff) >> 3) & 31);
+        return (int)((agu_swz((uint32_t)(r7_agu.base + toff + soff), r7_agu.remap) >> 3) & 31);
     };
     long issued[NCH] = {0}, landed[NCH] = {0};   // steps each lane has issued (granted) / landed (+1cc)
     int  pend[NCH] = {0};                         // granted this cycle, lands next

@@ -29,16 +29,6 @@ from datagen_base import DataGeneratorBase, FP8, BF16, BANK_BYTES  # type: ignor
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
-# Synthesized SIMD mode: SIMD_ADD_BF16 + doRelu (see einfft datagen for the bit-layout sanity check).
-_EN_ISCORE_REQUANT_BIT = 1 << 15
-_SIMD_MODE_ADD         = 1
-
-
-def _simd_add_bf16_relu_mode() -> int:
-    m_simd = (_SIMD_MODE_ADD << 3) | (1 << 2)
-    return _EN_ISCORE_REQUANT_BIT | m_simd
-
-
 class DataGenerator(DataGeneratorBase):
     APP_NAME = "einfft-tiled-is-osgemm"
     NB_BRANCHES = 4
@@ -112,12 +102,9 @@ class DataGenerator(DataGeneratorBase):
             f"seqLen ({seqLen}) must be >= 2*seqLenUnroll ({2 * Mu}); M=1 breaks the folded imag narrow."
         )
 
-        # ---- Combined IS_OSGEMM mode (OS requant ON, IS requant OFF) ----------
-        is_osgemm = self.kwargs["M3_OSGEMM"] | self.kwargs["M4_ISGEMM"]
-        requant_bit = self.kwargs["M4_ISGEMM"] ^ self.kwargs["M5_ISGEMM_NO_REQUANT"]
-        iosgemm_no_requant = is_osgemm & ~requant_bit
-        # Synthesized BF16->FP8 narrow WITH ReLU (doRelu bit) for the imag layer-1 fuse.
-        noop_bf16_requant_relu = self.kwargs["M24_SIMD_NOOP_BF16_REQUANT"] | (1 << 2)
+        iosgemm_no_requant = self.kwargs["M32_IS_OSGEMM_NO_REQUANT"]
+        # BF16->FP8 narrow with ReLU for the imag layer-1 fuse.
+        noop_bf16_requant_relu = self.kwargs["M41_SIMD_NOOP_BF16_REQUANT_RELU"]
 
         # ============================ OS-core (real side) =====================
         # rr/ii : A=(L,dPerB) flatA, B=(dPerB,dPerB) N_M_K, D=(L,dPerB) ConvFormat.
@@ -173,12 +160,13 @@ class DataGenerator(DataGeneratorBase):
         r13_bias_ts = [0, group_bytes, dim1_bound * group_bytes, 0]
 
         simd_streamers = {
+            # Real pass1' (FP8 SUB + requant): R7/R13 read FP8, W3 writes BF16.
             "R7_widen": ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
+            "R13_fp8":  ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "W3_widen": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
+            # Real pass2' (BF16 bias-add + requant) + imag narrow.
             "R7_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES, 2 * BANK_BYTES]),
-            "R13_bf16": ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "R13_bias": (r13_bias_tb, r13_bias_ts, [BANK_BYTES]),
-            "W3_bf16":  ([n_bf16_cycles, 1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
             "W3_fp8":   ([n_fp8_cycles,  1, 1, 1], [32, 0, 0, 0], [BANK_BYTES]),
         }
 
@@ -239,8 +227,10 @@ class DataGenerator(DataGeneratorBase):
             "length_bias_mini_branch": len_bias_mini_branch,
             "length_bias_im_branch":  len_bias_im_branch,
             "IS_OSGEMM_NO_REQUANT":   iosgemm_no_requant,
-            "SIMD_ADD_BF16_RELU":     _simd_add_bf16_relu_mode(),
             "SIMD_NOOP_BF16_REQUANT_RELU": noop_bf16_requant_relu,
+            "SIMD_SUB_FP8_REQUANT":   self.kwargs["M51_SIMD_SUB_FP8_REQUANT"],
+            "SIMD_ADD_BF16_REQUANT":  self.kwargs["M53_SIMD_ADD_BF16_REQUANT"],
+            "SIMD_ADD_BF16_RELU_REQUANT": self.kwargs["M54_SIMD_ADD_BF16_RELU_REQUANT"],
         }
 
         test_data = {name: "uint8_t" for name, _ in specs}

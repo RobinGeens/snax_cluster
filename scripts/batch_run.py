@@ -25,6 +25,11 @@ Scheduling:
     builds wait behind that app's slow datagen, but every other app proceeds.
   * Sims run concurrently, bounded by `max_parallel` (the OOM knob).
   * A build does not wait for its sim to finish before the next build starts.
+  * Robustness: regression_test.sh shares the run lock (never two heavy runs at
+    once); every child runs in its own recorded process group; a watchdog reaps
+    everything if the orchestrator dies uncleanly (kill -9/OOM); per-sim ulimits
+    (vsim_vmem_gb / vsim_fsize_gb) contain runaway sims; leftovers of dead runs
+    are swept at startup.
 
 Results are merged into ONE persistent report at the repo root (<root>/report.md
 + report.json). The merge is self-cleaning per JOB (app__tag): rerunning a config
@@ -57,6 +62,68 @@ from datetime import datetime, timezone
 import hjson
 
 import batch_run_report
+
+# Process trees are only ever killed while they still contain one of these tools
+# (guards every sweep against PID reuse).
+_SWEEP_MARKS = ("vsim", "snitch_cluster", "memsim", "podman", "timeout", "plot_timeline")
+
+# Standalone reaper (see _start_watchdog): blocks on a pipe from the orchestrator;
+# when the orchestrator dies in ANY way (incl. SIGKILL/OOM, which skip
+# terminate_all) the pipe EOFs and every recorded child process group plus this
+# run's build containers are torn down. After a clean exit it finds nothing.
+_WATCHDOG_SRC = r"""
+import os, signal, subprocess, sys, time
+
+pgid_file, prefix = sys.argv[1], sys.argv[2]
+sys.stdin.buffer.read()  # blocks until the parent is gone, however it died
+
+MARKS = ("vsim", "snitch_cluster", "memsim", "podman", "timeout", "plot_timeline")
+
+def group_cmdlines(pg):
+    cmds = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % d) as f:
+                rest = f.read().rsplit(")", 1)[1].split()
+            if int(rest[2]) != pg:
+                continue
+            with open("/proc/%s/cmdline" % d, "rb") as f:
+                cmds.append(f.read().replace(b"\0", b" ").decode("utf-8", "replace"))
+        except (OSError, IndexError, ValueError):
+            continue
+    return cmds
+
+try:
+    with open(pgid_file) as f:
+        pgids = sorted({int(x) for x in f.read().split()})
+except (OSError, ValueError):
+    pgids = []
+
+for sig in (signal.SIGTERM, signal.SIGKILL):
+    for pg in pgids:
+        if pg > 1 and any(m in c for c in group_cmdlines(pg) for m in MARKS):
+            print("sweeping leftover process group %d (sig %d)" % (pg, sig), flush=True)
+            try:
+                os.killpg(pg, sig)
+            except OSError:
+                pass
+    if sig == signal.SIGTERM:
+        time.sleep(5)
+
+try:
+    out = subprocess.run(
+        ["podman", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=60
+    ).stdout
+except Exception:
+    out = ""
+for name in out.split():
+    if name.startswith(prefix):
+        print("removing leftover build container %s" % name, flush=True)
+        subprocess.run(["podman", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print("watchdog done", flush=True)
+"""
 
 CONTAINER = "ghcr.io/kuleuven-micas/snax:main"
 VSIM_BIN = "bin/snitch_cluster.vsim"
@@ -101,24 +168,29 @@ class BatchRun:
     def __init__(self, config_path=None, no_redo=False, skip_lock=False):
         self.cli_no_redo = no_redo
         self.root = repo_root()
+        # mount chisel-ssm
+        out = subprocess.check_output(["bender", "path", "chisel-ssm"], cwd=self.root, stderr=subprocess.DEVNULL)
+        self.chisel = os.path.normpath(out.decode().strip())
         self.cluster = os.path.join(self.root, "target", "snitch_cluster")
         # Only ONE batch run may run at a time: concurrent batch runs share each
         # app's build dir, the chisel-ssm/sbt datagen cache and the root
-        # report.json -- running two corrupts builds and results. Take an
-        # exclusive lock that the OS releases automatically if we die. --remodel
+        # report.json -- running two corrupts builds and results.
+        # regression_test.sh takes the SAME lock (flock) for its whole run:
+        # a concurrent batch + regression run once overloaded the whole server.
+        # The OS releases the lock automatically if we die. --remodel
         # skips it: it neither builds, vsims, nor touches params_in, and the report
         # is rewritten atomically, so it is safe alongside a live run.
         self._lock_fd = None
         if not skip_lock:
             self._lock_fd = open(os.path.join(self.root, ".batch_run.lock"), "w")
             try:
-                fcntl.lockf(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
                 held = open(os.path.join(self.root, ".batch_run.lock")).read().strip()
                 sys.exit(
-                    f"Another batch run is already running (PID {held or '?'}). "
-                    f"Refusing to start a second one -- it would corrupt the "
-                    f"shared params_in.hjson and report. Lock: {self.root}/.batch_run.lock"
+                    f"Another batch or regression run is already active ({held or '?'}). "
+                    f"Refusing to start a second one -- concurrent runs corrupt shared "
+                    f"state and overload the server. Lock: {self.root}/.batch_run.lock"
                 )
             self._lock_fd.seek(0)
             self._lock_fd.truncate()
@@ -139,6 +211,11 @@ class BatchRun:
         self.timeout = int(self.cfg.get("timeout", 0))
         # Build (podman make) wall-clock cap; 0 disables
         self.build_timeout = int(self.cfg.get("build_timeout", 0))
+        # Per-sim resource caps [GiB]; 0 disables. A runaway sim then dies alone
+        # instead of exhausting server RAM (address space) or filling the volume
+        # with .dasm traces (file size).
+        self.vsim_vmem_gb = int(self.cfg.get("vsim_vmem_gb", 48))
+        self.vsim_fsize_gb = int(self.cfg.get("vsim_fsize_gb", 32))
         # Global default for `force`; an individual param-set may override it with its
         # own `force` key. `force: false` (or --no-redo) => fully skip a job whose last
         # run already produced a result: no build, no vsim, no memsim -- the report just
@@ -152,6 +229,10 @@ class BatchRun:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.rundir = os.path.join(self.root, "batch_run_out", ts)
         os.makedirs(self.rundir, exist_ok=True)
+        # Every spawned child's process group is recorded here so the watchdog (or
+        # the next run's stale sweep) can kill it even if this orchestrator dies
+        # without cleanup.
+        self.pgids_path = os.path.join(self.rundir, ".pgids")
 
         self.sim_sem = threading.Semaphore(self.max_parallel)
         self.status_lock = threading.Lock()
@@ -287,9 +368,11 @@ class BatchRun:
         """Tag jobs that should be fully skipped rather than rerun (sets job["cached"]).
 
         A job is cached iff its effective force is false AND its last recorded run in the
-        persistent report.json reached state `done` with a real error count (PASS or
-        ERRORS/OOM). force=true jobs (the default) are never cached. build_fail, timeout
-        and no_result (state `done` but no error line) always rerun.
+        persistent report.json actually completed: state `done`, a real error count, NOT
+        crashed, and real cycle counts (a crash can still print a spurious error line but
+        never produces cycle counts). force=true jobs (the default) are never cached.
+        build_fail, timeout, no_result (done but no error line) and crashes / no-cycle runs
+        always rerun.
 
         Cached jobs are skipped completely: no .elf build, no vsim, no memsim model. The
         report merge keeps their last stored row verbatim (re-stamped as reused on this run)."""
@@ -306,7 +389,18 @@ class BatchRun:
         for lane in self.jobs:
             for job in lane:
                 prev = report.get(job["id"], {})
-                produced_result = prev.get("state") == "done" and prev.get("errors") is not None
+                # A crash can reach state `done` and still print a spurious error line, but it
+                # never produces cycle counts -- require real cycles and no crash flag so such
+                # jobs (and any no-cycle run) rerun instead of being cached forever.
+                has_cycles = (prev.get("simbacore") not in (None, "", "None")) or (
+                    prev.get("total") not in (None, "", "None")
+                )
+                produced_result = (
+                    prev.get("state") == "done"
+                    and prev.get("errors") is not None
+                    and not prev.get("crashed")
+                    and has_cycles
+                )
                 job["cached"] = (not self._job_force(job)) and produced_result
                 (cached if job["cached"] else kept).append(job["id"])
         self.cached_jobs = cached
@@ -359,7 +453,26 @@ class BatchRun:
         p = subprocess.Popen(cmd, cwd=self.cluster, stdout=stdout, stderr=subprocess.STDOUT, start_new_session=True)
         with self.procs_lock:
             self.procs[p.pid] = p
+        # start_new_session makes the child its own group leader; record the pgid
+        # for the watchdog / next run's stale sweep.
+        try:
+            with open(self.pgids_path, "a") as f:
+                f.write(f"{p.pid}\n")
+        except OSError:
+            pass
         return p
+
+    def _capped(self, cmd):
+        """Wrap a host-side sim command with soft ulimits (address space, max file
+        size) so one runaway process cannot take the server down or fill the volume."""
+        limits = []
+        if self.vsim_vmem_gb > 0:
+            limits.append(f"ulimit -S -v {self.vsim_vmem_gb * 1024 * 1024}")
+        if self.vsim_fsize_gb > 0:
+            limits.append(f"ulimit -S -f {self.vsim_fsize_gb * 2 * 1024 * 1024}")
+        if not limits:
+            return cmd
+        return ["bash", "-c", "; ".join(limits) + '; exec "$@"', "--", *cmd]
 
     def _reap(self, p):
         with self.procs_lock:
@@ -412,9 +525,7 @@ class BatchRun:
         decide which lane a job goes in -- the build's own make re-checks the cache
         for correctness, so a misclassification only ever costs scheduling, never data."""
         parts = [
-            f"{k}={v}"
-            for k, v in job["all_params"].items()
-            if not any(k.startswith(p) for p in self._CACHE_KEY_DROP)
+            f"{k}={v}" for k, v in job["all_params"].items() if not any(k.startswith(p) for p in self._CACHE_KEY_DROP)
         ]
         return " ".join(parts)
 
@@ -473,6 +584,8 @@ class BatchRun:
             *env_args,
             "-v",
             f"{self.root}:{self.root}",
+            "-v",
+            f"{self.chisel}:{self.chisel}",
             "-w",
             self.cluster,
             CONTAINER,
@@ -514,7 +627,7 @@ class BatchRun:
         log = os.path.join(self.rundir, jid + ".memsim.log")
         csv = os.path.join(self.rundir, jid + ".timeline.csv")
         with open(log, "w") as f:
-            p = self._spawn([MEMSIM_BIN, elf, "--timeline", csv], f)
+            p = self._spawn(self._capped([MEMSIM_BIN, elf, "--timeline", csv]), f)
             try:
                 p.wait(timeout=(self.timeout or None))
             except subprocess.TimeoutExpired:
@@ -568,7 +681,7 @@ class BatchRun:
                     return
                 self.set_state(jid, "running")
                 with open(log, "w") as f:
-                    p = self._spawn([VSIM_BIN, elf], f)
+                    p = self._spawn(self._capped([VSIM_BIN, elf]), f)
                     try:
                         rc = p.wait(timeout=(self.timeout or None))
                     except subprocess.TimeoutExpired:
@@ -685,6 +798,83 @@ class BatchRun:
         for w in workers:
             w.join()
 
+    @staticmethod
+    def _group_cmdlines(pg):
+        """Command lines of every process in process group `pg`."""
+        cmds = []
+        for d in os.listdir("/proc"):
+            if not d.isdigit():
+                continue
+            try:
+                with open(f"/proc/{d}/stat") as f:
+                    rest = f.read().rsplit(")", 1)[1].split()
+                if int(rest[2]) != pg:
+                    continue
+                with open(f"/proc/{d}/cmdline", "rb") as f:
+                    cmds.append(f.read().replace(b"\0", b" ").decode("utf-8", "replace"))
+            except (OSError, IndexError, ValueError):
+                continue
+        return cmds
+
+    def _sweep_stale(self):
+        """Kill leftovers of previous runs that died without cleanup (the vector for
+        stale make/vsim processes piling up server-wide): process groups recorded in
+        old rundirs' .pgids files that still contain our tools, and batch/regression
+        build containers whose owning PID is dead. Runs under the exclusive lock, so
+        nothing matching can belong to a live run."""
+        out_root = os.path.dirname(self.rundir)
+        swept = 0
+        for d in sorted(os.listdir(out_root)):
+            rundir = os.path.join(out_root, d)
+            pf = os.path.join(rundir, ".pgids")
+            if os.path.abspath(rundir) == os.path.abspath(self.rundir) or not os.path.isfile(pf):
+                continue
+            try:
+                with open(pf) as f:
+                    pgids = sorted({int(x) for x in f.read().split()})
+            except (OSError, ValueError):
+                pgids = []
+            live = [
+                pg for pg in pgids if pg > 1 and any(m in c for c in self._group_cmdlines(pg) for m in _SWEEP_MARKS)
+            ]
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                for pg in live:
+                    try:
+                        os.killpg(pg, sig)
+                    except OSError:
+                        pass
+                if live and sig == signal.SIGTERM:
+                    time.sleep(3)
+            swept += len(live)
+            try:
+                os.remove(pf)  # swept; never signal these (possibly reused) pgids again
+            except OSError:
+                pass
+        try:
+            out = subprocess.run(
+                ["podman", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=60
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        for name in out.split():
+            m = re.match(r"(?:batchbuild|rtbuild|buildsim)_(\d+)_", name)
+            if m and not os.path.exists(f"/proc/{m.group(1)}"):
+                self._podman_rm(name)
+                swept += 1
+        if swept:
+            print(f"[batch_run] swept {swept} stale process group(s)/container(s) left by dead runs")
+
+    def _start_watchdog(self):
+        """Spawn the _WATCHDOG_SRC reaper with a pipe held by this process; it acts
+        the moment the pipe EOFs, i.e. on ANY death of the orchestrator."""
+        self._watchdog = subprocess.Popen(
+            [sys.executable, "-c", _WATCHDOG_SRC, self.pgids_path, f"batchbuild_{os.getpid()}_"],
+            stdin=subprocess.PIPE,
+            stdout=open(os.path.join(self.rundir, "watchdog.log"), "w"),
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
     # --- driver ---
     def run(self):
         # Cancelling the orchestrator (Ctrl-C, kill, or tmux kill-pane/SIGHUP)
@@ -695,6 +885,8 @@ class BatchRun:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, on_signal)
 
+        self._sweep_stale()
+        self._start_watchdog()
         self._order = self._build_order()
         builder = threading.Thread(target=self.build_worker, daemon=True)
         builder.start()
@@ -730,8 +922,10 @@ class BatchRun:
         print(f"  Report: {os.path.join(self.report_dir, 'report.md')}")
         kept, cached = self.no_redo_summary
         if cached:
-            print(f"  force:false: ran {len(kept)} job(s); fully skipped {len(cached)} cached "
-                  f"job(s) (no build/vsim/memsim -- kept stored row).")
+            print(
+                f"  force:false: ran {len(kept)} job(s); fully skipped {len(cached)} cached "
+                f"job(s) (no build/vsim/memsim -- kept stored row)."
+            )
             for jid in cached:
                 print(f"    skipped {jid}")
 
@@ -748,8 +942,9 @@ class BatchRun:
         build/<app>.elf can be matched to the right job without trusting the (churned) build dir."""
         try:
             env = {**os.environ, "MEMSIM_ACC": "1"}
-            out = subprocess.run([MEMSIM_BIN, elf], cwd=self.cluster, env=env,
-                                 capture_output=True, text=True, timeout=60).stderr
+            out = subprocess.run(
+                [MEMSIM_BIN, elf], cwd=self.cluster, env=env, capture_output=True, text=True, timeout=60
+            ).stderr
         except Exception:
             return None
         m = re.search(r"seqLen=(\d+) dModel=(\d+)", out)

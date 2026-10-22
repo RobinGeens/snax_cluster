@@ -16,7 +16,7 @@
 static inline void iscore_out_ring_loop(uint8_t* ring_base, uint8_t* l3_psum, uint32_t gauge_step, uint32_t len) {
     for (uint32_t r = 0; r < nb_l_tiles; r++) {
         if (snrt_global_core_idx() == 0)
-            while (read_snax_csr_safe(ISCORE_TILE_CNT) < (r + 1) * gauge_step);
+            while (read_csr(ISCORE_TILE_CNT) < (r + 1) * gauge_step);
 
         snrt_cluster_hw_barrier();
 

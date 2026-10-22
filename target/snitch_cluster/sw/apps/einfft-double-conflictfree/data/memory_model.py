@@ -78,7 +78,6 @@ def build_report(params: dict) -> MemoryReport:
     # SIMD-only buffers stay contiguous; bf16 staging single-buffered, bias/outputs double-buffered.
     simd = [
         ("bf16_a (SIMD staging)", len_bf16),
-        ("bf16_b (SIMD staging)", len_bf16),
         ("b_re mini (real bias, BF16, x2)", 2 * len_bias_mini_branch),
         ("out_re (FP8, x2)", 2 * len_out_branch),
         ("out_im (FP8, x2)", 2 * len_out_branch),
@@ -97,7 +96,7 @@ def build_report(params: dict) -> MemoryReport:
         + align64(SKIP * len_w_branch) * 4  # W_*_is x2
         + align64(SKIP * len_cd) * 2  # P x2
     )
-    simd_span = align64(len_bf16) * 2 + align64(len_bias_mini_branch) * 2 + align64(len_out_branch) * 2 * 2
+    simd_span = align64(len_bf16) + align64(len_bias_mini_branch) * 2 + align64(len_out_branch) * 2 * 2
     per_branch_resident = max(os_span, is_span) + simd_span
 
     # L3 staging (not counted in TCDM).

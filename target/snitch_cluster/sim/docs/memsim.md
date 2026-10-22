@@ -406,6 +406,20 @@ python sim/plot_timeline.py sw/apps/<app>/build/<app>.elf                    # r
 - `MEMSIM_DATAPATH` — FP32 datapath vs goldens (non-tiled `main`).
 - `MEMSIM_LAYOUT_FAULT` — audit liveness self-test.
 - `MEMSIM_DMA_PERIOD=<p>` — override the DMA beat period (`=0` disables the engine).
+- `MEMSIM_STREAMER_DEPTHS=<18 ints>` — override the per-port FIFO depths (R0..R13,W0..W3)
+  for what-if sweeps without a rebuild; malformed values are ignored with a warning.
+
+## Address remap / state carry
+
+- The AGU XOR bank swizzle (`ADDR_REMAP_INDEX`, doc 22) is applied at every address→bank
+  site (`agu_swz`: CycReader/CycWriter, `cyc_suc_duration`, engine `r7bank`), so swizzled
+  apps see the de-correlated bank pattern, not the padded/conflicted one.
+- SUC-only state carry (13_suc_carry.md): R13 streams `in_state` and W3 streams `out_state`
+  concurrently with the scan (proportional pacing, R13 one group ahead), contending on the
+  shared fabric. The residual serial exposure at small `L_tile` is not modelled → suc-carry
+  C/D sit ≈ −7…−11 % vs vsim.
+- IS_OSGEMM (R11 enabled): the isCore GEMM steps independently of the osCore stream and R11
+  gates the array like any operand.
 
 ## Uncertainty / scope
 
@@ -415,6 +429,10 @@ python sim/plot_timeline.py sw/apps/<app>/build/<app>.elf                    # r
   IS-core bc_pad concern) are not separately modelled; the icache-miss refill and other
   environment-dependent scalar overheads are the bulk of the remaining Snitch-Total gap and
   are deliberately not fudged.
+- FIFO-depth what-ifs are trustworthy for the scan/P2 path (vsim-checked ≈ +1 %), but the
+  model is **optimistic about shallow R0/R1/W0** under concurrent dual-GEMM + DMA overlap
+  (vsim: dgcf ≈ +5 %, einfft-dcf ≈ +75 % at R0=2/R1=2/W0=1 where the model predicts ~0) —
+  vsim-check any config that thins those ports below the current depths.
 - Accelerator modes covered: Mamba P1/P2, OSGEMM/ISGEMM, and SIMD/FFT/einFFT (all stepped by
   the single engine on the shared fabric).
 - Layout verification: the golden-free AGU audit runs on every app; the FP32 datapath

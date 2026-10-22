@@ -11,12 +11,9 @@
 //
 // Per branch, per layer:
 //   4 OSGEMMs (rr / ir / ii / ri, in ConvFormat)
-//   per side:
-//     widen pos (FP8 → BF16 NOOP_FP8_REQUANT)
-//     widen neg
-//     bf16 binop (SUB on real side, ADD on imag)
-//     bf16 ADD with bias broadcast (layer 1 also applies ReLU via doRelu)
-//     narrow bf16 → FP8 NOOP_BF16_REQUANT, write straight to ConvFormat output
+//   per side (2 fused SIMD launches, see docs 6.7):
+//     FP8 binop + requant (SUB real / ADD imag): pos (±) neg → bf16_a
+//     bf16 ADD bias + requant (layer 1 also ReLU): bf16_a + bias → FP8 output
 //
 // All SIMD streamer strides come from datagen.py (M3_R*, M3_W*); only the
 // base pointers change between launches.
@@ -50,7 +47,6 @@ int main(void) {
     uint8_t* ptr_ri      = ptr_ii + M3_length_d;
     uint8_t* ptr_ir      = ptr_ri + M3_length_d;
     uint16_t* ptr_bf16_a = (uint16_t*)(ptr_ir + M3_length_d);
-    uint16_t* ptr_bf16_b = (uint16_t*)((uint8_t*)ptr_bf16_a + M3_length_bf16);
 
     if (snrt_global_core_idx() == 0) init_cycle_counter();
     snrt_cluster_hw_barrier();
@@ -91,7 +87,7 @@ int main(void) {
         uint8_t* layer_w_im_l3  = (layer == 0) ? M3_weight_1_imag : M3_weight_2_imag;
         uint16_t* layer_b_re_bc = (layer == 0) ? ptr_b1_re_bc : ptr_b2_re_bc;
         uint16_t* layer_b_im_bc = (layer == 0) ? ptr_b1_im_bc : ptr_b2_im_bc;
-        uint32_t add_bias_mode  = (layer == 0) ? M3_SIMD_ADD_BF16_RELU : M8_SIMD_ADD_BF16;
+        uint32_t add_bias_mode  = (layer == 0) ? M3_SIMD_ADD_BF16_RELU_REQUANT : M3_SIMD_ADD_BF16_REQUANT;
 
         for (uint32_t b = 0; b < M3_nBranches; b++) {
             // DMA this branch's W_re / W_im into the resident TCDM slot.
@@ -137,53 +133,30 @@ int main(void) {
                 wait_simbacore_and_streamer();
                 simbacore_cycles += read_simbacore_perf_counter();
 
-                // ---------------- Per-side SIMD fuse -------------------------
-                // out_re = quantize( relu?( (rr - ii) + b_re ) )
-                // out_im = quantize( relu?( (ri + ir) + b_im ) )
+                // ---------------- Per-side SIMD fuse (2 launches) -------------
+                // out_re = quantize( relu?( widen(fp8(rr - ii)) + b_re ) )
+                // out_im = quantize( relu?( widen(fp8(ri + ir)) + b_im ) )
                 for (int side = 0; side < 2; side++) {
-                    uint8_t* pos      = (side == 0) ? ptr_rr : ptr_ri;
-                    uint8_t* neg      = (side == 0) ? ptr_ii : ptr_ir;
-                    uint16_t* bias_b  = (side == 0) ? b_re_bc_b : b_im_bc_b;
-                    uint8_t* out_full = (side == 0) ? out_re_b : out_im_b;
-                    uint32_t binop    = (side == 0) ? M9_SIMD_SUB_BF16 : M8_SIMD_ADD_BF16;
+                    uint8_t* pos       = (side == 0) ? ptr_rr : ptr_ri;
+                    uint8_t* neg       = (side == 0) ? ptr_ii : ptr_ir;
+                    uint16_t* bias_b   = (side == 0) ? b_re_bc_b : b_im_bc_b;
+                    uint8_t* out_full  = (side == 0) ? out_re_b : out_im_b;
+                    uint32_t binop_fp8 = (side == 0) ? M3_SIMD_SUB_FP8_REQUANT : M3_SIMD_ADD_FP8_REQUANT;
 
-                    // Widen FP8 → BF16 (pos): rr / ri → bf16_a
-                    set_simd_streamer_no_b((uint32_t)pos, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
-                                           (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
-                    set_simbacore_csr(M25_SIMD_NOOP_FP8_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, 1);
+                    // FP8 binop + requant: pos (±) neg → bf16_a
+                    set_simd_streamer_csr((uint32_t)pos, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,  //
+                                          (uint32_t)neg, M3_R13_fp8_ss, M3_R13_fp8_tb, M3_R13_fp8_ts,     //
+                                          (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
+                    set_simbacore_csr(binop_fp8, seqLen, M3_dPerB, M3_dPerB, 1, 1);
                     start_simbacore_and_streamers(0, 0, 0, 0);
                     wait_simbacore_and_streamer();
                     simbacore_cycles += read_simbacore_perf_counter();
 
-                    // Widen FP8 → BF16 (neg): ii / ir → bf16_b
-                    write_csr(BASE_PTR_READER_7_LOW, (uint32_t)neg);
-                    write_csr(BASE_PTR_WRITER_3_LOW, (uint32_t)ptr_bf16_b);
-                    start_simbacore_and_streamers(0, 0, 0, 0);
-                    wait_simbacore_and_streamer();
-                    simbacore_cycles += read_simbacore_perf_counter();
-
-                    // BF16 binop: bf16_a (±) bf16_b → bf16_a
-                    set_simd_streamer_csr((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
-                                          (uint32_t)ptr_bf16_b, M3_R13_bf16_ss, M3_R13_bf16_tb, M3_R13_bf16_ts,
-                                          (uint32_t)ptr_bf16_a, M3_W3_bf16_ss, M3_W3_bf16_tb, M3_W3_bf16_ts);
-                    set_simbacore_csr(binop, seqLen, M3_dPerB, M3_dPerB, 1, 1);
-                    start_simbacore_and_streamers(0, 0, 0, 0);
-                    wait_simbacore_and_streamer();
-                    simbacore_cycles += read_simbacore_perf_counter();
-
-                    // BF16 ADD bias broadcast: bf16_a + bias_bcast → bf16_a
-                    // Layer 1: doRelu=1 fused into mode (M3_SIMD_ADD_BF16_RELU).
-                    // Layer 2: plain ADD (no relu).
-                    write_csr(BASE_PTR_READER_13_LOW, (uint32_t)bias_b);
+                    // BF16 ADD bias broadcast + requant (layer 1: + ReLU): bf16_a + bias → out (FP8)
+                    set_simd_streamer_csr((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,  //
+                                          (uint32_t)bias_b, M3_R13_bf16_ss, M3_R13_bf16_tb, M3_R13_bf16_ts,   //
+                                          (uint32_t)out_full, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
                     write_csr(MODE, add_bias_mode);
-                    start_simbacore_and_streamers(0, 0, 0, 0);
-                    wait_simbacore_and_streamer();
-                    simbacore_cycles += read_simbacore_perf_counter();
-
-                    // Narrow BF16 → FP8: bf16_a → ConvFormat output (per-branch).
-                    set_simd_streamer_no_b((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
-                                           (uint32_t)out_full, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
-                    set_simbacore_csr(M24_SIMD_NOOP_BF16_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, 1);
                     start_simbacore_and_streamers(0, 0, 0, 0);
                     wait_simbacore_and_streamer();
                     simbacore_cycles += read_simbacore_perf_counter();

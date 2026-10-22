@@ -7,7 +7,7 @@
 #
 # Phase A (partition1 + hadamard + reorder): tiled along L2/dModel axis.
 #   Always-live: weight1, weight2, twiddles
-#   Ping-pong (×2): in_tile, partition1_out_tile, hadamard_out_tile, had_reord_tile
+#   Ping-pong (×2): in_tile, partition1_out_tile, had_reord_tile
 #
 # Phase B (partition2): K-axis tiled.
 #   Always-live: weight2, twiddles (weight1 not needed)
@@ -58,7 +58,6 @@ def build_report(params: dict) -> MemoryReport:
     # Full tensor sizes
     len_in = L * dModel * FP8 // 8
     len_p1_out = 2 * L * dModel * BF16 // 8
-    len_had_out = 2 * L * dModel * FP8 // 8
     len_had_reord = 2 * L * dModel * FP8 // 8
     len_p2_out = 2 * L * dModel * BF16 // 8
 
@@ -66,7 +65,6 @@ def build_report(params: dict) -> MemoryReport:
     phase_a_bufs = [
         ("in_tile",               len_in // nb_A),
         ("partition1_out_tile",   len_p1_out // nb_A),
-        ("hadamard_out_tile",     len_had_out // nb_A),
         ("had_reord_a_tile",      len_had_reord // nb_A),
     ]
     report.add_section("Phase A ping-pong (×2 each, per tile)", phase_a_bufs)

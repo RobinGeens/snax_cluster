@@ -96,15 +96,15 @@ int test() {
             // pad-m3: the gather fills only the real L3 m3; zero the tiles first so the padded
             // (L3t-L3) m3 are zero (they then stay zero through the linear stages 1-2).
             if (M6_pad_m3) {
-                snrt_dma_start_1d(ptr_in, (void*)snrt_zero_memory_ptr(), M6_in_tile_bytes);
-                snrt_dma_start_1d(ptr_tw1, (void*)snrt_zero_memory_ptr(), M6_tw1_tile_bytes);
-                snrt_dma_start_1d(ptr_tw2, (void*)snrt_zero_memory_ptr(), M6_tw2_tile_bytes);
+                simba_dma_fill_zero(ptr_in, M6_in_tile_bytes);
+                simba_dma_fill_zero(ptr_tw1, M6_tw1_tile_bytes);
+                simba_dma_fill_zero(ptr_tw2, M6_tw2_tile_bytes);
                 snrt_dma_wait_all();
             }
             gather_in_tile(ptr_in, s, 0);
             gather_tw1(ptr_tw1, 0);
             gather_tw2(ptr_tw2, 0);
-            snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+            simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();
@@ -135,7 +135,7 @@ int test() {
 
             // Hidden behind noop1: zero P for gemm2 + prefetch next tile's in & tw1.
             if (snrt_is_dm_core()) {
-                snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
                 if (lt_next < M6_nb_l3) {
                     gather_in_tile(ptr_in, s, lt_next);
                     gather_tw1(ptr_tw1, lt_next);
@@ -176,7 +176,7 @@ int test() {
             if (snrt_is_dm_core()) {
                 if (lt_next < M6_nb_l3) {
                     gather_tw2(ptr_tw2, lt_next);
-                    snrt_dma_start_1d(ptr_P, (void*)snrt_zero_memory_ptr(), M6_slot_size_tile);
+                    simba_dma_fill_zero(ptr_P, M6_slot_size_tile);
                 }
                 snrt_dma_wait_all();
             }
@@ -213,7 +213,7 @@ int test() {
         // --- partition 3: K-tile over nb_l3 chunks of the [re | im] H2, accumulate
         //     (NO_REQUANT) and requant on the last. Full N; psum stays in TCDM. ---
         if (snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_P3, (void*)snrt_zero_memory_ptr(), M6_slot_size);
+            simba_dma_fill_zero(ptr_P3, M6_slot_size);
             snrt_dma_wait_all();
         }
         snrt_cluster_hw_barrier();

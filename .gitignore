@@ -59,3 +59,4 @@ scripts_generated/
 regression_test_out*/
 .datagen_cache/
 
+hw/chisel/src/main/scala/snax/streamer/StreamParamGen.scala

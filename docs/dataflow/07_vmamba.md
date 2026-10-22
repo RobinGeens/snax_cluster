@@ -44,7 +44,7 @@ cross_scan(input) → K=4 directional sequences
   │
   ├── Cross-merge (SIMD ADD): sum inverse-permuted y_0..y_3 → y_merged
   │
-  └── RMSNorm (8-step SIMD chain): widen → RMS → ÷D → √ → 1/√ → ×(1/√) → ×weight → narrow
+  └── RMSNorm (7-step SIMD chain): widen → RMS → ÷D → 1/√ → ×(1/√) → ×weight → narrow
 ```
 
 Each direction runs the **exact same Phase 1 + Phase 2 as the `main` program**
@@ -82,16 +82,15 @@ passes. The inverse-permuted y_k are pre-computed in the data generator.
 
 ### RMSNorm
 
-An 8-step SIMD chain on the merged y (adapted from the `rmsnorm` program):
+A 7-step SIMD chain on the merged y (adapted from the `rmsnorm` program):
 
 1. **Widen** FP8 → BF16 (SIMD_NOOP_FP8_REQUANT)
 2. **RMS** Σ(x²) per token (SIMD_RMS_BF16)
 3. **÷ D** multiply by 1/dInner (SIMD_MUL_BF16)
-4. **√** square root (SIMD_SQRT_BF16)
-5. **1/√** inverse (SIMD_DIV_BF16)
-6. **Normalize** x × (1/√) (SIMD_MUL_BF16)
-7. **Scale** × weight (SIMD_MUL_BF16)
-8. **Narrow** BF16 → FP8 (SIMD_NOOP_BF16_REQUANT)
+4. **1/√** inverse square root (SIMD_RSQRT_BF16)
+5. **Normalize** x × (1/√) (SIMD_MUL_BF16)
+6. **Scale** × weight (SIMD_MUL_BF16)
+7. **Narrow** BF16 → FP8 (SIMD_NOOP_BF16_REQUANT)
 
 ### Tensors
 

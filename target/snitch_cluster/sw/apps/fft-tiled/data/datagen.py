@@ -159,36 +159,13 @@ class DataGenerator(DataGeneratorBase):
                 ],
                 [4 * BANK_BYTES, 0],
             ),
-            "W3_2": (  # SIMD output: per-tile hadamard_out tile slot (contiguous)
+            "W3_2": (  # SIMD output: fused re/im split into the per-tile had_reord slot,
+                # [tile_reals (contig) | tile_imags (contig)]. spatial[0] = re/im half-beat,
+                # spatial[1] = tile-local re/im region offset. Per-tile DMA-out then
+                # scatters into the L3 standard layout.
                 [2 * L * dModel_tile * FP8 // (2 * suc_serial_width_BC)],
-                [4 * BANK_BYTES],
-            ),
-            #
-            # Step 2B: reorder (Phase A, tiled). Writes into a per-tile TCDM slot
-            # arranged as [tile_reals (contig) | tile_imags (contig)]. The 2D
-            # outer write uses an outer stride equal to the tile-local re/im
-            # offset (= L_tile_a * dModel * FP8 / 8), so reals land in the first
-            # half of the tile slot and imags in the second half. Per-tile
-            # DMA-out then scatters into the L3 standard layout.
-            #
-            "R7_2B": (  # dModel-tiled: L un-tiled, dModel halved.
-                [
-                    L * dModel_tile * FP8 // (2 * suc_serial_width_BC),
-                    2,  # re/im split in the hadamard_out_tile
-                ],
-                [
-                    8 * BANK_BYTES,
-                    2 * BANK_BYTES,
-                ],
-                [
-                    BANK_BYTES,
-                    4 * BANK_BYTES,
-                ],
-            ),
-            "W3_2B": (
-                # 1D contiguous write into the TCDM tile slot, [tile_reals | tile_imags].
-                [2 * L * dModel_tile * FP8 // (2 * suc_serial_width_BC)],
-                [4 * BANK_BYTES],
+                [2 * BANK_BYTES],
+                [BANK_BYTES, L * dModel_tile * FP8 // 8],
             ),
             #
             # Step 3: partition 2 (Phase B, K-AXIS tiled, accumulating in place).
@@ -233,7 +210,6 @@ class DataGenerator(DataGeneratorBase):
         # Phase A: dModel-axis tiled (uses nb_tiles)
         len_in_tile = len_in // nb_tiles
         len_partition1_out_tile = len_partition1_out // nb_tiles
-        len_hadamard_out_tile = len_hadamard_out // nb_tiles
         len_hadamard_reordered_tile = len_hadamard_reordered // nb_tiles  # tile total (re + im)
         len_hadamard_reordered_tile_re = len_hadamard_reordered_tile // 2  # tile reals chunk
         # Phase B: K-axis tiled (uses nb_tiles_B; FULL partition2_out, partial weight2 + hadamard_reordered)
@@ -278,7 +254,6 @@ class DataGenerator(DataGeneratorBase):
             "N_1_tile": N_1_tile,
             "length_in_tile": len_in_tile,
             "length_partition1_out_tile": len_partition1_out_tile,
-            "length_hadamard_out_tile": len_hadamard_out_tile,
             "length_hadamard_reordered_tile": len_hadamard_reordered_tile,
             "length_hadamard_reordered_tile_re": len_hadamard_reordered_tile_re,
             # ---- twiddle (shared across tiles, no relayout) ----

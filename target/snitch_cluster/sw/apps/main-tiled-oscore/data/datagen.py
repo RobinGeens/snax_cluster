@@ -27,7 +27,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../../../ut
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../main/data"))
 sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 
-from datagen_base import BANKWIDTH, DataGeneratorBase, BANK_BYTES, FP8, BF16  # type: ignore[import]
+from datagen_base import BANKWIDTH, DataGeneratorBase, BANK_BYTES, FP8, BF16, NB_TEST_SAMPLES  # type: ignore[import]
 from datagen_cli import main as datagen_cli_main  # type: ignore[import]
 
 
@@ -99,6 +99,33 @@ class DataGenerator(DataGeneratorBase):
         self.nb_slots = self.kwargs.get("nb_slots", 2)
         self.L_tile = self.seqLen // self.nb_l_tiles
 
+        # BC bank-conflict fix via the AGU XOR swizzle (this app never carried bc_pad_banks).
+        # See docs/dataflow/22_agu_xor_swizzle.md.
+        self.bc_swizzle = int(self.kwargs.get("bc_swizzle", 0))
+
+    @staticmethod
+    def _swz(a: int) -> int:
+        """AGU XOR bank swizzle (docs/dataflow/22_agu_xor_swizzle.md): addr[7:5] ^= addr[10:8]."""
+        return (a & ~0xE0) | ((((a >> 5) ^ (a >> 8)) & 0x7) << 5)
+
+    def _swizzle_u16_image(self, data, base):
+        """Pre-swizzle a uint16 DMA image against TCDM byte offset `base` (from a 2 KiB-aligned start)."""
+        raw = b"".join(int(v).to_bytes(2, "little") for v in data)
+        out = bytearray(len(raw))
+        for o in range(0, len(raw), 32):
+            q = self._swz(base + o) - base
+            out[q : q + 32] = raw[o : o + 32]
+        return [int.from_bytes(out[i * 2 : (i + 1) * 2], "little") for i in range(len(data))]
+
+    def read_and_format_vector(self, mode_id, type, tensor_name):
+        if self.bc_swizzle and mode_id == 1 and tensor_name == "iscore_bias":
+            # P1 R13/W3 access iscore_out through the swizzle: pre-swizzle the bias init image.
+            data = self._read_data_int(f"M{mode_id}_{tensor_name}.bin")
+            data = self._swizzle_u16_image(data, self._iscore_out_p1_addr)
+            self.format_vector(type, f"M{mode_id}_{tensor_name}", data)
+            return
+        return super().read_and_format_vector(mode_id, type, tensor_name)
+
     def check_tiling_constraints(self):
         """Verify all dInner-derived dimensions remain integer (and HW-legal) after tiling."""
         nb = self.nb_tiles
@@ -139,23 +166,13 @@ class DataGenerator(DataGeneratorBase):
         the SUC) and R11 (y-reader, feeds the IS-core). Both gate a consumer behind a producer that
         writes its output in a per-24xL-tile (seqLen x dInnerUnroll) scrambled order, so a tile is
         the dependency unit. The two readers use DIFFERENT models because their consumer/producer
-        rates differ:
-
-          - R10 / SUC: the SUC consumes z SLOWER than the osCore writes it (suc_delta < 0) -> it
-            never catches up, so a small fixed delay (one osCore window) suffices. Rate model.
-          - R11 / IS-core: the IS-core consumes y FASTER than the SUC writes it -> across the
-            n = dInner/dInnerUnroll  24xL tiles of a kernel it RACES into later tiles. Since each
-            full 24xL tile must be written before the IS-core reads it, the LAST tile binds:
-                IS-core reaches tile n-1 at  R11_start + (n-1)*iscore_cycles_per_tile
-                tile n-1 fully written at    n*suc_elems_per_tile     (SUC = 1 elem/cyc -> gauge==cyc)
-                =>  R11_start = n*suc_elems_per_tile - (n-1)*iscore_cycles_per_tile
-            (n==1 collapses to one 24xL tile. NOTE: the old rate-only `iscore_delta` =
-            n*(suc-iscore)_per_tile is this MINUS one iscore_cycles_per_tile -> it lets the IS-core
-            start the last tile before that tile is fully written, which underflows for n>1.)
+        rates differ
 
         Returned in gauge units: R10 in osCore tiles, R11 in SUC-output elements.
         """
-        MARGIN = 0.2  # 20%
+        # The swizzled BC read removes the SUC front-end bottleneck, so its z consumption
+        # catches the osCore sooner: widen the release margin accordingly.
+        MARGIN = 1.0 if self.bc_swizzle else 0.2
         seqLen_tiles = self.seqLen // self.seqLenUnroll
         n_24L = dInner // self.dInnerUnroll  # 24xL tiles in this kernel
         gemm_total_nb_tiles = seqLen_tiles * n_24L
@@ -166,12 +183,8 @@ class DataGenerator(DataGeneratorBase):
         suc_delta = (gemm_cycles - suc_total_nb_elements) / self.dModel  # [osCore tiles]
         suc_safe_to_start = math.ceil(max(seqLen_tiles, suc_delta) * (1 + MARGIN))
 
-        # R11 (IS-core y-reader): faster consumer -> throughput mismatch across the 24xL tiles
-        suc_elems_per_tile = self.seqLen * self.dInnerUnroll  # SUC y written per 24xL tile
-        iscore_cycles_per_tile = seqLen_tiles * self.dModel  # IS-core cycles to read one 24xL tile
-        iscore_safe_to_start = math.ceil(
-            (n_24L * suc_elems_per_tile - (n_24L - 1) * iscore_cycles_per_tile) * (1 + MARGIN)
-        )
+        # R11 (IS-core y-reader): row-major reads span all k-blocks -> full y must be written.
+        iscore_safe_to_start = suc_total_nb_elements
 
         print(f"// DEBUG safe-to-start delays (per-tile, dInner={dInner}, n_24L={n_24L}):")
         print(f"//      OScore cycles: {gemm_cycles}")
@@ -179,8 +192,6 @@ class DataGenerator(DataGeneratorBase):
         print(f"//      SUC cycles (= total y elements): {suc_total_nb_elements}")
         print(f"//      SUC delta: {suc_delta}")
         print(f"//      R10 (SUC z) safe to start: {suc_safe_to_start}")
-        print(f"//      SUC elems per 24xL tile: {suc_elems_per_tile}")
-        print(f"//      IScore cycles per 24xL tile: {iscore_cycles_per_tile}")
         print(f"//      R11 (IS-core y) safe to start: {iscore_safe_to_start}")
 
         return int(min(suc_safe_to_start, gemm_total_nb_tiles)), int(min(iscore_safe_to_start, suc_total_nb_elements))
@@ -315,6 +326,13 @@ class DataGenerator(DataGeneratorBase):
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
 
+        # main.c places iscore_out at align256(nb_slots * L_tile * dModel) from the 2 KiB-aligned
+        # base: the swizzle-phase anchor for the bias image and the sampled check.
+        oscore_ring_bytes = self.nb_slots * (self.L_tile * self.dModel * FP8 // 8)
+        self._iscore_out_p1_addr = -(-oscore_ring_bytes // 256) * 256
+        if self.bc_swizzle:
+            assert len_iscore_out % 256 == 0
+
         tile_scalars = {
             "dInner_tile": self.dInner_tile,
             "length_oscore_weight_tile": len_oscore_weight // nb,
@@ -330,7 +348,7 @@ class DataGenerator(DataGeneratorBase):
         scalars = {**lengths, **deltas, **tile_scalars}
         self.phase1_scalars = scalars.copy()
 
-        tests = {"conv_out": self.seqLen * self.dInner, "iscore_out": self.seqLen * self.xProjDim}
+        tests = {"conv_out": self.seqLen * self.dInner}
 
         test_data = {
             name: "uint8_t"
@@ -348,6 +366,15 @@ class DataGenerator(DataGeneratorBase):
         test_data["iscore_bias"] = "uint16_t"
 
         self.build_mode(mode_id, streamers_bulk, scalars=scalars, test_data=test_data, tests=tests)
+
+        # iscore_out lives at swizzled addresses when bc_swizzle: emit the logical sample
+        # indices plus their swizzled twins (identity twins otherwise).
+        n = self.seqLen * self.xProjDim
+        idx = sorted(random.randint(0, n - 1) for _ in range(NB_TEST_SAMPLES))
+        base = self._iscore_out_p1_addr
+        idx_swz = [self._swz(base + k) - base for k in idx] if self.bc_swizzle else list(idx)
+        self.format_vector("int32_t", "M1_test_samples_iscore_out", idx)
+        self.format_vector("int32_t", "M1_test_samples_iscore_out_swz", idx_swz)
 
         # B1: R0 lTile variant — wraps an nb_slots-slot oscore_in ring via the stride-0
         # outer-loop trick. Bounds = [dModel, nb_slots*L_tile/seqLenUnroll, nb_l_tiles/nb_slots, K_i]:

@@ -67,21 +67,31 @@ class DataGenerator(DataGeneratorBase):
         nb_d = self.kwargs["nb_tiles_A"]
         l3_tile = self.kwargs.get("l3_tile", L3)
         nb_ntile = self.kwargs.get("nb_ntile", 1)
+        nb_m4 = self.kwargs.get("nb_m4", 1)
 
         assert L1 * L2 * L3 * L4 == L
         assert L1 == slu, f"descriptors assume L1 == seqLenUnroll ({slu})"
         assert L2 <= slu, f"L2 ({L2}) must be <= seqLenUnroll ({slu})"
         assert L3 % l3_tile == 0, f"L3 ({L3}) must be divisible by l3_tile ({l3_tile})"
-        assert nb_ntile == 1, "stage-3/4 N-tiling not yet implemented; use nb_ntile=1"
         assert dModel % nb_d == 0
         assert (2 * suc_bc) // 8 == 4 * BANK_BYTES, "SIMD input width must be 4 banks"
         dM = dModel // nb_d
         nb_l3 = L3 // l3_tile
-        L3t = l3_tile
         L34 = L3 * L4
-        L34t = L3t * L4
-        Lt = L1 * L2 * L3t * L4
-        assert L34t % slu == 0, f"L3t*L4 ({L34t}) must be a multiple of {slu}"
+        # Stage-1-2 tiling: either m3-blocks (l3_tile < L3) or m4-blocks (nb_m4 > 1), not both.
+        assert L4 % nb_m4 == 0, f"L4 ({L4}) must be divisible by nb_m4 ({nb_m4})"
+        assert nb_l3 == 1 or nb_m4 == 1, "use either l3_tile or nb_m4 tiling, not both"
+        assert nb_m4 == 1 or (L3 == slu and dM == 1), "nb_m4 tiling assumes L3 == seqLenUnroll and dM == 1"
+        L3t = l3_tile
+        L4t = L4 // nb_m4
+        L34t = L3t * L4t
+        Lt = L1 * L2 * L34t
+        nb_12 = nb_l3 * nb_m4
+        assert L34t % slu == 0, f"L3t*L4t ({L34t}) must be a multiple of {slu}"
+        # Stage-3/4 N-tiling over the (k1,k2) column axis; packed3 stays resident.
+        assert (L1 * L2) % nb_ntile == 0, f"L1*L2 must be divisible by nb_ntile ({nb_ntile})"
+        assert nb_ntile == 1 or L4 == slu, "stage-3/4 N-tiling assumes the L4 == seqLenUnroll reorder3 regime"
+        assert nb_ntile == 1 or nb_d == 1, "stage-3/4 N-tiling assumes nb_tiles_A == 1"
 
         elem_per_bank = BANK_BYTES
         num_banks = slu // elem_per_bank
@@ -92,11 +102,13 @@ class DataGenerator(DataGeneratorBase):
         cd_w = slu * BF16
         assert cd_w == b_in_width
 
-        # GEMM dims. Stages 1-2 per-tile (Lt, L3t batch); stages 3-4 full (assembled).
+        # GEMM dims. Stages 1-2 per-tile (Lt batch); stages 3-4 per (k1,k2) N-chunk.
         M_1, M_2, M_3, M_4 = (2 * L1) // slu, (2 * L2) // slu, (2 * L3) // slu, (2 * L4) // slu
         K_1, K_2, K_3, K_4 = L1p // diu, 2 * L2p // diu, 2 * L3p // diu, 2 * L4p // diu
-        N_1, N_2 = dM * L2 * L3t * L4, dM * L1 * L3t * L4   # per l3-tile
+        N_1, N_2 = dM * L2 * L34t, dM * L1 * L34t           # per stage-1-2 tile
         N_3, N_4 = dM * L1 * L2 * L4, dM * L1 * L2 * L3     # full
+        A_c = L1 * L2 // nb_ntile
+        N_3c, N_4c = N_3 // nb_ntile, N_4 // nb_ntile       # per stage-3/4 N-chunk
         assert K_3 % nb_l3 == 0
         K_3t = K_3 // nb_l3
 
@@ -106,34 +118,37 @@ class DataGenerator(DataGeneratorBase):
             return d
 
         dN_1, dN_2, dN_3, dN_4 = dn(N_1), dn(N_2), dn(N_3), dn(N_4)
+        dN_3c, dN_4c = dn(N_3c), dn(N_4c)
 
-        # partition3 runs as a single ISGEMM over the assembled full-K packed3 (K_3 steps),
-        # decoupled from the stage-1-2 l3-tiling.
+        # partition3 runs as one ISGEMM per N-chunk over the resident full-K packed3 (K_3 steps),
+        # decoupled from the stage-1-2 tiling. Its B walk reads the chunk's N-run inside each
+        # K-block, so the K stride stays the full-N block.
         psum1 = ([M_1 * N_1, K_1], [cd_w // 8, 0])
         psum2 = ([M_2 * N_2, K_2], [cd_w // 8, 0])
-        psum3 = ([M_3 * N_3, K_3], [cd_w // 8, 0])
-        psum4 = ([M_4 * N_4, K_4], [cd_w // 8, 0])
+        psum3 = ([M_3 * N_3c, K_3], [cd_w // 8, 0])
+        psum4 = ([M_4 * N_4c, K_4], [cd_w // 8, 0])
 
-        # cmul3 re/im spatial jump: when 2*L3 > 16 the imag k3-rows cross to the next bank-transpose
-        # matrix block, so the jump is (N_3/epb)*matrix (like cmul1 at L1=16), not L3*epb.
-        reim_jump3 = L3 * elem_per_bank if 2 * L3 <= 16 else (N_3 // elem_per_bank) * matrix_bytes
+        # cmul2/cmul3 re/im spatial jump: when 2*Lx > 16 the imag rows sit in the second row-block
+        # (half the FP8 payload away, like cmul1 at L1=16), not Lx rows within the same block.
+        reim_jump2 = L2 * elem_per_bank if 2 * L2 <= 16 else (N_2 // elem_per_bank) * matrix_bytes
+        reim_jump3 = L3 * elem_per_bank if 2 * L3 <= 16 else (N_3c // elem_per_bank) * matrix_bytes
 
-        # cmul3 (twiddles3, trailing m4 = L4) — full. Two regimes (L4>=slu / L4<slu).
+        # cmul3 (twiddles3, trailing m4 = L4) — per N-chunk. Two regimes (L4>=slu / L4<slu).
         if L4 >= slu:
             r7_6 = (
-                [L4 // slu, L3, L1 * L2, 1],
+                [L4 // slu, L3, A_c, 1],
                 [num_banks * matrix_bytes, elem_per_bank, (L4 // elem_per_bank) * matrix_bytes, 0],
                 [matrix_bytes, reim_jump3],
             )
-            r13_6 = ([L4 // slu, L3, L1 * L2, 1], [2 * slu, 2 * L4, 0, 0])
+            r13_6 = ([L4 // slu, L3, A_c, 1], [2 * slu, 2 * L4, 0, 0])
         else:
             kpg = slu // L4
             r7_6 = (
-                [L3 // kpg, L1 * L2, 1, 1],
+                [L3 // kpg, A_c, 1, 1],
                 [kpg * elem_per_bank, (L4 // elem_per_bank) * matrix_bytes, 0, 0],
                 [elem_per_bank, reim_jump3],
             )
-            r13_6 = ([L3 // kpg, L1 * L2, 1, 1], [2 * slu, 0, 0, 0])
+            r13_6 = ([L3 // kpg, A_c, 1, 1], [2 * slu, 0, 0, 0])
 
         streamers = {
             # ===== Stage 1 (per l3-tile): partition 1 =====
@@ -161,26 +176,26 @@ class DataGenerator(DataGeneratorBase):
             "R7_4": (
                 [L34t // slu, L2, L1, 1],
                 [num_banks * matrix_bytes, elem_per_bank, (L34t // elem_per_bank) * matrix_bytes, 0],
-                [matrix_bytes, L2 * elem_per_bank],
+                [matrix_bytes, reim_jump2],
             ),
             "R13_4": ([L34t // slu, L2, L1, 1], [2 * slu, 2 * L34t, 0, 0]),
             "W3_4": ([2 * Lt * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
             # reorder2 = scalar m3<->m4 transpose in C (no streamer descriptor).
-            # ===== Stage 3 (full, gathered, SINGLE K=K_3 invocation): partition 3 =====
+            # ===== Stage 3 (per N-chunk, K=K_3 over resident packed3): partition 3 =====
             "R11_5": ([2 * L3 * 2 * L3p * FP8 // iscore_serial_width], [iscore_serial_width // 8]),
-            "R12_5": ([dN_3, M_3, K_3], [b_in_width // 8, 0, dN_3 * b_in_width // 8]),
+            "R12_5": ([dN_3c, M_3, K_3], [b_in_width // 8, 0, dN_3 * b_in_width // 8]),
             "R13_5": psum3,
             "W3_5": psum3,
-            # cmul3 (twiddles3, full) — un-tiled.
+            # cmul3 (twiddles3) — per N-chunk.
             "R7_6": r7_6,
             "R13_6": r13_6,
-            "W3_6": ([2 * L * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
-            # reorder3 (block-swap deinterleave) — un-tiled.
+            "W3_6": ([2 * L * dM * FP8 // (2 * suc_bc * nb_ntile)], [4 * BANK_BYTES]),
+            # reorder3 (block-swap deinterleave) — un-tiled (L4 < slu regime only, nb_ntile == 1).
             "R7_6B": ([L * dM // slu, 1, 1, 1], [4 * BANK_BYTES, 0, 0, 0], [2 * BANK_BYTES, BANK_BYTES]),
             "W3_6B": ([2 * L * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
-            # ===== Stage 4: partition 4 (final, plain) — un-tiled, full =====
+            # ===== Stage 4: partition 4 (final, plain) — per N-chunk =====
             "R11_7": ([2 * L4 * 2 * L4p * FP8 // iscore_serial_width], [iscore_serial_width // 8]),
-            "R12_7": ([dN_4, M_4, K_4], [b_in_width // 8, 0, dN_4 * b_in_width // 8]),
+            "R12_7": ([dN_4c, M_4, K_4], [b_in_width // 8, 0, dN_4c * b_in_width // 8]),
             "R13_7": psum4,
             "W3_7": psum4,
         }
@@ -196,8 +211,14 @@ class DataGenerator(DataGeneratorBase):
         pk_bdf = pk_bw // pk_aw                 # N's packed per B-fetch (downsize factor)
         pk_kstride = dN_3 * b_in_width // 8     # one K-step's full-N block (= h2_kchunk for K_3t=1)
         # packed4 K-major (partition4 contraction = m4); same formula as packed3 with
-        # (reim*L4 + m4), no transpose (m4 already inner).
-        pk_kstride4 = dN_4 * b_in_width // 8
+        # (reim*L4 + m4), no transpose (m4 already inner). Chunk-local (full at nb_ntile=1).
+        pk_kstride4 = dN_4c * b_in_width // 8
+        # partition3 B-walk base offset per N-chunk (the chunk's N-run inside each K-block).
+        pk3_chunk_off = dN_3c * b_in_width // 8
+        # packed2 K-tile stride: at 2*L2 > slu the re/im halves are separate K-tiles that reorder1
+        # splits via DMA (the block-swap NOOP only covers 2*L2 <= slu, where one tile holds both).
+        pk_kstride2 = dN_2 * b_in_width // 8
+        n2_groups = Lt * dM // slu
 
         # ---- H2 staging (per l3-tile): scatter the transposed packed_tile into the L3 packed3
         # m3/[re|im] regions (one 2-D scatter over N per re/im) ----
@@ -217,11 +238,13 @@ class DataGenerator(DataGeneratorBase):
         len_in_slice = L * dM * FP8 // 8
         len_partition4_out = 2 * L * dModel * BF16 // 8
 
-        slot_size_tile = align64(2 * Lt * dM * BF16 // 8)    # gemm1/2 psum per l3-tile
+        slot_size_tile = align64(2 * Lt * dM * BF16 // 8)    # gemm1/2 psum per stage-1-2 tile
         hsize_tile = slot_size_tile // 2                      # FP8 cmul/noop scratch per tile
         packed_tile_bytes = align64(2 * Lt * dM * FP8 // 8)  # scalar-transpose output per tile
         slot_size_full = align64(2 * L * dM * BF16 // 8)     # full partition3/4 psum
         hsize_full = align64(2 * L * dM * FP8 // 8)          # full FP8 cmul/noop scratch
+        slot_size_chunk = align64(2 * L * dM * BF16 // (8 * nb_ntile))  # per-chunk partition3/4 psum
+        hsize_chunk = align64(2 * L * dM * FP8 // (8 * nb_ntile))       # per-chunk H3 / packed4
 
         # ---- l3-tile gather of input + twiddles into tile-local buffers (L3 -> L3t) ----
         # dft_in chip layout [d][jc][m2][m1] (jc = m4*L3 + m3); gather the tile's m3-block per (d,m4).
@@ -233,22 +256,28 @@ class DataGenerator(DataGeneratorBase):
         in_gather_reps_d = dM
         in_tile_bytes = Lt * dM * FP8 // 8
         # twiddles1 [k1][jc][m2], 2 bytes/entry (re,im interleaved): tile m3-block per (k1, m4).
+        # Under m4-tiling the tile's jc-slice is contiguous, so the C side gathers one chunk of
+        # tw1_tile_bytes/L1 per k1 (and tw2_tile_bytes/L2 per k2) instead of the m3-block walk.
         tw_e = 2 * FP8 // 8
         tw1_gather_chunk = L3t * L2 * tw_e
         tw1_gather_m4_stride = L3 * L2 * tw_e
         tw1_k1_stride = L34 * L2 * tw_e
-        tw1_tile_bytes = L1 * L2 * L3t * L4 * tw_e   # Lt * tw_e
+        tw1_tile_bytes = L1 * L2 * L34t * tw_e   # Lt * tw_e
         # twiddles2 [k2][jc], 2 bytes/entry: tile m3-block per (k2, m4).
         tw2_gather_chunk = L3t * tw_e
         tw2_gather_m4_stride = L3 * tw_e
         tw2_k2_stride = L34 * tw_e
-        tw2_tile_bytes = L2 * L3t * L4 * tw_e
+        tw2_tile_bytes = L2 * L34t * tw_e
 
         # ---- output scatter: partition4_out (final). FP8 real data in first half; M_4 row-blocks,
         # d outer column factor; slice s owns dM contiguous channels inside each full row-block. ----
         out_block_full = dModel * L1 * L2 * L3 * FP8 // 8
         out_block_slice = dM * L1 * L2 * L3 * FP8 // 8
         out_nblk = M_4
+        # P4 N-chunk scatter to L3: chunk c owns p4c_blk_bytes inside each of the M_4 row-blocks.
+        # Blocks are sized on the FP8 payload (first half of the psum buffer), not the BF16 span.
+        p4_blk_bytes = 2 * L * dM * FP8 // (8 * M_4)
+        p4c_blk_bytes = p4_blk_bytes // nb_ntile
 
         specs = [
             ("weight1", len_weight1), ("weight2", len_weight2),
@@ -263,11 +292,14 @@ class DataGenerator(DataGeneratorBase):
 
         slice_scalars = {
             "nb_d": nb_d, "dModel_slice": dM, "nb_l3": nb_l3, "l3_tile": l3_tile, "nb_ntile": nb_ntile,
+            "nb_m4": nb_m4, "L4t": L4t, "nb_12": nb_12,
             "length_in_slice": len_in_slice,
             "slot_size_tile": slot_size_tile, "hsize_tile": hsize_tile,
             "packed_tile_bytes": packed_tile_bytes, "in_tile_bytes": in_tile_bytes,
             "tw1_tile_bytes": tw1_tile_bytes, "tw2_tile_bytes": tw2_tile_bytes,
             "slot_size_full": slot_size_full, "hsize_full": hsize_full,
+            "slot_size_chunk": slot_size_chunk, "hsize_chunk": hsize_chunk,
+            "gemm_N1": N_1, "gemm_N2": N_2, "gemm_N3": N_3c, "gemm_N4": N_4c,
             "full_packed3_bytes": full_packed3_bytes,
             # gather strides
             "in_gather_chunk": in_gather_chunk, "in_gather_m4_stride": in_gather_m4_stride,
@@ -284,7 +316,10 @@ class DataGenerator(DataGeneratorBase):
             # partition3 K-chunk offsets + K-major packed3 layout
             "weight3_kchunk_bytes": weight3_kchunk_bytes, "h2_kchunk_bytes": h2_kchunk_bytes,
             "pk_bw": pk_bw, "pk_aw": pk_aw, "pk_bdf": pk_bdf, "pk_kstride": pk_kstride,
-            "pk_kstride4": pk_kstride4, "n4_full": dM * L1 * L2 * L3,
+            "pk_kstride4": pk_kstride4, "n4_full": dM * L1 * L2 * L3, "n4_chunk": N_4c,
+            "pk3_chunk_off": pk3_chunk_off,
+            "pk_kstride2": pk_kstride2, "n2_groups": n2_groups,
+            "p4_blk_bytes": p4_blk_bytes, "p4c_blk_bytes": p4c_blk_bytes,
             # output scatter
             "out_block_full": out_block_full, "out_block_slice": out_block_slice, "out_nblk": out_nblk,
         }

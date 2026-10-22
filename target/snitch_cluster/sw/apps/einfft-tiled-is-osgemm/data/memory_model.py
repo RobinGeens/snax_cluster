@@ -73,7 +73,6 @@ def build_report(params: dict) -> MemoryReport:
         ("ii (OS scratch, FP8)",  len_d),
         ("P (IS psum, BF16)",     len_cd),
         ("bf16_a (SIMD staging)", len_bf16),
-        ("bf16_b (SIMD staging)", len_bf16),
     ]
     report.add_section("Scratch / staging", scratch)
 
@@ -89,7 +88,7 @@ def build_report(params: dict) -> MemoryReport:
         + align64(len_w_branch) * 4
         + align64(len_d) * 2
         + align64(len_cd) * 1
-        + align64(len_bf16) * 2
+        + align64(len_bf16)
         + align64(len_bias_mini_branch) * 1
         + align64(len_out_branch) * 2
     )
