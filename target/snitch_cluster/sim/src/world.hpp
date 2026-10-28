@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -30,6 +31,12 @@ class SimWorld : public World {
     uint32_t dma_submit(const DmaDesc& d, uint64_t at) override;
     uint32_t dma_busy(uint64_t at) override { return at < dma_busy_until_ ? 1 : 0; }
     uint32_t dma_completed_id(uint64_t at) override { return dma_txid_; }
+    // DMA traffic to/from L3 in bytes (MEMSIM_L3_BYTES). rd_zero: the part of rd that read all-zero data the program
+    // never wrote, i.e. zero inits from the data image (all-zero psum buffers), not tensors spilled earlier in the run.
+    struct L3Bytes {
+        uint64_t rd = 0, rd_zero = 0, wr = 0, l3_to_l3 = 0;
+    };
+    const L3Bytes& l3_bytes() const { return l3_bytes_; }
 
     // ---- SNAX CSR window ----
     void snax_write(uint32_t csr, uint32_t val, uint64_t at) override;
@@ -137,6 +144,8 @@ class SimWorld : public World {
 
     SimbacoreCfg cfg_;
     uint32_t dma_txid_ = 0;
+    L3Bytes l3_bytes_;
+    std::unordered_set<uint32_t> l3_written_;  // 64 B lines of L3 a DMA has written
 
     // ---- accelerator timing state (per invocation) ----
     uint64_t accel_start_   = 0;  // cycle SIMBACORE_START was written

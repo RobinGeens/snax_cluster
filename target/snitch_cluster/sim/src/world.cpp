@@ -49,10 +49,30 @@ uint32_t SimWorld::dma_submit(const DmaDesc& d, uint64_t at) {
     // Functional: move the bytes now (data correct immediately).
     std::vector<uint8_t> buf(d.size);
     uint32_t rows = d.is_2d ? d.repeat : 1;
+    bool zero     = true;
     for (uint32_t r = 0; r < rows; r++) {
         mem->read(src + r * d.src_stride, buf.data(), d.size);
         mem->write(dst + r * d.dst_stride, buf.data(), d.size);
+        zero = zero && std::all_of(buf.begin(), buf.end(), [](uint8_t b) { return b == 0; });
     }
+    // L3 traffic (MEMSIM_L3_BYTES)
+    uint64_t bytes = (uint64_t)d.size * rows;
+    if (d.src_is_l3 && d.dst_is_l3) {
+        l3_bytes_.l3_to_l3 += bytes;
+    } else if (d.src_is_l3) {
+        l3_bytes_.rd += bytes;
+        bool fresh = true;  // no line of the source written by a DMA earlier in the run
+        for (uint32_t r = 0; zero && fresh && r < rows; r++)
+            for (uint32_t l = (src + r * d.src_stride) >> 6; fresh && l <= (src + r * d.src_stride + d.size - 1) >> 6; l++)
+                fresh = !l3_written_.count(l);
+        if (zero && fresh) l3_bytes_.rd_zero += bytes;
+    } else if (d.dst_is_l3) {
+        l3_bytes_.wr += bytes;
+    }
+    if (d.dst_is_l3 && d.size > 0)
+        for (uint32_t r = 0; r < rows; r++)
+            for (uint32_t l = (dst + r * d.dst_stride) >> 6; l <= (dst + r * d.dst_stride + d.size - 1) >> 6; l++)
+                l3_written_.insert(l);
     // Timing: single channel, 64 B/beat. First transfer of a chain pays the
     // first-beat latency; back-to-back transfers pipeline (bus-bound on beats).
     uint64_t beats      = ((uint64_t)d.size * rows + 63) / 64;

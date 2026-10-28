@@ -151,6 +151,13 @@ int main(int argc, char** argv) {
                      m.harts[1].pc, (unsigned long long)m.harts[1].cycle);
     }
 
+    if (std::getenv("MEMSIM_L3_BYTES")) {
+        const SimWorld::L3Bytes& b = world.l3_bytes();
+        std::fprintf(stderr, "memsim: L3 bytes: read %llu (zero init %llu), write %llu, L3-to-L3 %llu\n",
+                     (unsigned long long)b.rd, (unsigned long long)b.rd_zero, (unsigned long long)b.wr,
+                     (unsigned long long)b.l3_to_l3);
+    }
+
     // PASS/FAIL terminator (mirrors tb_bin.sv so batch_run_report.py scrapes it
     // identically to a vsim log).
     if (!m.exited) {

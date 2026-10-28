@@ -402,6 +402,8 @@ python sim/plot_timeline.py sw/apps/<app>/build/<app>.elf                    # r
 - `MEMSIM_DEBUG` — run summary; `MEMSIM_ACC` — per-invocation accelerator durations;
   `MEMSIM_DMA` — first DMA transfers; `MEMSIM_ENGDBG` — engine layout/gauge/DMA trace;
   `MEMSIM_BANKHIST` — per-bank contention histogram.
+- `MEMSIM_L3_BYTES` — DMA bytes read from and written to L3; reads of all-zero data the program never wrote (zero
+  inits) are reported apart.
 - `MEMSIM_SHOW_APP_CHECK` — un-suppress the app's FP `check_result`.
 - `MEMSIM_DATAPATH` — FP32 datapath vs goldens (non-tiled `main`).
 - `MEMSIM_LAYOUT_FAULT` — audit liveness self-test.

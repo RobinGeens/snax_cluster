@@ -21,7 +21,7 @@ model's verdict. Correctness comes from the layout/BIST cross-check, which alway
 Verdict: `[SUCCESS]` iff that passes and the program completed (a deadlock fails).
 
 Env vars: `MEMSIM_DEBUG` (run summary), `MEMSIM_ACC` (per-invocation accelerator durations),
-`MEMSIM_DMA` (first DMA transfers), `MEMSIM_SHOW_APP_CHECK` (un-suppress the app's FP check),
+`MEMSIM_DMA` (first DMA transfers), `MEMSIM_L3_BYTES` (DMA bytes to/from L3), `MEMSIM_SHOW_APP_CHECK` (un-suppress the app's FP check),
 `MEMSIM_DATAPATH` (FP32 datapath vs goldens, non-tiled `main`), `MEMSIM_LAYOUT_FAULT` (audit
 liveness self-test). The safe-to-start sweep prints on every P2 run (no flag).
 
