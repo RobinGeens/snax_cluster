@@ -8,6 +8,11 @@ params_in.hjson as a read-only base + the config overrides), builds the app's
 PARAMS_IN env var, stages the .elf to a unique path, then launches the vsim. The
 tracked params_in.hjson is never modified. Each run gets its own log file.
 
+Hardware: the jobs only rebuild their app, so before any job the run checks that
+the RTL, runtime libs and vsim were built from the current hardware inputs (repo
+content outside the apps + Bender.lock) and runs scripts/build_sim.sh if not. The
+datagen cache is dropped whenever the chisel-ssm revision changes.
+
 Scheduling:
   * A build's slow part is the chisel-ssm/sbt datagen, and only its *first*
     occurrence for a given data shape pays it -- the result is cached under
@@ -131,6 +136,23 @@ VSIM_BIN = "bin/snitch_cluster.vsim"
 # podman, no license, orders of magnitude faster). Run per job alongside the
 # vsim; its Simbacore/Snitch/error lines are scraped into the report's Model cols.
 MEMSIM_BIN = "bin/snitch_cluster.memsim"
+BUILD_SIM = "scripts/build_sim.sh"
+# Hardware-input fingerprint the current vsim was built from; inside the vsim build
+# dir, so `make clean` drops it together with the simulator.
+HW_STAMP = "work-vsim/.batch_run_hw_stamp"
+# Repo paths build_sim.sh's RTL/runtime/vsim build does not depend on.
+HW_FP_EXCLUDE = (
+    "target/snitch_cluster/sw/apps",
+    "target/snitch_cluster/sim",
+    "docs",
+    "*.md",
+    "report.json",
+    "batch_run_config.hjson",
+    "scripts/batch_run.py",
+    "scripts/batch_run_report.py",
+)
+# chisel-ssm revision the datagen cache was filled with (the cache key is data shape only).
+DATAGEN_CACHE_REV = ".datagen_cache/.chisel_ssm_rev"
 
 
 def repo_root():
@@ -449,8 +471,10 @@ class BatchRun:
 
     # --- child process management (every child runs in its own process group
     #     so cancelling the orchestrator tears down the whole bash+vsim tree) ---
-    def _spawn(self, cmd, stdout):
-        p = subprocess.Popen(cmd, cwd=self.cluster, stdout=stdout, stderr=subprocess.STDOUT, start_new_session=True)
+    def _spawn(self, cmd, stdout, env=None):
+        p = subprocess.Popen(
+            cmd, cwd=self.cluster, stdout=stdout, stderr=subprocess.STDOUT, start_new_session=True, env=env
+        )
         with self.procs_lock:
             self.procs[p.pid] = p
         # start_new_session makes the child its own group leader; record the pgid
@@ -875,6 +899,83 @@ class BatchRun:
             start_new_session=True,
         )
 
+    def _hw_fingerprint(self):
+        """Hash of the worktree content outside HW_FP_EXCLUDE (index + unstaged diff +
+        untracked files) plus the gitignored Bender.lock, which a `git pull` never moves."""
+        spec = ["--", "."] + [f":(exclude){p}" for p in HW_FP_EXCLUDE]
+
+        def git(*args):
+            return subprocess.check_output(["git", *args, *spec], cwd=self.root)
+
+        h = hashlib.sha256()
+        h.update(git("ls-files", "--stage"))
+        h.update(git("diff", "--binary"))
+        for path in git("ls-files", "-z", "--others", "--exclude-standard").split(b"\0"):
+            if path:
+                h.update(path)
+                with open(os.path.join(self.root, path.decode()), "rb") as f:
+                    h.update(f.read())
+        lock = os.path.join(self.root, "Bender.lock")
+        if os.path.exists(lock):
+            with open(lock, "rb") as f:
+                h.update(f.read())
+        return h.hexdigest()
+
+    def _ensure_hw_build(self):
+        """Run scripts/build_sim.sh (clean + bender update + RTL + SW + vsim) unless the
+        vsim exists and its stamp matches the current hardware-input fingerprint."""
+        stamp = os.path.join(self.cluster, HW_STAMP)
+        try:
+            with open(stamp) as f:
+                if f.read() == self._hw_fingerprint() and os.path.exists(os.path.join(self.cluster, VSIM_BIN)):
+                    return
+        except OSError:
+            pass
+        blog = os.path.join(self.rundir, "hw_build.log")
+        print(f"[batch_run] hardware inputs changed since the last build: running {BUILD_SIM} (log: {blog})")
+        # build_sim.sh names its containers <prefix>_clean/_build; this prefix lets the
+        # watchdog, terminate_all and the stale sweep remove them like any job build.
+        prefix = f"batchbuild_{os.getpid()}_hw"
+        names = {f"{prefix}_clean", f"{prefix}_build"}
+        with self.procs_lock:
+            self.build_containers.update(names)
+        env = {**os.environ, "CONTAINER_NAME_PREFIX": prefix}
+        with open(blog, "wb") as f:
+            p = self._spawn(["bash", os.path.join(self.root, BUILD_SIM)], f, env=env)
+            try:
+                rc = p.wait(timeout=(self.build_timeout or None))
+            except subprocess.TimeoutExpired:
+                self.terminate_all()
+                sys.exit(f"[batch_run] hardware build timed out after {self.build_timeout}s, see {blog}")
+        # Reaped only after a normal exit: on Ctrl-C, terminate_all must still find it.
+        self._reap(p)
+        with self.procs_lock:
+            self.build_containers.difference_update(names)
+        if not os.path.exists(os.path.join(self.cluster, VSIM_BIN)):
+            sys.exit(f"[batch_run] hardware build failed (rc={rc}), no vsim; see {blog}")
+        if rc != 0:
+            print(f"[batch_run] build_sim.sh rc={rc}: some apps failed in `make sw`; the vsim is built, continuing")
+        with open(stamp, "w") as f:
+            f.write(self._hw_fingerprint())
+
+    def _ensure_datagen_cache_rev(self):
+        """Drop the datagen cache if it was filled by another chisel-ssm revision: its key
+        is the data shape only, so stale golden data/mode words would otherwise hit."""
+        rev = subprocess.check_output(["git", "-C", self.chisel, "rev-parse", "HEAD"]).decode().strip()
+        marker = os.path.join(self.cluster, DATAGEN_CACHE_REV)
+        try:
+            with open(marker) as f:
+                if f.read() == rev:
+                    return
+        except OSError:
+            pass
+        cache = os.path.dirname(marker)
+        print(f"[batch_run] datagen cache not from chisel-ssm {rev[:8]}: clearing {cache}")
+        shutil.rmtree(cache, ignore_errors=True)
+        os.makedirs(cache)
+        with open(marker, "w") as f:
+            f.write(rev)
+
     # --- driver ---
     def run(self):
         # Cancelling the orchestrator (Ctrl-C, kill, or tmux kill-pane/SIGHUP)
@@ -887,6 +988,13 @@ class BatchRun:
 
         self._sweep_stale()
         self._start_watchdog()
+        try:
+            self._ensure_hw_build()
+        except KeyboardInterrupt:
+            self.terminate_all()
+            print("\nBatch run cancelled during the hardware build. All child processes terminated.")
+            return
+        self._ensure_datagen_cache_rev()
         self._order = self._build_order()
         builder = threading.Thread(target=self.build_worker, daemon=True)
         builder.start()

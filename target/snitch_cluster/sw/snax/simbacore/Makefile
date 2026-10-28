@@ -75,5 +75,5 @@ clean:
 $(BUILDDIR):
 	mkdir -p $@
 
-$(OBJS): $(SRC_DIR)/snax-simbacore-lib.c $(INC_DIR)/snax-simbacore-lib.h | $(BUILDDIR)
+$(OBJS): $(SRC_DIR)/snax-simbacore-lib.c $(INC_DIR)/snax-simbacore-lib.h $(INC_DIR)/streamer_csr_addr_map.h | $(BUILDDIR)
 	$(RISCV_CC) $(RISCV_CFLAGS) -c $< -o $@

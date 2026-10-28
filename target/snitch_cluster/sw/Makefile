@@ -15,7 +15,7 @@ else
 RUNTIME = runtime/rtl-generic
 endif
 
-SUBDIRS += math $(RUNTIME) snax/mac apps tests
+SUBDIRS += math $(RUNTIME) snax/mac snax/simbacore apps tests
 
 ifeq ($(CFG_OVERRIDE), cfg/snax_xdma_cluster.hjson)
 SUBDIRS += snax/xdma
@@ -47,7 +47,7 @@ endif
 all: $(SUBDIRS)
 
 # Explicit dependency of apps on runtime
-apps: math $(RUNTIME) snax/snax-alu snax/mac snax/data-reshuffler snax/gemmx snax/versacore-to snax/versacore-dse snax/xdma snax/hypercorex
+apps: math $(RUNTIME) snax/snax-alu snax/mac snax/data-reshuffler snax/gemmx snax/versacore-to snax/versacore-dse snax/xdma snax/hypercorex snax/simbacore
 	$(MAKE) -C $@ TARGET=$(TARGET)
 
 # Explicit dependency of tests on runtime
