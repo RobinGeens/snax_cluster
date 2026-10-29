@@ -31,11 +31,12 @@ int test_phase1_and_2() {
     snrt_cluster_hw_barrier();
 
     // ---- FULL TCDM buffers. Base aligned to the swizzle key period so datagen's
-    // bc_swizzle phase anchor (iscore_out at base + M1_length_oscore_in) holds.
+    // bc_swizzle phase anchor (iscore_out at base + align256(M1_length_oscore_in)) holds.
     void* tcdm_base_ptr = (void*)(((uintptr_t)snrt_l1_next() + 2047u) & ~(uintptr_t)2047u);
 
-    uint8_t* ptr_oscore_in      = (uint8_t*)tcdm_base_ptr;
-    uint8_t* ptr_iscore_out_P1  = ptr_oscore_in + M1_length_oscore_in;
+    uint8_t* ptr_oscore_in = (uint8_t*)tcdm_base_ptr;
+    uint8_t* ptr_iscore_out_P1 =
+        (uint8_t*)(((uintptr_t)(ptr_oscore_in + M1_length_oscore_in) + 255u) & ~(uintptr_t)255u);
     uint8_t* ptr_dt_in          = ptr_iscore_out_P1;
     uint8_t* ptr_BC             = ptr_dt_in + M2_dt_to_BC_offset;
     uint16_t* ptr_iscore_out_P2 = (uint16_t*)(ptr_iscore_out_P1 + M1_length_iscore_out);

@@ -256,9 +256,6 @@
             ]
         }
         {
-            // SUC P2 (osCore in-proj + SUC), all but out proj — now via p2-carry: on-chip SSM state carry
-            // replaces P2-async's BC/oscore_in async rings (~-44% on the P2 part). The output projection is
-            // still the separate GEMM below, since p2-carry's fused out-proj does not fit in TCDM here.
             app: p2-carry
             params: [
                 {
@@ -547,24 +544,20 @@
                     L1: 32,
                     L2: 16,
                     L3: 32,
-                    nb_tiles_A: 8
+                    nb_tiles_A: 4
                     l3_tile: 16
                 }
-            ]
-        }
-        {
-            app: isgemm-tiled
-            params: [
-                // ImageNet
-                // Sizes D
                 {
-                    name: fft D
-                    model: Simba-L IN
+                    name: fft C
+                    model: Simba-L CS
                     force: false
-                    dim0: 48
-                    dim1: 528
-                    dim2: 528
-                    nb_tiles: 11
+                    seqLen: 16384, // 128x128 windows
+                    dModel: 16,
+                    L1: 32,
+                    L2: 16,
+                    L3: 32,
+                    nb_tiles_A: 4
+                    l3_tile: 16
                 }
             ]
         }
@@ -999,15 +992,6 @@
                     dim2: 1024
                     nb_tiles: 11
                 }
-                {
-                    name: fft D
-                    model: Simba-XS IN
-                    force: false
-                    dim0: 48
-                    dim1: 336
-                    dim2: 640
-                    nb_tiles: 7
-                }
             ]
         }
         {
@@ -1022,88 +1006,60 @@
                     dInner: 528
                     nb_tiles: 15
                 }
-                {
-                    name: downsample C
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 16
-                    dModel: 2016
-                    dInner: 336
-                    nb_tiles: 14
-                }
-            ]
-        }
-        {
-            app: P1-tiled-D
-            params: [
-                {
-                    name: P1 A
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 784
-                    dModel: 48
-                    dtRank: 24
-                    nb_tiles: 2
-                }
-            ]
-        }
-        {
-            app: suc-carry
-            params: [
-                {
-                    name: SUC A
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 3136
-                    dModel: 48
-                    dtRank: 24
-                    nb_tiles: 1
-                    nb_l_tiles: 14
-                    bc_pad_banks: 0
-                    bc_swizzle: 1
-                }
             ]
         }
         {
             app: double-gemm-conflict-free
             params: [
                 {
-                    name: P2 in proj A
-                    model: Simba-XS IN
+                    name: P2 in proj B
+                    model: VMamba-Ti IN
                     force: false
-                    seqLen: 784
-                    dModel: 48
-                    dInner: 96
+                    seqLen: 400
+                    dModel: 192
+                    dInner: 384
+                    nb_tiles: 16
                     dtRank: 24
-                    nb_tiles: 2
                 }
                 {
-                    name: P2 out proj A
-                    model: Simba-XS IN
+                    name: P2 out proj B
+                    model: VMamba-Ti IN
                     force: false
-                    seqLen: 784
-                    dModel: 96
-                    dInner: 48
+                    seqLen: 192
+                    dModel: 384
+                    dInner: 192
+                    nb_tiles: 8
                     dtRank: 24
-                    nb_tiles: 2
                 }
                 {
-                    name: downsample A
-                    model: Simba-XS IN
+                    name: P2 in proj C
+                    model: VMamba-Ti IN
                     force: false
                     seqLen: 96
-                    dModel: 432
-                    dInner: 96
-                    nb_tiles: 2
+                    dModel: 384
+                    dInner: 768
+                    nb_tiles: 16
+                    dtRank: 24
                 }
                 {
-                    name: downsample B
-                    model: Simba-XS IN
+                    name: P2 out proj C
+                    model: VMamba-Ti IN
                     force: false
-                    seqLen: 48
-                    dModel: 864
-                    dInner: 240
-                    nb_tiles: 5
+                    seqLen: 96
+                    dModel: 768
+                    dInner: 384
+                    nb_tiles: 8
+                    dtRank: 24
+                }
+                {
+                    name: P2 in proj D
+                    model: VMamba-Ti IN
+                    force: false
+                    seqLen: 32
+                    dModel: 768
+                    dInner: 1536
+                    nb_tiles: 32
+                    dtRank: 24
                 }
                 {
                     name: downsample C
@@ -1119,24 +1075,71 @@
                     model: FEMBA TUAR
                     force: false
                     seqLen: 48
-                    dModel: 400
+                    dModel: 384
                     dInner: 264
                     nb_tiles: 11
                 }
             ]
         }
         {
-            app: p2-carry
+            app: P1-tiled-D
             params: [
                 {
-                    name: SUC/in proj B
-                    model: Simba-XS IN
+                    name: P1 C
+                    model: VMamba-Ti IN
+                    force: false
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 16
+                }
+                {
+                    name: P1 D
+                    model: VMamba-Ti IN
+                    force: false
+                    seqLen: 48
+                    dModel: 768
+                    dtRank: 24
+                    nb_tiles: 32
+                }
+            ]
+        }
+        {
+            app: suc-carry
+            params: [
+                {
+                    name: SUC B
+                    model: VMamba-Ti IN
                     force: false
                     seqLen: 784
-                    dModel: 96
+                    dModel: 192
                     dtRank: 24
                     nb_tiles: 1
                     nb_l_tiles: 7
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+                {
+                    name: SUC C
+                    model: VMamba-Ti IN
+                    force: false
+                    seqLen: 192
+                    dModel: 384
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 3
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+                {
+                    name: SUC D
+                    model: VMamba-Ti IN
+                    force: false
+                    seqLen: 48
+                    dModel: 768
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 3
                     bc_pad_banks: 0
                     bc_swizzle: 1
                 }
@@ -1146,52 +1149,13 @@
             app: main-tiled
             params: [
                 {
-                    name: main C
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 192
-                    dModel: 240
-                    dtRank: 24
-                    nb_tiles: 10
-                    bc_pad_banks: 0
-                    bc_swizzle: 1
-                    safe_to_start_r10: 11
-                    safe_to_start_r11: 9216
-                }
-                {
-                    name: main D
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 48
-                    dModel: 336
-                    dtRank: 24
-                    nb_tiles: 14
-                    bc_pad_banks: 0
-                    bc_swizzle: 1
-                    safe_to_start_r10: 5
-                    safe_to_start_r11: 2304
-                }
-                {
-                    name: main D
-                    model: VMamba-Ti IN
-                    force: false
-                    seqLen: 48
-                    dModel: 768
-                    dtRank: 24
-                    nb_tiles: 16
-                    bc_pad_banks: 0
-                    bc_swizzle: 1
-                    safe_to_start_r10: 8
-                    safe_to_start_r11: 3000
-                }
-                {
                     name: mamba
                     model: FEMBA TUAR
                     force: false
                     seqLen: 80
-                    dModel: 408
+                    dModel: 384
                     dtRank: 24
-                    nb_tiles: 17
+                    nb_tiles: 16
                     bc_pad_banks: 0
                     bc_swizzle: 1
                     safe_to_start_r10: 6
@@ -1213,59 +1177,8 @@
             ]
         }
         {
-            app: einfft-double-conflictfree
-            params: [
-                {
-                    name: einfft C
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 96
-                    dModel: 288
-                }
-                {
-                    name: einfft D
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 48
-                    dModel: 384
-                }
-            ]
-        }
-        {
             app: rmsnorm-tiled
             params: [
-                {
-                    name: rms A
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 3136
-                    dModel: 48
-                    nb_tiles: 28
-                }
-                {
-                    name: rms B
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 784
-                    dModel: 96
-                    nb_tiles: 7
-                }
-                {
-                    name: rms C
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 192
-                    dModel: 224
-                    nb_tiles: 4
-                }
-                {
-                    name: rms D
-                    model: Simba-XS IN
-                    force: false
-                    seqLen: 48
-                    dModel: 320
-                    nb_tiles: 3
-                }
                 {
                     name: merge+norm A
                     model: VMamba-Ti IN
@@ -1311,8 +1224,243 @@
                     model: FEMBA TUAR
                     force: false
                     seqLen: 80
-                    dModel: 400
+                    dModel: 384
                     nb_tiles: 5
+                }
+                {
+                    name: head norm
+                    model: VideoMamba-Ti K400
+                    force: false
+                    seqLen: 16 // cls token
+                    dModel: 192
+                    nb_tiles: 1
+                }
+            ]
+        }
+        {
+            app: suc-carry
+            params: [
+                {
+                    name: SUC
+                    model: VideoMamba-Ti K400
+                    force: false
+                    seqLen: 3136 // 16 frames x 196 (+1 cls token), x2 directions
+                    dModel: 192
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 28 // L_tile=112
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+            ]
+        }
+        {
+            // y_fwd + flip(y_bwd) of the bidirectional scan
+            app: add-tiled
+            params: [
+                {
+                    name: merge
+                    model: VideoMamba-Ti K400
+                    force: false
+                    numElem: 100352 // per tile; x 12 tiles = 3136 x 384
+                    n_acc: 1 // SIMD generator arg, unused by the add
+                    nb_tiles: 12
+                }
+            ]
+        }
+        {
+            app: double-gemm-conflict-free
+            params: [
+                {
+                    name: head
+                    model: VideoMamba-Ti K400
+                    force: false
+                    seqLen: 16 // cls token
+                    dModel: 192
+                    dInner: 408 // 400 classes -> mult of 24
+                    nb_tiles: 17
+                }
+            ]
+        }
+        {
+            // Simba-S / Simba-B Cityscapes 1024x1024 (SegFormer): dims 64/128/320/448, Simba-L CS tiles
+            app: suc-carry
+            params: [
+                {
+                    name: SUC A
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 32768 // x2 -> 65536
+                    dModel: 72 // 64 -> mult of 24
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 128 // L_tile=256
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+                {
+                    name: SUC B
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 16384
+                    dModel: 144 // 128 -> mult of 24
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 128 // L_tile=128
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+                {
+                    name: SUC C
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 4096
+                    dModel: 336 // 320 -> mult of 24
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 128 // L_tile=32
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+                {
+                    name: SUC D
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 1024
+                    dModel: 456 // 448 -> mult of 24
+                    dtRank: 24
+                    nb_tiles: 1
+                    nb_l_tiles: 32 // L_tile=32
+                    bc_pad_banks: 0
+                    bc_swizzle: 1
+                }
+            ]
+        }
+        {
+            app: P1-tiled-D
+            params: [
+                {
+                    name: P1 C
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 512 // x8 -> 4096
+                    dModel: 336
+                    dtRank: 24
+                    nb_tiles: 14 // dModel/24
+                }
+                {
+                    name: P1 D
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 256 // x4 -> 1024
+                    dModel: 456
+                    dtRank: 24
+                    nb_tiles: 19 // dModel/24
+                }
+            ]
+        }
+        {
+            app: double-gemm-conflict-free
+            params: [
+                { // z proj
+                    name: P2 in proj B
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 512 // x16 (kernel does 2x this L)
+                    dModel: 128
+                    dInner: 288
+                    dtRank: 24
+                    nb_tiles: 12 // dInner / 24 per tile
+                }
+                { // out proj
+                    name: P2 out proj B
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 256 // x32
+                    dModel: 256
+                    dInner: 144
+                    dtRank: 24
+                    nb_tiles: 6
+                }
+                { // z proj
+                    name: P2 in proj C
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 128 // x16
+                    dModel: 320
+                    dInner: 672
+                    dtRank: 24
+                    nb_tiles: 14 // dInner / 48 per tile
+                }
+                { // out proj
+                    name: P2 out proj C
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 64 // x32
+                    dModel: 640
+                    dInner: 336
+                    dtRank: 24
+                    nb_tiles: 7
+                }
+                { // z proj
+                    name: P2 in proj D
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 64 // x8
+                    dModel: 448
+                    dInner: 912
+                    dtRank: 24
+                    nb_tiles: 19 // dInner / 48 per tile
+                }
+                { // out proj
+                    name: P2 out proj D
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 64 // x8
+                    dModel: 896
+                    dInner: 456
+                    dtRank: 24
+                    nb_tiles: 19 // dInner / 24 per tile
+                }
+                {
+                    name: segformer A
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 128 // x256
+                    dModel: 64
+                    dInner: 528 // 512 -> mult of 48
+                    dtRank: 24
+                    nb_tiles: 11
+                }
+                {
+                    name: segformer B
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 128 // x64
+                    dModel: 128
+                    dInner: 528
+                    dtRank: 24
+                    nb_tiles: 11
+                }
+                {
+                    name: segformer C
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 64 // x32
+                    dModel: 320
+                    dInner: 528
+                    dtRank: 24
+                    nb_tiles: 11
+                }
+                {
+                    name: segformer D
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 64 // x8
+                    dModel: 448
+                    dInner: 528
+                    dtRank: 24
+                    nb_tiles: 11
                 }
             ]
         }

@@ -17,7 +17,8 @@
 > [14. RMSNorm tiled](14_rmsnorm_tiled.md) ·
 > [15. p2-carry](15_p2_carry.md) ·
 > [20. Bank-conflict-free double GEMM](20_double_gemm_conflict_free.md) ·
-> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md)
+> [21. Conv downsample (im2col GEMM)](21_conv_downsample.md) ·
+> [23. Add tiled](23_add_tiled.md)
 
 This folder describes, for every program under
 [target/snitch_cluster/sw/apps/](../../target/snitch_cluster/sw/apps/), the
@@ -54,6 +55,7 @@ for the exact streamer/CSR programming see the program sources.
 | `rmsnorm` | RMSNorm fused into 6 SIMD launches | [3](03_simd_kernels.md) |
 | `rmsnorm-tiled` | RMSNorm seqLen-tiled for long sequences (per-launch overhead dominated) | [14](14_rmsnorm_tiled.md) |
 | `batchnorm` | Folded BatchNorm + ReLU (`ReLU(x·scale + shift)`) in 2 SIMD passes; SegFormer ConvModule tail | [3](03_simd_kernels.md) |
+| `add-tiled` | Element-wise FP8 add of two large tensors, tiled and double-buffered; merges the two scan directions of a bidirectional Mamba block | [23](23_add_tiled.md) |
 
 ### Mamba main
 

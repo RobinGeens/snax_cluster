@@ -307,11 +307,11 @@ class DataGenerator(DataGeneratorBase):
         ]
         lengths, deltas = self._collect_lengths_and_deltas(specs)
 
-        # main.c places iscore_out at (2 KiB-aligned base) + len_oscore_in: that offset is the
-        # swizzle-phase anchor for the bias image and the sampled check below.
-        self._iscore_out_p1_addr = len_oscore_in
+        # main.c places iscore_out at align256(len_oscore_in) from the 2 KiB-aligned base: that
+        # offset is the swizzle-phase anchor for the bias image and the sampled check below.
+        self._iscore_out_p1_addr = -(-len_oscore_in // 256) * 256
         if self.bc_swizzle:
-            assert len_oscore_in % 256 == 0 and len_iscore_out % 256 == 0
+            assert len_iscore_out % 256 == 0
 
         tile_scalars = {
             "dInner_tile": self.dInner_tile,
