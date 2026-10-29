@@ -41,15 +41,20 @@ class DataGenerator(DataGeneratorBase):
         self.build_data()
         self._run_memory_model()
 
-    def _run_memory_model(self):
+    @staticmethod
+    def _memory_model():
         import importlib.util
 
         app_dir = os.path.dirname(os.path.abspath(__file__))
         spec = importlib.util.spec_from_file_location("memory_model_fft3", os.path.join(app_dir, "memory_model.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        return mod, app_dir
+
+    def _run_memory_model(self):
         from memory_model_base import run_model_from_datagen  # type: ignore[import]
 
+        mod, app_dir = self._memory_model()
         self.lines_params.append(run_model_from_datagen(mod.build_report, app_dir))
 
     def build_data(self):
@@ -92,6 +97,13 @@ class DataGenerator(DataGeneratorBase):
         # partition3 K-reduction split into nb_l3 invocations (accumulate in BF16, requant on last).
         assert K_3 % nb_l3 == 0, f"K_3 ({K_3}) must be divisible by nb_l3 ({nb_l3})"
         K_3t = K_3 // nb_l3
+        # Every launch covers at most 2 K-steps: its K-step-0 psum read is redirected to the zero
+        # buffer and K-step 1 reads the psum (one R13 K-stride), so no psum zero-fill is needed.
+        # gemm1 (K_1 = L1/16) is K-chunked like partition3 to respect that.
+        nb_k1 = (K_1 + 1) // 2
+        assert K_1 % nb_k1 == 0, f"K_1 ({K_1}) must split into {nb_k1} equal chunks"
+        K_1t = K_1 // nb_k1
+        assert K_2 <= 2 and K_3t <= 2, f"K_2 ({K_2}) and K_3t ({K_3t}) must be <= 2"
         # Stages 1-4 run on one l3-tile at a time, on contiguous tile-local buffers gathered by
         # DMA; descriptors are the un-tiled ones with L3 -> L3t, L -> Lt.
         assert l3_tile % seqLenUnroll == 0, f"l3_tile ({l3_tile}) must be a multiple of {seqLenUnroll}"
@@ -125,7 +137,7 @@ class DataGenerator(DataGeneratorBase):
         cd_array_width = seqLenUnroll * BF16
         assert cd_array_width == b_in_width, "Memory layout mismatch"
 
-        psum_bounds_and_strides_1 = ([M_1 * N_1, K_1], [cd_array_width // 8, 0])
+        psum_bounds_and_strides_1 = ([M_1 * N_1, K_1t], [cd_array_width // 8, 0])
         psum_bounds_and_strides_2 = ([M_2 * N_2, K_2], [cd_array_width // 8, 0])
         # partition3 psum walks ONE N-tile's output (M_3*N_3t), K_3t contraction steps per
         # invocation; the nb_l3 invocations read-accumulate into the same psum (stride-0 K).
@@ -133,13 +145,13 @@ class DataGenerator(DataGeneratorBase):
 
         # Per-slice descriptors: identical to un-tiled fft-3way with `dModel -> dM`.
         streamers = {
-            # Step 1: partition 1.
+            # Step 1: partition 1, K-chunked into nb_k1 launches of K_1t K-steps.
             "R11_1": (
-                [2 * L1 * L1_padded * FP8 // iscore_serial_width],
+                [2 * L1 * L1_padded * FP8 // iscore_serial_width // nb_k1],
                 [iscore_serial_width // 8],
             ),
             "R12_1": (
-                [downsized_N_1, M_1, K_1],
+                [downsized_N_1, M_1, K_1t],
                 [b_in_width // 8, 0, downsized_N_1 * b_in_width // 8],
             ),
             "R13_1": psum_bounds_and_strides_1,
@@ -195,10 +207,11 @@ class DataGenerator(DataGeneratorBase):
                 [4 * BANK_BYTES, seqLenUnroll * 4 * BANK_BYTES, 0, 0],
             ),
             "W3_4": (
-                # Fused re/im deinterleave, as W3_2 (targets H2_full for nb_l3==1, H2 otherwise).
+                # Fused re/im deinterleave straight into the full H2: the tile's re half lands in
+                # the re region, its im half one im-region offset further (base = tile's K-block).
                 [2 * Lt * dM * FP8 // (2 * suc_serial_width_BC)],
                 [2 * BANK_BYTES],
-                [BANK_BYTES, Lt * dM * FP8 // 8],
+                [BANK_BYTES, L * dM * FP8 // 8],
             ),
             # Step 5: partition 3. K-tile the 2*L3 contraction into nb_l3 chunks of K_3t from the
             # assembled [re|im] H2 and accumulate (requant on the last).
@@ -213,14 +226,14 @@ class DataGenerator(DataGeneratorBase):
             "R13_5": psum_bounds_and_strides_3,
             "W3_5": psum_bounds_and_strides_3,
         }
-        # partition3 K-chunk base-pointer offsets (contiguous in the [re|im] order).
+        # K-chunk base-pointer offsets (weights and inputs are K-tile-major, so chunks are contiguous).
+        weight1_kchunk_bytes = (2 * L1 * L1_padded * FP8 // 8) // nb_k1
+        in_kchunk_bytes = K_1t * downsized_N_1 * b_in_width // 8
         weight3_kchunk_bytes = (2 * L3 * 2 * L3_padded * FP8 // 8) // nb_l3
         h2_kchunk_bytes = K_3t * downsized_N_3t * b_in_width // 8
 
-        # H2 assembly offsets: each l3-tile's [re|im] halves go to the full H2's re/im regions.
-        h2_ktile_bytes = K_3t * downsized_N_3 * b_in_width // 8   # one l3-tile's H2 (re+im)
-        h2_half_bytes = h2_ktile_bytes // 2                       # one re or im K-block
-        h2_im_region = (2 * L * dM * FP8 // 8) // 2               # start of the im region in the full H2
+        # One l3-tile's re (or im) K-block in the full H2: cmul2 writes tile lt at lt*h2_half_bytes.
+        h2_half_bytes = K_3t * downsized_N_3 * b_in_width // 8 // 2
 
         # ---------- Buffer sizes ------------------------------------------------
         # Weights/twiddles depend on L only (broadcast over d) → FULL, loaded once.
@@ -264,10 +277,11 @@ class DataGenerator(DataGeneratorBase):
         tw2_gather_src_stride = L3 * tw1_entry
         tw2_tile_bytes = L2 * L3t * tw1_entry
 
-        # Tile-local psum/scratch (1/nb_l3 of the full slot).
+        # Tile-local psum/scratch (1/nb_l3 of the full slot) + the zero-buffer size (memory model).
         slot_size = align64(2 * L * dM * BF16 // 8)              # full partition3 psum (gemm3 out)
         slot_size_tile = align64(2 * Lt * dM * BF16 // 8)        # gemm1/2 psum per l3-tile
-        hsize_tile = slot_size_tile // 2                          # FP8 cmul/noop scratch per tile
+        hsize_tile = slot_size_tile // 2                          # FP8 cmul1 scratch per tile
+        zero_bytes = self._memory_model()[0].plan(self.kwargs)["zero_bytes"]
 
         specs = [
             ("weight1", len_weight1),
@@ -306,10 +320,13 @@ class DataGenerator(DataGeneratorBase):
             "tw2_tile_bytes": tw2_tile_bytes,
             "slot_size_tile": slot_size_tile,
             "hsize_tile": hsize_tile,
-            # partition3 K-tiling over l3-tiles + the [re|im] H2 assembly offsets
+            "zero_bytes": zero_bytes,
+            # K-chunking (gemm1 over K_1, partition3 over l3-tiles) + the full-H2 tile offset
+            "nb_k1": nb_k1,
+            "weight1_kchunk_bytes": weight1_kchunk_bytes,
+            "in_kchunk_bytes": in_kchunk_bytes,
             "h2_half_bytes": h2_half_bytes,                    # one l3-tile's re (or im) K-block
-            "h2_im_region": h2_im_region,                      # start of the im region in the full H2
-            "h2_full_bytes": 2 * h2_im_region,                 # full assembled H2 (re + im regions)
+            "h2_full_bytes": 2 * L * dM * FP8 // 8,            # full H2 (re + im regions)
             "weight3_kchunk_bytes": weight3_kchunk_bytes,      # partition3 K-chunk weight offset
             "h2_kchunk_bytes": h2_kchunk_bytes,                # partition3 K-chunk h2 offset
         }
