@@ -3,12 +3,10 @@
 //
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
-// Tiled 2-way partitioned EinFFT. Phase A is L2-tiled (full dModel per tile); Phase B is
-// K-tiled. See docs/dataflow/05_fft.md §5.2 for dataflow, tile-axis
-// rationale, TCDM overlay map, and L3 layout.
-//
-// Phase A uses nb_tiles (can be large) with ping-pong DMA/compute overlap.
-// Phase B uses nb_tiles_B (limited by K_2) with serial DMA/compute.
+// Tiled 2-way partitioned EinFFT. Phase A is dModel-tiled with ping-pong DMA/compute overlap
+// (the fused CMul write emits each tile in flattenB order, so the L3 spill is one chunk per
+// k2-group); Phase B is K-tiled into the full psum, opened by a K=1 head launch that reads its
+// psum from a 64 B zero block. See docs/dataflow/05_fft.md "fft-tiled".
 
 #include "../data/data.h"
 #include "snax-simbacore-lib.h"
@@ -31,8 +29,9 @@ int test() {
     uint8_t* ptr_weight1        = (uint8_t*)tcdm_base_ptr;
     uint8_t* ptr_weight2        = ptr_weight1 + align64(M6_length_weight1);
     uint8_t* ptr_twiddles_tiled = ptr_weight2 + align64(M6_length_weight2);
+    uint8_t* ptr_zero           = ptr_twiddles_tiled + align64(M6_length_twiddles_tiled_total);  // 64 B
 
-    uint8_t* ptr_work_base = ptr_twiddles_tiled + align64(M6_length_twiddles_tiled_total);
+    uint8_t* ptr_work_base = ptr_zero + 64;
 
     // ---- Phase A: double-buffered working slots (ping-pong) ----
     uint8_t* ptr_in_tile[2];
@@ -49,7 +48,9 @@ int test() {
     // Phase B: overlays Phase A region after barrier. Single-buffered.
     uint8_t* ptr_had_reord_b_ktile = ptr_work_base;
     uint8_t* ptr_partition2_out    = ptr_had_reord_b_ktile + align64(M6_length_hadamard_reordered_ktile);
-    uint32_t start_cycles          = 0;
+    // K-tile 0 can load behind Phase A's last spill when its slot stays below the had_reord tiles.
+    const bool ktile0_early = ptr_had_reord_b_ktile + M6_length_hadamard_reordered_ktile <= ptr_had_reord_a_tile[0];
+    uint32_t start_cycles   = 0;
 
     if (snrt_global_core_idx() == 0) {
         printf("\nFFT tiled: L=%d D=%d L1=%d L2=%d nb_tiles=%d nb_tiles_B=%d\n", seqLen, dModel, L1, L2, nb_tiles,
@@ -77,17 +78,30 @@ int test() {
     uint32_t simbacore_cycles_phaseB = 0;
     static uint32_t _dma_done = 0, _compute_done = 0;
 
-    // Zero both ping-pong buffers ONCE up front. Streamers leave the fixed padding cells
-    // untouched (downstream reads them), but each tile's compute fully overwrites the data
-    // region. This way, we don't need to zero this region for each tile
+    // Zero the partition1 psum ping-pong slots ONCE up front (streamers leave the fixed padding
+    // cells untouched, and each tile's compute fully overwrites the data region) and the zero
+    // block Phase B's head launch reads its psum from.
     if (snrt_is_dm_core()) {
-        for (int b = 0; b < 2; b++) {
-            simba_dma_fill_zero(ptr_partition1_out_tile[b], M6_length_partition1_out_tile);
-            simba_dma_fill_zero(ptr_had_reord_a_tile[b], M6_length_hadamard_reordered_tile);
-        }
+        for (int b = 0; b < 2; b++) simba_dma_fill_zero(ptr_partition1_out_tile[b], M6_length_partition1_out_tile);
+        simba_dma_fill_zero(ptr_zero, 64);
         snrt_dma_wait_all();
     }
     snrt_cluster_hw_barrier();
+
+    // Phase B launch programs: K-tile 0's head (K=1, psum read from the zero block: R13 base
+    // and stride 0), its tail (the remaining K steps) and full K-tiles. The streamer latches
+    // its program at start, so each is written during the previous launch.
+#define CFG_P2(N, W, B, FROM_ZERO)                                                                                \
+    do {                                                                                                         \
+        set_isgemm_streamer_csr((uint32_t)(W), M6_R11_##N##_ss, M6_R11_##N##_tb, M6_R11_##N##_ts, (uint32_t)(B),   \
+                                M6_R12_##N##_ss, M6_R12_##N##_tb, M6_R12_##N##_ts, (uint32_t)ptr_partition2_out, \
+                                M6_W3_##N##_ss, M6_W3_##N##_tb, M6_W3_##N##_ts);                                 \
+        if (FROM_ZERO) {                                                                                         \
+            write_csr(BASE_PTR_READER_13_LOW, (uint32_t)ptr_zero);                                               \
+            write_csr(T_STRIDE_BASE_READER_13 + 0, 0);                                                           \
+        }                                                                                                        \
+    } while (0)
+#define CFG_P2_FULL(T) CFG_P2(3, ptr_weight2 + (T) * M6_length_weight2_ktile, ptr_had_reord_b_ktile, false)
 
     // ========================================================================
     // Phase A tile loop: partition1 + hadamard + reorder, tile along L2.
@@ -103,31 +117,23 @@ int test() {
             if (i >= 2) {
                 uint32_t spill_tile = i - 2;
                 int sbuf            = spill_tile & 1;
-                // Scatter the per-tile col-major reorder output into the flattenB (K-tile-major) L3
-                // layout the partition-2 IS-core reads. Each seqLenUnroll-elem block
-                // reals[m*L2 + k2*seqLenUnroll .. +seqLenUnroll][d] lands at flattenB block (k2, d, m).
-                // For L2 == seqLenUnroll (nk == 1) flattenB == col-major and this is one contiguous
-                // 1D spill (fast path). See docs/dataflow/05_fft.md §5.2.
+                // Spill the tile into the flattenB (K-tile-major) L3 layout the partition-2 IS-core
+                // reads: the tile already holds each k2-group's [d][m] blocks contiguously, so one
+                // chunk per k2-group and re/im lands at (k2g, d0).
                 uint8_t* tile_re = ptr_had_reord_a_tile[sbuf];
                 uint8_t* tile_im = tile_re + M6_length_hadamard_reordered_tile_re;
                 uint8_t* l3_re   = ptr_hadamard_reordered_l3;
                 uint8_t* l3_im   = l3_re + (M6_length_hadamard_reordered / 2);
-                uint32_t nk      = L2 / 16;  // K-tiles per re/im half (= L2 / seqLenUnroll)
                 uint32_t d0      = spill_tile * M6_dModel_tile;
-                if (nk == 1) {
-                    snrt_dma_start_1d(l3_re + d0 * L1 * 16, tile_re, M6_phaseA_dma_per_tile_per_part);
-                    snrt_dma_start_1d(l3_im + d0 * L1 * 16, tile_im, M6_phaseA_dma_per_tile_per_part);
-                } else {
-                    for (uint32_t k2 = 0; k2 < nk; k2++) {
-                        for (uint32_t dl = 0; dl < M6_dModel_tile; dl++) {
-                            uint32_t dst_off = (k2 * dModel * L1 + (d0 + dl) * L1) * 16;
-                            uint32_t src_off = dl * seqLen + k2 * 16;
-                            snrt_dma_start_2d(l3_re + dst_off, tile_re + src_off, 16, 16, L2, L1);
-                            snrt_dma_start_2d(l3_im + dst_off, tile_im + src_off, 16, 16, L2, L1);
-                        }
-                    }
+                for (uint32_t k2g = 0; k2g < M6_nk_2; k2g++) {
+                    uint32_t dst = k2g * M6_spill_l3_kstride + d0 * L1 * seqLenUnroll;
+                    snrt_dma_start_1d(l3_re + dst, tile_re + k2g * M6_spill_chunk, M6_spill_chunk);
+                    snrt_dma_start_1d(l3_im + dst, tile_im + k2g * M6_spill_chunk, M6_spill_chunk);
                 }
             }
+            // Phase B's K-tile 0 rides behind the last spill.
+            if (i == nb_tiles + 1 && ktile0_early)
+                snrt_dma_start_1d(ptr_had_reord_b_ktile, ptr_hadamard_reordered_l3, M6_length_hadamard_reordered_ktile);
 
             if (i < nb_tiles) {
                 // dft_in is global K-tile-major ([K-tile0: all cols | K-tile1: ...]). Each
@@ -188,7 +194,7 @@ int test() {
             _set_simbacore_start();
             write_csr(STREAMER_START_CSR, 0);
             write_csr(SIMBACORE_START, 0);
-            // Preload next tile's Step 1 IS-core CSRs during CMUL compute
+            // Preload next tile's Step 1 IS-core CSRs (or Phase B's head launch) during CMUL compute
             if (tile < nb_tiles - 1) {
                 int nbuf = (tile + 1) & 1;
                 set_isgemm_streamer_csr((uint32_t)ptr_weight1, M6_R11_1_ss, M6_R11_1_tb, M6_R11_1_ts,
@@ -199,6 +205,8 @@ int test() {
                 write_csr(D_INNER, L1_padded);
                 write_csr(DT_RANK, 1);
                 write_csr(D_FINAL, M6_N_1_tile);
+            } else {
+                CFG_P2(3H, ptr_weight2, ptr_had_reord_b_ktile, true);
             }
             while (read_csr(SIMBACORE_BUSY));
             while (read_csr(STREAMER_BUSY_CSR));
@@ -216,45 +224,58 @@ int test() {
     }
 
     // ========================================================================
-    // Phase B: partition 2, K-axis tiled. The partition2_out zero-init (DMA core) overlaps
-    // the weight2/simbacore CSR setup (core 0) and the tile-0 had_reord prefetch instead of
-    // running serially before them.
+    // Phase B: partition 2, K-axis tiled into the FULL partition2_out. K-tile 0 opens the
+    // accumulation with a K=1 head launch reading its psum from the zero block, then its tail;
+    // later K-tiles accumulate (single-buffered slot); the last launch requantizes.
     // ========================================================================
-    if (snrt_is_dm_core()) {
-        simba_dma_fill_zero(ptr_partition2_out, M6_length_partition2_out);
-        snrt_dma_start_1d(ptr_had_reord_b_ktile, ptr_hadamard_reordered_l3, M6_length_hadamard_reordered_ktile);
-    }
-    if (snrt_global_core_idx() == 0) {
-        set_isgemm_streamer_csr((uint32_t)ptr_weight2, M6_R11_3_ss, M6_R11_3_tb, M6_R11_3_ts,
-                                (uint32_t)ptr_had_reord_b_ktile, M6_R12_3_ss, M6_R12_3_tb, M6_R12_3_ts,
-                                (uint32_t)ptr_partition2_out, M6_W3_3_ss, M6_W3_3_tb, M6_W3_3_ts);
-        set_simbacore_csr(M6_ISGEMM_SQ, 2 * L2, 1, M6_dInner_2_tile, 1, dModel * L1);
-    }
-    if (snrt_is_dm_core()) snrt_dma_wait_all();
-    snrt_cluster_hw_barrier();
+#define LAUNCH_P2(FINAL, K_ELEMS)                                                                             \
+    do {                                                                                                     \
+        set_simbacore_csr((FINAL) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT, 2 * L2, 1, (K_ELEMS), 1, dModel * L1); \
+        start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);                                                   \
+    } while (0)
+#define FINISH_P2()                                                   \
+    do {                                                              \
+        wait_simbacore_and_streamer();                                \
+        simbacore_cycles_phaseB += read_simbacore_perf_counter();     \
+    } while (0)
 
     for (uint32_t tile = 0; tile < M6_nb_tiles_B; tile++) {
-        // tile 0 is already prefetched above; load tile>0 here (single-buffered).
-        if (snrt_is_dm_core() && tile > 0) {
+        if (snrt_is_dm_core() && (tile > 0 || !ktile0_early)) {
             snrt_dma_start_1d(ptr_had_reord_b_ktile,
                               ptr_hadamard_reordered_l3 + tile * M6_length_hadamard_reordered_ktile,
                               M6_length_hadamard_reordered_ktile);
             snrt_dma_wait_all();
         }
-
-        snrt_cluster_hw_barrier();
+        snrt_cluster_hw_barrier();  // K-tile slot loaded
 
         if (snrt_global_core_idx() == 0) {
-            write_csr(BASE_PTR_READER_11_LOW, (uint32_t)(ptr_weight2 + tile * M6_length_weight2_ktile));
-            write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_had_reord_b_ktile);
-            write_csr(MODE, (tile == M6_nb_tiles_B - 1) ? M6_ISGEMM_SQ : M30_ISGEMM_SQ_NO_REQUANT);
-            start_simbacore_and_streamers(M6_R10_en, 0, 1, 0);
-            wait_simbacore_and_streamer();
-            simbacore_cycles_phaseB += read_simbacore_perf_counter();
+            bool last = tile + 1 == M6_nb_tiles_B;
+            if (tile == 0) {
+                // head (CSRs preloaded during Phase A's last CMUL), then the tail if K_2_t > 1
+                LAUNCH_P2(last && M6_K_2_t == 1, dInnerUnroll);
+                if (M6_K_2_t > 1)
+                    CFG_P2(3T, ptr_weight2 + M6_weight2_kmacro_bytes, ptr_had_reord_b_ktile + M6_had_reord_kmacro_bytes,
+                           false);
+                else if (!last)
+                    CFG_P2_FULL(1);
+                FINISH_P2();
+                if (M6_K_2_t > 1) {
+                    LAUNCH_P2(last, M6_dInner_2_tail);
+                    if (!last) CFG_P2_FULL(1);
+                    FINISH_P2();
+                }
+            } else {
+                LAUNCH_P2(last, M6_dInner_2_tile);
+                if (!last) CFG_P2_FULL(tile + 1);
+                FINISH_P2();
+            }
         }
-
-        snrt_cluster_hw_barrier();
+        snrt_cluster_hw_barrier();  // K-tile slot consumed
     }
+#undef CFG_P2
+#undef CFG_P2_FULL
+#undef LAUNCH_P2
+#undef FINISH_P2
 
     // --- Verification ---
     if (snrt_global_core_idx() == 0) {

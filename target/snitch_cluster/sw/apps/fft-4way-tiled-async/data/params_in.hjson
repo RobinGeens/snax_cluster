@@ -7,5 +7,6 @@
     L4: 16
     nb_tiles_A: 1
     l3_tile: 16
-    nb_ntile: 1
+    nb_m4: 2
+    nb_ntile: 2
 }

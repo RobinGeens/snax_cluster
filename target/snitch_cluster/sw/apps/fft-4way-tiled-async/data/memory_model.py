@@ -3,9 +3,9 @@
 # Copyright 2025 KU Leuven.
 # Not released under license. All rights reserved.
 #
-# Standalone L1 TCDM memory model for `fft-4way-tiled-async`. The stage-3/4 full buffers overlay
-# the dead stage-1-2 tile scratch, so:
-#   peak = weights + max(stages-1-2 tile scratch, stage-3/4 full scratch)
+# Standalone L1 TCDM memory model for `fft-4way-tiled-async`. The stage-3/4 chunk buffers overlay
+# the dead stage-1-2 tile scratch, while the assembled packed3 and the zero buffer survive, so:
+#   peak = weights + packed3 + zero + max(stages-1-2 tile scratch, stage-3/4 chunk scratch)
 # Design: docs/dataflow/05_fft.md "fft-4way-tiled-async".
 
 import os
@@ -52,41 +52,46 @@ def build_report(params: dict) -> MemoryReport:
         ("weight1", len_w1), ("weight2", len_w2), ("weight3", len_w3), ("weight4", len_w4),
     ])
 
-    # packed3 (assembled partition3 input) is resident across both phases.
-    packed3 = align64(2 * L * dM * FP8 // 8)
-
     # Stages 1-2: per-tile local buffers (m3-blocks via l3_tile or m4-blocks via nb_m4).
     in_tile = Lt * dM * FP8 // 8
     tw1_tile = 2 * L1 * L2 * L3t * L4t * FP8 // 8
     tw2_tile = 2 * L2 * L3t * L4t * FP8 // 8
     slot_tile = align64(2 * Lt * dM * BF16 // 8)   # gemm1/2 psum per tile
-    hsize_tile = slot_tile // 2                     # FP8 cmul/noop scratch (H1, H2)
-    report.add_section("TCDM stages 1-2 (per tile + resident packed3)", [
-        ("packed3 (resident)", packed3),
+    hsize_tile = slot_tile // 2                     # FP8 cmul1 output (partition2 input)
+    # Block-swap NOOP scratch, only where a re/im split cannot be fused into the cmul write (K = 1).
+    H1 = 0 if (2 * L2 > SEQ_LEN_UNROLL and L3 == SEQ_LEN_UNROLL) else hsize_tile
+    report.add_section("TCDM stages 1-2 (per tile)", [
         ("in_tile", in_tile), ("tw1_tile", tw1_tile), ("tw2_tile", tw2_tile),
-        ("P_tile (gemm1/2 psum)", slot_tile), ("H1_tile", hsize_tile), ("H2_tile", hsize_tile),
+        ("P_tile (gemm1/2 psum)", slot_tile), ("H2_tile", hsize_tile), ("H1_tile (NOOP scratch)", H1),
     ])
 
-    # Stages 3-4: per (k1,k2) N-chunk. These overlay the dead stages-1-2 scratch.
+    # Stages 3-4: per (k1,k2) N-chunk. These overlay the dead stages-1-2 scratch; P4 is
+    # double-buffered against the output scatter when there is more than one chunk.
     P3 = align64(2 * L * dM * BF16 // (8 * nb_ntile))
-    H3 = align64(2 * L * dM * FP8 // (8 * nb_ntile))
     packed4 = align64(2 * L * dM * FP8 // (8 * nb_ntile))
     P4 = align64(2 * L * dM * BF16 // (8 * nb_ntile))
+    H3 = 0 if L4 == SEQ_LEN_UNROLL else packed4
+    nb_p4 = 2 if nb_ntile > 1 else 1
     report.add_section("TCDM stages 3-4 (per N-chunk, overlay stages 1-2)", [
-        ("packed3 (resident)", packed3), ("P3", P3), ("H3", H3),
-        ("packed4 (gemm4 input)", packed4), ("P4", P4),
+        ("P3", P3), ("packed4 (gemm4 input)", packed4), ("H3 (NOOP scratch)", H3),
+        (f"P4 x{nb_p4}", nb_p4 * P4),
+    ])
+
+    # Resident across both phases: the assembled partition3 input and the zero buffer that
+    # feeds every GEMM's K-step-0 psum read.
+    packed3 = align64(2 * L * dM * FP8 // 8)
+    zero = max(slot_tile, P3)
+    report.add_section("Resident across phases", [
+        ("packed3 (partition3 input)", packed3), ("ZERO (K-step-0 psum source)", zero),
     ])
 
     report.add_section("L3 staging (not counted in TCDM)", [
         ("partition4_out (L3)", 2 * L * dModel * BF16 // 8),
     ])
 
-    stages12 = (
-        align64(in_tile) + align64(tw1_tile) + align64(tw2_tile)
-        + slot_tile + hsize_tile + hsize_tile
-    )
-    stages34 = P3 + H3 + packed4 + P4
-    peak = weights + packed3 + max(stages12, stages34)
+    stages12 = align64(in_tile) + align64(tw1_tile) + align64(tw2_tile) + slot_tile + hsize_tile + H1
+    stages34 = P3 + packed4 + H3 + nb_p4 * P4
+    peak = weights + packed3 + zero + max(stages12, stages34)
     report.add_peak("TCDM peak", peak)
     return report
 

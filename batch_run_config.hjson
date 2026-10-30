@@ -476,26 +476,6 @@
             ]
         }
         {
-            app: fft-4way-tiled-async
-            params: [
-                {
-                    name: fft A
-                    model: Simba-L CS
-                    force: false
-                    seqLen: 65536
-                    dModel: 1 // x 96
-                    L1: 16,
-                    L2: 16,
-                    L3: 16,
-                    L4: 16,
-                    nb_tiles_A: 1
-                    l3_tile: 16
-                    nb_m4: 4
-                    nb_ntile: 4
-                }
-            ]
-        }
-        {
             app: fft-3way-tiled
             params: [
                 {

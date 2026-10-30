@@ -105,6 +105,19 @@ class DataGenerator(DataGeneratorBase):
         # Phase B: K-axis tiled (dInner) — psum_p2 uses FULL M*N output, K_2_t outer K per tile.
         psum_p1_tile = ([M_1 * N_1_tile, K_1], [cd_array_width // 8, 0])
         psum_p2_ktile = ([M_2 * N_2, K_2_t], [cd_array_width // 8, 0])
+        # Phase B opens its accumulation with a K=1 head launch whose R13 reads one 64 B zero
+        # block (base and stride 0 overridden by the program) instead of a zero-filled psum; the
+        # K-tile's remaining K_2_t-1 steps follow as a tail launch reading the psum.
+        K_2_tail = max(K_2_t - 1, 1)
+        psum_p2_head = ([M_2 * N_2, 1], [cd_array_width // 8, 0])
+        psum_p2_tail = ([M_2 * N_2, K_2_tail], [cd_array_width // 8, 0])
+        weight2_kmacro_bytes = (2 * L2 * 2 * L2_padded * FP8 // 8) // K_2
+        had_reord_kmacro_bytes = downsized_N_2 * b_in_width // 8
+        # Phase A spill: the fused CMul write lays the tile out in flattenB order (K-tile-major
+        # [k2-group][d][m] blocks of seqLenUnroll bytes), so each k2-group spills as one chunk.
+        nk_2 = L2 // seqLenUnroll
+        spill_chunk = dModel_tile * L1 * seqLenUnroll * FP8 // 8
+        spill_l3_kstride = dModel * L1 * seqLenUnroll * FP8 // 8
 
         streamers = {
             #
@@ -160,11 +173,11 @@ class DataGenerator(DataGeneratorBase):
                 [4 * BANK_BYTES, 0],
             ),
             "W3_2": (  # SIMD output: fused re/im split into the per-tile had_reord slot,
-                # [tile_reals (contig) | tile_imags (contig)]. spatial[0] = re/im half-beat,
-                # spatial[1] = tile-local re/im region offset. Per-tile DMA-out then
-                # scatters into the L3 standard layout.
-                [2 * L * dModel_tile * FP8 // (2 * suc_serial_width_BC)],
-                [2 * BANK_BYTES],
+                # [tile_reals | tile_imags], each in flattenB order: beat (k2-group, l1, M-tile,
+                # d) lands at block ((k2g*dModel_tile + d)*L1 + m). spatial[0] = re/im
+                # half-beat, spatial[1] = tile-local re/im region offset.
+                [nk_2, seqLenUnroll, L1 // seqLenUnroll, dModel_tile],
+                [spill_chunk, seqLenUnroll, seqLenUnroll * seqLenUnroll, L1 * seqLenUnroll],
                 [BANK_BYTES, L * dModel_tile * FP8 // 8],
             ),
             #
@@ -184,6 +197,18 @@ class DataGenerator(DataGeneratorBase):
             ),
             "R13_3": psum_p2_ktile,  # FULL output, accumulates
             "W3_3": psum_p2_ktile,
+            # K-tile 0 head (K=1, psum from the zero block) and tail (K_2_t-1 steps, if any).
+            "R11_3H": ([(2 * L2 * 2 * L2_padded * FP8 // iscore_serial_width) // K_2], [iscore_serial_width // 8]),
+            "R12_3H": ([downsized_N_2, M_2, 1], [b_in_width // 8, 0, downsized_N_2 * b_in_width // 8]),
+            "R13_3H": psum_p2_head,
+            "W3_3H": psum_p2_head,
+            "R11_3T": (
+                [(2 * L2 * 2 * L2_padded * FP8 // iscore_serial_width) // K_2 * K_2_tail],
+                [iscore_serial_width // 8],
+            ),
+            "R12_3T": ([downsized_N_2, M_2, K_2_tail], [b_in_width // 8, 0, downsized_N_2 * b_in_width // 8]),
+            "R13_3T": psum_p2_tail,
+            "W3_3T": psum_p2_tail,
         }
 
         # ---------- Buffer sizes ------------------------------------------------
@@ -222,14 +247,6 @@ class DataGenerator(DataGeneratorBase):
         len_twiddles_per_tile_padded = len_twiddles  # = 512 B (un-tiled)
         len_twiddles_tiled_total = len_twiddles  # one shared copy in TCDM
 
-        # ---- Phase A spill: scatter each d-tile's col-major blocks into flattenB L3. ----
-        # `hadamard_reordered` in L3 is flattenB (K-tile-major) `[reals_fb | imags_fb]` —
-        # the layout the partition-2 IS-core reads (see flattenHadamardReordered in
-        # DataGeneratorFFT). Each seqLenUnroll-elem block reals[m*L2+k2*seqLenUnroll .. ][d]
-        # goes to flattenB block (k2, d, m). This value is the per-tile per-part byte count
-        # (it equals the contiguous 1D spill size used on the L2 == seqLenUnroll fast path).
-        len_phaseA_dma_per_tile_per_part = dModel_tile * L * FP8 // 8  # = 4096 B for nb=2
-
         # Phase B is K-axis tiled (accumulating into FULL partition2_out in TCDM).
         # Per tile: DMA-in K-slice of hadamard_reordered into the TCDM tile B-slot;
         # update BASE_PTR_READER_11 to slice weight2 by K-macro offset. Runs once,
@@ -259,10 +276,16 @@ class DataGenerator(DataGeneratorBase):
             # ---- twiddle (shared across tiles, no relayout) ----
             "length_twiddles_per_tile_padded": len_twiddles_per_tile_padded,
             "length_twiddles_tiled_total": len_twiddles_tiled_total,
-            # ---- Phase A DMA-out (per-tile, per-part) ----
-            "phaseA_dma_per_tile_per_part": len_phaseA_dma_per_tile_per_part,
+            # ---- Phase A spill (per k2-group chunk) ----
+            "nk_2": nk_2,
+            "spill_chunk": spill_chunk,
+            "spill_l3_kstride": spill_l3_kstride,
             # ---- Phase B K-axis tiling ----
             "dInner_2_tile": dInner_2_tile,
+            "K_2_t": K_2_t,
+            "dInner_2_tail": K_2_tail * dInnerUnroll,
+            "weight2_kmacro_bytes": weight2_kmacro_bytes,
+            "had_reord_kmacro_bytes": had_reord_kmacro_bytes,
             "length_weight2_ktile": len_weight2_ktile,
             "length_hadamard_reordered_ktile": len_hadamard_reordered_ktile,
             "nb_tiles_B": nb_tiles_B,

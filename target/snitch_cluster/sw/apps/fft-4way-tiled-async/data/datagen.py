@@ -76,6 +76,7 @@ class DataGenerator(DataGeneratorBase):
         assert dModel % nb_d == 0
         assert (2 * suc_bc) // 8 == 4 * BANK_BYTES, "SIMD input width must be 4 banks"
         dM = dModel // nb_d
+        assert dM == 1, "cmul2/cmul3 descriptors walk a single channel"
         nb_l3 = L3 // l3_tile
         L34 = L3 * L4
         # Stage-1-2 tiling: either m3-blocks (l3_tile < L3) or m4-blocks (nb_m4 > 1), not both.
@@ -111,6 +112,9 @@ class DataGenerator(DataGeneratorBase):
         N_3c, N_4c = N_3 // nb_ntile, N_4 // nb_ntile       # per stage-3/4 N-chunk
         assert K_3 % nb_l3 == 0
         K_3t = K_3 // nb_l3
+        # Every launch reads its K-step-0 psum from the zero buffer and K-step 1 from the psum
+        # (one R13 K-stride), so no launch may cover more than 2 K-steps.
+        assert K_2 <= 2 and K_3 <= 2 and K_4 <= 2, f"K_2/K_3/K_4 ({K_2}/{K_3}/{K_4}) must be <= 2"
 
         def dn(n):
             d = int(n / bdf)
@@ -150,6 +154,35 @@ class DataGenerator(DataGeneratorBase):
             )
             r13_6 = ([L3 // kpg, A_c, 1, 1], [2 * slu, 0, 0, 0])
 
+        # ---- next-partition inputs are K-major: K-block stride = one K-step's full-N block ----
+        pk_kstride2 = dN_2 * b_in_width // 8     # packed2 (partition2 input): re/im K-tiles at L2 == 16
+        pk_kstride = dN_3 * b_in_width // 8      # packed3 (partition3 input), full N
+        pk_kstride4 = dN_4c * b_in_width // 8    # packed4 (partition4 input), chunk-local
+        pk3_chunk_off = dN_3c * b_in_width // 8  # partition3 B-walk base per N-chunk
+        pk_tile_off = L4t * L3 * FP8 // 8        # cmul2 W3 base per m4-tile inside packed3's L4*L3 runs
+
+        # Re/im deinterleave of a hadamard's 32 B CMul beats ([16 re | 16 im]). At axis == 16 the
+        # halves are separate K-blocks, so the W3 write splits them itself (re at +0, im at
+        # +kstride, 16 B per beat). At 2*axis <= 16 both halves share one K-run per N and the
+        # beat's middle banks must swap; W3's lanes are bank-parity-locked (sparse interconnect),
+        # so the cmul writes plain beats to a scratch and a block-swap NOOP (R7 permutes) follows.
+        def w3_split(n_beats, kstride):
+            return ([n_beats], [2 * BANK_BYTES], [BANK_BYTES, kstride])
+
+        def w3_seq(n_beats):
+            return ([n_beats], [4 * BANK_BYTES])
+
+        beats_tile = 2 * Lt * dM * FP8 // (2 * suc_bc)
+        beats_chunk = 2 * L * dM * FP8 // (2 * suc_bc * nb_ntile)
+        w3_2 = w3_split(beats_tile, pk_kstride2) if 2 * L2 > slu else w3_seq(beats_tile)
+        # cmul2 -> packed3: per (k1,k2) the tile's L4t beats land at its m4 slot of the L4*L3 run.
+        w3_4 = (
+            ([L4t, L1 * L2], [2 * BANK_BYTES, L4 * L3 * FP8 // 8], [BANK_BYTES, pk_kstride])
+            if L3 == slu
+            else w3_seq(beats_tile)
+        )
+        w3_6 = w3_split(beats_chunk, pk_kstride4) if L4 == slu else w3_seq(beats_chunk)
+
         streamers = {
             # ===== Stage 1 (per l3-tile): partition 1 =====
             "R11_1": ([2 * L1 * L1p * FP8 // iscore_serial_width], [iscore_serial_width // 8]),
@@ -163,10 +196,10 @@ class DataGenerator(DataGeneratorBase):
                 [matrix_bytes, Lt * dM * FP8 // 8],
             ),
             "R13_2": ([L2 * L34t * dM // slu, L1, 1, 1], [2 * slu, 2 * L2 * L34t, 0, 0]),
-            "W3_2": ([2 * Lt * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
-            # reorder1 (block-swap deinterleave).
+            "W3_2": w3_2,  # fused re/im split into partition2's input (or plain, then reorder1)
+            # reorder1 / reorder2 at K = 1: block-swap NOOP into the next partition's input.
             "R7_2B": ([Lt * dM // slu, 1, 1, 1], [4 * BANK_BYTES, 0, 0, 0], [2 * BANK_BYTES, BANK_BYTES]),
-            "W3_2B": ([2 * Lt * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
+            "W3_2B": w3_seq(beats_tile),
             # ===== Stage 2 (per l3-tile): partition 2 =====
             "R11_3": ([2 * L2 * 2 * L2p * FP8 // iscore_serial_width], [iscore_serial_width // 8]),
             "R12_3": ([dN_2, M_2, K_2], [b_in_width // 8, 0, dN_2 * b_in_width // 8]),
@@ -179,8 +212,7 @@ class DataGenerator(DataGeneratorBase):
                 [matrix_bytes, reim_jump2],
             ),
             "R13_4": ([L34t // slu, L2, L1, 1], [2 * slu, 2 * L34t, 0, 0]),
-            "W3_4": ([2 * Lt * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
-            # reorder2 = scalar m3<->m4 transpose in C (no streamer descriptor).
+            "W3_4": w3_4,  # fused re/im split (+ m4-tile placement) into packed3 (or plain, then reorder2)
             # ===== Stage 3 (per N-chunk, K=K_3 over resident packed3): partition 3 =====
             "R11_5": ([2 * L3 * 2 * L3p * FP8 // iscore_serial_width], [iscore_serial_width // 8]),
             "R12_5": ([dN_3c, M_3, K_3], [b_in_width // 8, 0, dN_3 * b_in_width // 8]),
@@ -189,10 +221,10 @@ class DataGenerator(DataGeneratorBase):
             # cmul3 (twiddles3) — per N-chunk.
             "R7_6": r7_6,
             "R13_6": r13_6,
-            "W3_6": ([2 * L * dM * FP8 // (2 * suc_bc * nb_ntile)], [4 * BANK_BYTES]),
-            # reorder3 (block-swap deinterleave) — un-tiled (L4 < slu regime only, nb_ntile == 1).
+            "W3_6": w3_6,  # fused re/im split into packed4 (or plain, then reorder3)
+            # reorder3 at K = 1 (nb_ntile == 1): block-swap NOOP into packed4.
             "R7_6B": ([L * dM // slu, 1, 1, 1], [4 * BANK_BYTES, 0, 0, 0], [2 * BANK_BYTES, BANK_BYTES]),
-            "W3_6B": ([2 * L * dM * FP8 // (2 * suc_bc)], [4 * BANK_BYTES]),
+            "W3_6B": w3_seq(beats_chunk),
             # ===== Stage 4: partition 4 (final, plain) — per N-chunk =====
             "R11_7": ([2 * L4 * 2 * L4p * FP8 // iscore_serial_width], [iscore_serial_width // 8]),
             "R12_7": ([dN_4c, M_4, K_4], [b_in_width // 8, 0, dN_4c * b_in_width // 8]),
@@ -209,20 +241,9 @@ class DataGenerator(DataGeneratorBase):
         pk_bw = b_in_width // 8                 # bytes per B-fetch element (= 4*BANK*bdf)
         pk_aw = slu * FP8 // 8                  # bytes per array column = one K-step's contraction
         pk_bdf = pk_bw // pk_aw                 # N's packed per B-fetch (downsize factor)
-        pk_kstride = dN_3 * b_in_width // 8     # one K-step's full-N block (= h2_kchunk for K_3t=1)
-        # packed4 K-major (partition4 contraction = m4); same formula as packed3 with
-        # (reim*L4 + m4), no transpose (m4 already inner). Chunk-local (full at nb_ntile=1).
-        pk_kstride4 = dN_4c * b_in_width // 8
-        # partition3 B-walk base offset per N-chunk (the chunk's N-run inside each K-block).
-        pk3_chunk_off = dN_3c * b_in_width // 8
-        # packed2 K-tile stride: at 2*L2 > slu the re/im halves are separate K-tiles that reorder1
-        # splits via DMA (the block-swap NOOP only covers 2*L2 <= slu, where one tile holds both).
-        pk_kstride2 = dN_2 * b_in_width // 8
-        n2_groups = Lt * dM // slu
 
         # ---- H2 staging (per l3-tile): scatter the transposed packed_tile into the L3 packed3
         # m3/[re|im] regions (one 2-D scatter over N per re/im) ----
-        n_full = L1 * L2 * L4 * dM
         pk_re_chunk = L3t * FP8 // 8                 # one N's re (or im) m3-block in packed_tile
         pk_src_stride = 2 * L3t * FP8 // 8           # packed_tile per-N stride (re+im)
         l3_dst_stride = 2 * L3 * FP8 // 8            # L3 packed3 per-N stride (re+im, full K)
@@ -244,7 +265,8 @@ class DataGenerator(DataGeneratorBase):
         slot_size_full = align64(2 * L * dM * BF16 // 8)     # full partition3/4 psum
         hsize_full = align64(2 * L * dM * FP8 // 8)          # full FP8 cmul/noop scratch
         slot_size_chunk = align64(2 * L * dM * BF16 // (8 * nb_ntile))  # per-chunk partition3/4 psum
-        hsize_chunk = align64(2 * L * dM * FP8 // (8 * nb_ntile))       # per-chunk H3 / packed4
+        hsize_chunk = align64(2 * L * dM * FP8 // (8 * nb_ntile))       # per-chunk packed4
+        zero_bytes = max(slot_size_tile, slot_size_chunk)                 # K-step-0 psum source
 
         # ---- l3-tile gather of input + twiddles into tile-local buffers (L3 -> L3t) ----
         # dft_in chip layout [d][jc][m2][m1] (jc = m4*L3 + m3); gather the tile's m3-block per (d,m4).
@@ -292,13 +314,13 @@ class DataGenerator(DataGeneratorBase):
 
         slice_scalars = {
             "nb_d": nb_d, "dModel_slice": dM, "nb_l3": nb_l3, "l3_tile": l3_tile, "nb_ntile": nb_ntile,
-            "nb_m4": nb_m4, "L4t": L4t, "nb_12": nb_12,
+            "nb_m4": nb_m4, "nb_12": nb_12,
             "length_in_slice": len_in_slice,
             "slot_size_tile": slot_size_tile, "hsize_tile": hsize_tile,
             "packed_tile_bytes": packed_tile_bytes, "in_tile_bytes": in_tile_bytes,
             "tw1_tile_bytes": tw1_tile_bytes, "tw2_tile_bytes": tw2_tile_bytes,
             "slot_size_full": slot_size_full, "hsize_full": hsize_full,
-            "slot_size_chunk": slot_size_chunk, "hsize_chunk": hsize_chunk,
+            "slot_size_chunk": slot_size_chunk, "hsize_chunk": hsize_chunk, "zero_bytes": zero_bytes,
             "gemm_N1": N_1, "gemm_N2": N_2, "gemm_N3": N_3c, "gemm_N4": N_4c,
             "full_packed3_bytes": full_packed3_bytes,
             # gather strides
@@ -312,13 +334,11 @@ class DataGenerator(DataGeneratorBase):
             # scalar transpose + staging
             "L34t": L34t, "L3t": L3t,
             "pk_re_chunk": pk_re_chunk, "pk_src_stride": pk_src_stride,
-            "l3_dst_stride": l3_dst_stride, "l3_im_off": l3_im_off, "n_full": n_full,
+            "l3_dst_stride": l3_dst_stride, "l3_im_off": l3_im_off,
             # partition3 K-chunk offsets + K-major packed3 layout
             "weight3_kchunk_bytes": weight3_kchunk_bytes, "h2_kchunk_bytes": h2_kchunk_bytes,
-            "pk_bw": pk_bw, "pk_aw": pk_aw, "pk_bdf": pk_bdf, "pk_kstride": pk_kstride,
-            "pk_kstride4": pk_kstride4, "n4_full": dM * L1 * L2 * L3, "n4_chunk": N_4c,
-            "pk3_chunk_off": pk3_chunk_off,
-            "pk_kstride2": pk_kstride2, "n2_groups": n2_groups,
+            "pk_bw": pk_bw, "pk_aw": pk_aw, "pk_bdf": pk_bdf, "n4_full": dM * L1 * L2 * L3,
+            "pk3_chunk_off": pk3_chunk_off, "pk_tile_off": pk_tile_off,
             "p4_blk_bytes": p4_blk_bytes, "p4c_blk_bytes": p4c_blk_bytes,
             # output scatter
             "out_block_full": out_block_full, "out_block_slice": out_block_slice, "out_nblk": out_nblk,

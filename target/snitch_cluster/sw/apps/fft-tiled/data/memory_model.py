@@ -6,7 +6,7 @@
 # Standalone L1 TCDM memory model for the `fft-tiled` app.
 #
 # Phase A (partition1 + hadamard + reorder): tiled along L2/dModel axis.
-#   Always-live: weight1, weight2, twiddles
+#   Always-live: weight1, weight2, twiddles, a 64 B zero block (Phase B's K-step-0 psum source)
 #   Ping-pong (×2): in_tile, partition1_out_tile, had_reord_tile
 #
 # Phase B (partition2): K-axis tiled.
@@ -51,9 +51,10 @@ def build_report(params: dict) -> MemoryReport:
         ("weight1",   len_weight1),
         ("weight2",   len_weight2),
         ("twiddles",  len_twiddles),
+        ("zero (K-step-0 psum source)", 64),
     ]
     report.add_section("Always-live (TCDM resident)", always_live)
-    always_live_bytes = align64(len_weight1) + align64(len_weight2) + align64(len_twiddles)
+    always_live_bytes = align64(len_weight1) + align64(len_weight2) + align64(len_twiddles) + 64
 
     # Full tensor sizes
     len_in = L * dModel * FP8 // 8

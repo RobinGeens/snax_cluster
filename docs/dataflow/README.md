@@ -87,7 +87,7 @@ for the exact streamer/CSR programming see the program sources.
 | `fft-3way-tiled-async` | 3-way DFT streaming the `L3` axis through L3 (H2 + psum) for long sequences | [5](05_fft.md) |
 | `fft-3way-L8` | 3-way DFT with a factor-8 axis (`L3 < seqLenUnroll`), via `m3` padding | [5](05_fft.md) |
 | `fft-4way` | 4-way partitioned DFT (kernel-validation harness, every buffer resident) | [5](05_fft.md) |
-| `fft-4way-tiled-async` | 4-way DFT, l3-streamed for `L = 16⁴`+ (per-`l3`-tile staging DMA gathers `m3` into K-position; partition 3 stays TCDM-resident) *(inactive)* | [5](05_fft.md) |
+| `fft-4way-tiled-async` | 4-way DFT for `L = 16⁴`+: stages 1–2 per `m4`/`l3` tile with the hadamards' fused re/im split writes feeding the next partition, stages 3–4 per N-chunk over the TCDM-resident partition-3 input | [5](05_fft.md) |
 
 ### EinFFT MLP
 
@@ -128,8 +128,8 @@ These constraints are baked into the hardware and shape every program.
    last-iteration in every tile and corrupts the requant timing.
 5. **Inter-stage byte reorders must be folded into streamer programming.**
    Scalar reorders over TCDM via Snitch are too slow; the only exception is
-   `fft-4way`'s `reorder2` validation harness (the async variant folds it into
-   DMA staging).
+   `fft-4way`'s `reorder2` validation harness (the async variant fuses it into
+   cmul2's write).
 6. **Padding is the programmer's responsibility** unless an explicit hardware
    helper does it (e.g., `ISGEMM_SQ` pads the input internally; the weight
    must still be pre-padded).
