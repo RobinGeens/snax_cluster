@@ -536,7 +536,7 @@
                     L1: 32,
                     L2: 16,
                     L3: 32,
-                    nb_tiles_A: 4
+                    nb_tiles_A: 8
                     l3_tile: 16
                 }
             ]

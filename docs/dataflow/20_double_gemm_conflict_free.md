@@ -81,4 +81,14 @@ dedicated `R7_bf16_skip`). Because the skip-128 map is a pure function of the lo
 reader striding differently from the writer still lands on the same physical bytes, so the read-back
 is correct regardless of the writer's beat stride.
 
+### Launch chaining
+
+Each (layer, branch) is five launches: the two `IS_OSGEMM` calls, the two real-side SIMD passes and
+the imag narrow. Their streamer programs latch at START, so every program is written while the
+previous launch runs: the call-B base pointers behind call A, each SIMD program behind the launch
+before it, and the next branch's call-A program behind the imag narrow. Only the SimbaCore
+mode/shape CSRs, which must be written right before START
+([8 §1](08_performance_optimization.md#1-csr-preloading-during-busy-wait)), and the START pulses
+sit between launches.
+
 

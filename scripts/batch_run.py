@@ -29,8 +29,8 @@ Scheduling:
     builds wait behind that app's slow datagen, but every other app proceeds.
   * Sims run concurrently, bounded by `max_parallel` (the OOM knob).
   * A build does not wait for its sim to finish before the next build starts.
-  * Robustness: regression_test.sh shares the run lock (never two heavy runs at
-    once); every child runs in its own recorded process group; a watchdog reaps
+  * Robustness: one batch run at a time (flock; regression_test.sh builds in its own
+    clone and has its own lock); every child runs in its own recorded process group; a watchdog reaps
     everything if the orchestrator dies uncleanly (kill -9/OOM); per-sim ulimits
     (vsim_vmem_gb / vsim_fsize_gb) contain runaway sims; leftovers of dead runs
     are swept at startup.
@@ -180,9 +180,8 @@ class BatchRun:
         self.cluster = os.path.join(self.root, "target", "snitch_cluster")
         # Only ONE batch run may run at a time: concurrent batch runs share each
         # app's build dir, the chisel-ssm/sbt datagen cache and the root
-        # report.json -- running two corrupts builds and results.
-        # regression_test.sh takes the SAME lock (flock) for its whole run:
-        # a concurrent batch + regression run once overloaded the whole server.
+        # report.json -- running two corrupts builds and results. (regression_test.sh
+        # builds in its own clone and has its own lock, so it may run alongside.)
         # The OS releases the lock automatically if we die. --remodel
         # skips it: it neither builds, vsims, nor touches params_in, and the report
         # is rewritten atomically, so it is safe alongside a live run.
@@ -194,9 +193,9 @@ class BatchRun:
             except OSError:
                 held = open(os.path.join(self.root, ".batch_run.lock")).read().strip()
                 sys.exit(
-                    f"Another batch or regression run is already active ({held or '?'}). "
-                    f"Refusing to start a second one -- concurrent runs corrupt shared "
-                    f"state and overload the server. Lock: {self.root}/.batch_run.lock"
+                    f"Another batch run is already active ({held or '?'}). "
+                    f"Refusing to start a second one -- concurrent batch runs corrupt shared "
+                    f"state. Lock: {self.root}/.batch_run.lock"
                 )
             self._lock_fd.seek(0)
             self._lock_fd.truncate()
@@ -826,8 +825,8 @@ class BatchRun:
         """Kill leftovers of previous runs that died without cleanup (the vector for
         stale make/vsim processes piling up server-wide): process groups recorded in
         old rundirs' .pgids files that still contain our tools, and batch/regression
-        build containers whose owning PID is dead. Runs under the exclusive lock, so
-        nothing matching can belong to a live run."""
+        build containers whose owning PID is dead. The lock excludes other batch runs and
+        the dead-owner check spares a concurrently running regression test."""
         out_root = os.path.dirname(self.rundir)
         swept = 0
         for d in sorted(os.listdir(out_root)):

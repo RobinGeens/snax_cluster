@@ -21,14 +21,14 @@ OUTPUT_ROOT="${ORIG_ROOT}/regression_test_out"
 TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
 mkdir -p "${OUTPUT_ROOT}"
 
-# --- Single-runner lock, shared with batch_run.py ---
-# A concurrent batch + regression run is what overloaded the server: ~18 vsims,
-# two build pipelines and unbounded traces at once. Refuse to double-book.
-LOCK_FILE="${ORIG_ROOT}/.batch_run.lock"
+# --- Single-runner lock (regression tests only) ---
+# The run builds and simulates in its own clone, so it shares nothing with batch_run.py
+# and does not take its lock; only a second regression test is refused.
+LOCK_FILE="${ORIG_ROOT}/.regression_test.lock"
 exec 8>"${LOCK_FILE}"
 if ! flock -n 8; then
-  echo "ERROR: another batch/regression run is already active (lock: ${LOCK_FILE})." >&2
-  echo "Concurrent runs overload the server; wait for it to finish or stop it first." >&2
+  echo "ERROR: another regression test is already active (lock: ${LOCK_FILE})." >&2
+  echo "Wait for it to finish or stop it first." >&2
   exit 1
 fi
 printf 'regression_test %s\n' "$$" >&8

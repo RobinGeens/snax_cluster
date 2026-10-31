@@ -10,11 +10,11 @@ mkdir -p "${OUTPUT_ROOT}"
 BG_LOG="${OUTPUT_ROOT}/background_process.log"
 PIDS_FILE="${OUTPUT_ROOT}/rt_children.pids"
 
-# Fail fast (in the foreground) if a batch or regression run is already active;
+# Fail fast (in the foreground) if another regression test is already active;
 # regression_test.sh takes this same lock for the whole run.
-if ! flock -n "${ROOT_DIR}/.batch_run.lock" true; then
-  echo "ERROR: a batch/regression run is already active (lock: ${ROOT_DIR}/.batch_run.lock)." >&2
-  echo "Concurrent runs overload the server; wait for it to finish or stop it first." >&2
+if ! flock -n "${ROOT_DIR}/.regression_test.lock" true; then
+  echo "ERROR: another regression test is already active (lock: ${ROOT_DIR}/.regression_test.lock)." >&2
+  echo "Wait for it to finish or stop it first." >&2
   exit 1
 fi
 

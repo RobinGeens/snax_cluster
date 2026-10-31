@@ -44,17 +44,17 @@ static inline void dma_scatter_128(void* dst_skip, const void* src_contig, uint3
     snrt_dma_start_2d(dst_skip, src_contig, SB, 2 * SB, SB, len / SB);
 }
 
-// One combined OS+IS GEMM launch. Both cores compute their own matmul in
-// parallel; bases are rebound by the caller between launches.
-static inline void run_iosgemm(void) {
-    write_csr(MODE, M3_IS_OSGEMM_NO_REQUANT);
-    start_simbacore_and_streamers(0, 0, M3_R11_en, 0);
+// Streamer programs latch at START and are written while the previous launch runs;
+// the SimbaCore mode/shape CSRs are read live, so they are written right before START.
+
+// Combined OS+IS GEMM launch (R11 is a delayed streamer and needs its own start pulse).
+static inline void gemm_start(void) {
+    _set_streamer_start();
+    _set_simbacore_start();
+    write_csr(DELAYED_START_READER_11, 1);
     write_csr(STREAMER_START_CSR, 0);
     write_csr(SIMBACORE_START, 0);
-    write_csr(DELAYED_START_READER_10, 0);
     write_csr(DELAYED_START_READER_11, 0);
-    while (read_csr(SIMBACORE_BUSY));
-    while (read_csr(STREAMER_BUSY_CSR));
 }
 
 static inline void simd_pulse(void) {
@@ -62,6 +62,11 @@ static inline void simd_pulse(void) {
     _set_simbacore_start();
     write_csr(STREAMER_START_CSR, 0);
     write_csr(SIMBACORE_START, 0);
+}
+
+static inline void wait_busy(void) {
+    while (read_csr(SIMBACORE_BUSY));
+    while (read_csr(STREAMER_BUSY_CSR));
 }
 
 int main(void) {
@@ -143,6 +148,24 @@ int main(void) {
 
     uint32_t simbacore_cycles = 0, start_cycles = 0;
 
+    // Call A program for buffer `buf`: OS rr = x_re @ W_re ; IS P = b_im + x_re_cv @ W_im_is.
+    // The skip-128 walk is encoded in the data.h bounds/strides; only the bases move.
+#define CFG_GEMM(buf)                                                                                    \
+    do {                                                                                                 \
+        set_streamer_csr((uint32_t)ptr_x_re[buf], M3_R0_ss, M3_R0_tb, M3_R0_ts, M3_R0_en,         /* R0 */  \
+                         (uint32_t)ptr_w_re[buf], M3_R1_ss, M3_R1_tb, M3_R1_ts, M3_R1_en,         /* R1 */  \
+                         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,              /* R2..R5 */ \
+                         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,              /* R6..R9 */ \
+                         0, 0, 0, 0, 0,                                                           /* R10 */ \
+                         (uint32_t)ptr_x_re_cv[buf], M3_R11_ss, M3_R11_tb, M3_R11_ts, M3_R11_en,  /* R11 */ \
+                         (uint32_t)ptr_w_im_is[buf], M3_R12_ss, M3_R12_tb, M3_R12_ts, M3_R12_en,  /* R12 */ \
+                         (uint32_t)ptr_P[buf], M3_R13_ss, M3_R13_tb, M3_R13_ts, M3_R13_en,        /* R13: psum-in */ \
+                         (uint32_t)ptr_rr, M3_W0_ss, M3_W0_tb, M3_W0_ts, M3_W0_en,                /* W0 */ \
+                         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                                            /* W1..W2 */ \
+                         (uint32_t)ptr_P[buf], M3_W3_ss, M3_W3_tb, M3_W3_ts, M3_W3_en             /* W3: psum-out */ \
+        );                                                                                               \
+    } while (0)
+
     if (snrt_global_core_idx() == 0) {
         printf("\nStarting program: einfft-double-conflictfree (L=%u, dModel=%u, dPerB=%u, nBranches=%u)\n\n", seqLen,
                dModel, M3_dPerB, M3_nBranches);
@@ -150,6 +173,11 @@ int main(void) {
                (uint32_t)(L1_TCDM_PEAK_BYTES / 1024));
         init_cycle_counter();
         start_cycles = snrt_mcycle();
+        // GEMM dims (OS K = OS N = IS K = IS N = dPerB) serve every launch: the SIMD passes
+        // only read D_MODEL as n_acc. Streamer program of the first launch; every later
+        // program is written during the previous launch.
+        set_simbacore_csr(M3_IS_OSGEMM_NO_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, M3_dPerB);
+        CFG_GEMM(0);
     }
 
     // Software-pipelined: iteration i in [0, NB_ITERS + NB_STAGES - 1).
@@ -183,69 +211,52 @@ int main(void) {
             uint32_t add_bias_mode  = (layer == 0) ? M3_SIMD_ADD_BF16_RELU_REQUANT : M3_SIMD_ADD_BF16_REQUANT;
             uint32_t narrow_im_mode = (layer == 0) ? M3_SIMD_NOOP_BF16_REQUANT_RELU : M24_SIMD_NOOP_BF16_REQUANT;
 
-            // GEMM dims: OS K=dPerB, OS N = IS K = dPerB, IS N(dFinal)=dPerB.
-            set_simbacore_csr(M3_IS_OSGEMM_NO_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, M3_dPerB);
-
-            // Streamer setup for the combined GEMM (R0/R1/W0 OS, R11/R12/R13/W3 IS).
-            // The skip-128 walk is encoded in the data.h bounds/strides; only the bases move.
-            // Call A bases: OS rr = x_re @ W_re ; IS ri = x_re_cv @ W_im_is.
-            set_streamer_csr((uint32_t)ptr_x_re[buf], M3_R0_ss, M3_R0_tb, M3_R0_ts, M3_R0_en,         // R0
-                             (uint32_t)ptr_w_re[buf], M3_R1_ss, M3_R1_tb, M3_R1_ts, M3_R1_en,         // R1
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,              // R2..R5
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,              // R6..R9
-                             0, 0, 0, 0, 0,                                                           // R10
-                             (uint32_t)ptr_x_re_cv[buf], M3_R11_ss, M3_R11_tb, M3_R11_ts, M3_R11_en,  // R11
-                             (uint32_t)ptr_w_im_is[buf], M3_R12_ss, M3_R12_tb, M3_R12_ts, M3_R12_en,  // R12
-                             (uint32_t)ptr_P[buf], M3_R13_ss, M3_R13_tb, M3_R13_ts, M3_R13_en,  // R13: psum-in (b_im)
-                             (uint32_t)ptr_rr, M3_W0_ss, M3_W0_tb, M3_W0_ts, M3_W0_en,          // W0
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                                      // W1..W2
-                             (uint32_t)ptr_P[buf], M3_W3_ss, M3_W3_tb, M3_W3_ts, M3_W3_en       // W3: psum-out
-            );
-            run_iosgemm();  // P = b_im + ri (= x_re @ W_im)
-            simbacore_cycles += read_simbacore_perf_counter();
-
-            // Call B bases: OS ii = x_im @ W_im ; IS ir = x_im_cv @ W_re_is, accumulating into P.
+            // Call A (program already loaded): P = b_im + ri (= x_re_cv @ W_im_is), rr = x_re @ W_re.
+            write_csr(MODE, M3_IS_OSGEMM_NO_REQUANT);
+            gemm_start();
+            // Call B bases: OS ii = x_im @ W_im ; IS ir = x_im_cv @ W_re_is, accumulating into P
+            // (R13/W3 stay on P).
             write_csr(BASE_PTR_READER_0_LOW, (uint32_t)ptr_x_im[buf]);
             write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_w_im[buf]);
             write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_ii);
             write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_x_im_cv[buf]);
             write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_w_re_is[buf]);
-            // R13/W3 stay on P (psum read-modify-write).
-            run_iosgemm();  // P = b_im + ri + ir
+            wait_busy();
             simbacore_cycles += read_simbacore_perf_counter();
 
+            gemm_start();  // P = b_im + ri + ir
             // ============ REAL fuse (2 launches): out_re = ReLU?(widen(fp8(rr - ii)) + b_re) ============
-            // rr/ii live skip-128 in the OS half, so both pass1' readers walk skip-128.
-            // pass1': FP8 SUB + requant: rr - ii -> bf16_a
-            set_simbacore_csr(M3_SIMD_SUB_FP8_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, 1);
+            // pass1': FP8 SUB + requant: rr - ii -> bf16_a (rr/ii live skip-128 in the OS half).
             set_simd_streamer_csr((uint32_t)ptr_rr, M3_R7_widen_ss, M3_R7_widen_tb, M3_R7_widen_ts,
                                   (uint32_t)ptr_ii, M3_R13_fp8_skip_ss, M3_R13_fp8_skip_tb, M3_R13_fp8_skip_ts,
                                   (uint32_t)ptr_bf16_a, M3_W3_widen_ss, M3_W3_widen_tb, M3_W3_widen_ts);
-            simd_pulse();
-            while (read_csr(SIMBACORE_BUSY));
-            while (read_csr(STREAMER_BUSY_CSR));
+            wait_busy();
             simbacore_cycles += read_simbacore_perf_counter();
+
+            write_csr(MODE, M3_SIMD_SUB_FP8_REQUANT);
+            simd_pulse();
             // pass2': BF16 ADD bias + requant (+ ReLU in layer 1) -> out_re (FP8)
             set_simd_streamer_csr((uint32_t)ptr_bf16_a, M3_R7_bf16_ss, M3_R7_bf16_tb, M3_R7_bf16_ts,
                                   (uint32_t)ptr_b_re[buf], M3_R13_bias_ss, M3_R13_bias_tb, M3_R13_bias_ts,
                                   (uint32_t)out_re, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
-            write_csr(MODE, add_bias_mode);
-            simd_pulse();
-            while (read_csr(SIMBACORE_BUSY));
-            while (read_csr(STREAMER_BUSY_CSR));
+            wait_busy();
             simbacore_cycles += read_simbacore_perf_counter();
 
+            write_csr(MODE, add_bias_mode);
+            simd_pulse();
             // ============ IMAG fuse: out_im = ReLU?(P) narrowed to FP8 ============
-            // The add (ri+ir) and bias were folded into the IS-core psum P. Only the
-            // ReLU + BF16->FP8 narrow remains: one SIMD launch. P lives skip-128 in the
-            // IS half, so the reader walks skip-128 (R7_bf16_skip); out_im is contiguous.
-            set_simbacore_csr(M24_SIMD_NOOP_BF16_REQUANT, seqLen, M3_dPerB, M3_dPerB, 1, 1);
+            // The add (ri+ir) and bias were folded into the IS-core psum P, so only the
+            // ReLU + BF16->FP8 narrow remains. P lives skip-128 in the IS half (R7_bf16_skip);
+            // out_im is contiguous.
             set_simd_streamer_no_b((uint32_t)ptr_P[buf], M3_R7_bf16_skip_ss, M3_R7_bf16_skip_tb, M3_R7_bf16_skip_ts,
                                    (uint32_t)out_im, M3_W3_fp8_ss, M3_W3_fp8_tb, M3_W3_fp8_ts);
+            wait_busy();
+            simbacore_cycles += read_simbacore_perf_counter();
+
             write_csr(MODE, narrow_im_mode);
             simd_pulse();
-            while (read_csr(SIMBACORE_BUSY));
-            while (read_csr(STREAMER_BUSY_CSR));
+            if (i < NB_ITERS) CFG_GEMM(i % 2);  // next branch's call A program
+            wait_busy();
             simbacore_cycles += read_simbacore_perf_counter();
         }
 
