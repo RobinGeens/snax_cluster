@@ -116,18 +116,39 @@ transposed+requantized output — so R13 and W3 can safely share one
 buffer.
 
 **Kernel-call layout.** `datagen.py` emits two streamer bound
-configurations (one per phase):
+configurations (one per phase), each covering `K_i` K-steps per kernel
+(`M1_R*_tb` for P1, `M2_R*_tb` for P2). Non-final tiles run in NO_REQUANT
+mode; HW's `isCoreOutIsFinal` gate applies requant (and bank-transpose in
+P1) to just the last K-step of the final tile's invocation.
 
-| Config | K-steps per kernel | Mode | W3 destination | Used for |
-|---|---|---|---|---|
-| **P1 tile** (`M1_R*_tb`) | `K_i` | `M28_PHASE1_NO_REQUANT` / `M1_PHASE1` | `iscore_out_P1` | every P1 tile (mode flips for the final tile) |
-| **P2 tile** (`M2_R*_tb`) | `K_i` | `M29_PHASE2_NO_REQUANT` / `M2_PHASE2` | `iscore_out_P2` | every P2 tile (mode flips for the final tile) |
+**Phase 1**: `nb_tiles` kernel calls (`M28_PHASE1_NO_REQUANT`, final tile
+`M1_PHASE1`), the three cores chained on-chip within each call.
 
-Total kernel calls per phase: P1 = `nb_tiles`, P2 = `nb_tiles`.
-Both phases follow the same pattern: non-final tiles run in NO_REQUANT
-mode, the final tile writes `MODE = M*_PHASE*` before starting. HW's
-`isCoreOutIsFinal` gate applies requant (and bank-transpose in P1) to
-just the last K-step of the final tile's invocation.
+**Phase 2: skewed launches.** Inside one P2 kernel the SUC trails the
+OS-core (it needs `z`, R10 gauge) and the IS-core trails the SUC (it needs
+`y`, R11 gauge; its row-major reads need almost the whole scan), so a
+single-tile launch serialises the three cores to ~2.3× the one-core time.
+`main-tiled` therefore runs the cores on **different dInner tiles** in the
+same launch: launch `l` computes OS-core tile `l` → `z[l&1]`, switchCore+SUC
+tile `l-1` (reading the finished `z[(l-1)&1]`) and IS-core tile `l-2` (reading
+the finished `y[l&1]`). Every reader's input is complete when the launch
+starts, so both delayed readers are released at START (no gauge polling) and
+the launch runs at the slowest core's rate. The z/y ping-pong slots are
+consumed one launch after they are written and spilled to L3 during that
+launch; the per-tile DMAs are the same as before, shifted by the skew.
+
+| Launch `l`               | Mode                      | Cores                                           |
+|--------------------------|---------------------------|-------------------------------------------------|
+| `0`                      | `M3_OSGEMM`               | OS-core tile 0                                  |
+| `1`                      | `M33_PHASE2_NO_ISCORE`    | OS-core tile 1, SUC tile 0                      |
+| `2 … nb_tiles-1`         | `M29_PHASE2_NO_REQUANT`   | OS-core `l`, SUC `l-1`, IS-core `l-2`           |
+| `nb_tiles`               | `M29_PHASE2_NO_REQUANT`   | SUC `nb_tiles-1`, IS-core `nb_tiles-2`; the OS-core re-runs the last weight slot into the dead z slot (no mode drops only the OS-core) |
+| `nb_tiles+1`             | `M4_ISGEMM`               | IS-core tile `nb_tiles-1`, requant              |
+
+Idle cores are switched off by the mode; their streamer ports are disabled
+with a zero outer temporal bound. Total: `nb_tiles + 2` launches, the two
+pipeline-fill and two pipeline-drain launches partially occupied. The
+`safe_to_start_r10/r11` knobs do not apply to this app.
 
 `nb_tiles` is a free choice (must divide `dInner / dInnerUnroll`), trading off
 DMA-tile size against kernel-launch overhead.

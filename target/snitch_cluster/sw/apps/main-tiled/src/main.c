@@ -4,13 +4,60 @@
 // Author: Robin Geens <robin.geens@kuleuven.be>
 //
 // dInner-tiled, double-buffered Mamba main (Phase 1 then Phase 2) with x staged through L3.
-// See docs/dataflow/04_mamba_main.md §main-tiled for dataflow and per-phase CSR rewrites.
+// Phase 2 skews the three cores by one tile per launch so none waits on another.
+// See docs/dataflow/04_mamba_main.md §main-tiled for the dataflow.
 //
-// What stays FULL in TCDM: oscore_in, iscore_out_P1 (=dt_in for P2), z, y, iscore_out_P2.
+// What stays FULL in TCDM: oscore_in, iscore_out_P1 (=dt_in for P2), iscore_out_P2.
 // What is tiled (small TCDM slot, FULL backing in L3): conv_out (=x for P2), z, y.
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"
+
+// Streamer program of P2 launch l: osCore tile l, switchCore+SUC tile l-1, isCore tile l-2.
+// Slot pointers of the three tiles plus the port enables (zero outer temporal bound = port off).
+// Past the last tile the osCore re-runs the last weight slot into the dead z slot.
+static void set_p2_launch(uint32_t l, uint8_t* const* ow, uint8_t* const* dw1, uint8_t* const* dw2,
+                          uint8_t* const* db, uint8_t* const* A, uint8_t* const* D, uint8_t* const* iw,
+                          uint8_t* const* x, uint8_t* const* z, uint8_t* const* y) {
+    const bool os_on  = l <= nb_tiles;
+    const bool suc_on = l >= 1 && l <= nb_tiles;
+    const bool is_on  = l >= 2 && l <= nb_tiles + 1;
+    const int o       = (l < nb_tiles ? l : nb_tiles - 1) & 1;  // osCore weight slot
+    const int s       = (l + 1) & 1;                             // tile l-1 slot
+    const int t       = l & 1;                                   // tile l-2 slot
+
+    write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ow[o]);
+    write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)z[l & 1]);
+    write_csr(T_BOUND_BASE_READER_0, os_on ? M2_R0_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_1, os_on ? M2_R1_tb[0] : 0);
+    write_csr(T_BOUND_BASE_WRITER_0, os_on ? M2_W0_tb[0] : 0);
+
+    write_csr(BASE_PTR_READER_3_LOW, (uint32_t)dw1[s]);
+    write_csr(BASE_PTR_READER_4_LOW, (uint32_t)db[s]);
+    write_csr(BASE_PTR_READER_5_LOW, (uint32_t)dw2[s]);
+    write_csr(BASE_PTR_READER_6_LOW, (uint32_t)A[s]);
+    write_csr(BASE_PTR_READER_8_LOW, (uint32_t)D[s]);
+    write_csr(BASE_PTR_READER_9_LOW, (uint32_t)x[s]);
+    write_csr(BASE_PTR_READER_10_LOW, (uint32_t)z[s]);
+    write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)y[s]);
+    write_csr(T_BOUND_BASE_READER_2, suc_on ? M2_R2_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_3, suc_on ? M2_R3_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_4, suc_on ? M2_R4_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_5, suc_on ? M2_R5_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_6, suc_on ? M2_R6_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_7, suc_on ? M2_R7_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_8, suc_on ? M2_R8_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_9, suc_on ? M2_R9_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_10, suc_on ? M2_R10_tb[0] : 0);
+    write_csr(T_BOUND_BASE_WRITER_2, suc_on ? M2_W2_tb[0] : 0);
+
+    write_csr(BASE_PTR_READER_11_LOW, (uint32_t)y[t]);
+    write_csr(BASE_PTR_READER_12_LOW, (uint32_t)iw[t]);
+    write_csr(T_BOUND_BASE_READER_11, is_on ? M2_R11_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_12, is_on ? M2_R12_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_13, is_on ? M2_R13_tb[0] : 0);
+    write_csr(T_BOUND_BASE_WRITER_3, is_on ? M2_W3_tb[0] : 0);
+}
 
 int test_phase1_and_2() {
     int err = 0;
@@ -100,8 +147,8 @@ int test_phase1_and_2() {
         _ALIGN64(ptr_iscore_weight_P2[1] + M2_length_iscore_weight_tile),
         _ALIGN64(_ALIGN64(ptr_iscore_weight_P2[1] + M2_length_iscore_weight_tile) + M2_length_x_tile),
     };
-    // z_tile and y_tile ping-pong: written by W0/W2 within a kernel, read by R10/R11
-    // within the same kernel, then DMA'd out to L3 after the kernel completes.
+    // z_tile and y_tile ping-pong: written by W0/W2 in one launch, read by R10/R11 one launch
+    // later (and spilled to L3 during that launch).
     uint8_t* ptr_z_tile[2] = {
         _ALIGN64(ptr_x_tile[1] + M2_length_x_tile),
         _ALIGN64(_ALIGN64(ptr_x_tile[1] + M2_length_x_tile) + M2_length_z_tile),
@@ -228,6 +275,8 @@ int test_phase1_and_2() {
     /////////////////////////////////
     //////// Phase 2 ////////////////
     /////////////////////////////////
+    // Launch l: osCore tile l, switchCore+SUC tile l-1 (z slot complete), isCore tile l-2 (y slot
+    // complete); both delayed readers are released at START. nb_tiles + 2 launches in total.
 
     if (snrt_global_core_idx() == 0) {
         set_streamer_phase2((uint32_t)ptr_oscore_in, (uint32_t)ptr_oscore_weight_P2[0], (uint32_t)ptr_z_tile[0],
@@ -242,56 +291,70 @@ int test_phase1_and_2() {
             write_csr(ADDR_REMAP_INDEX_READER_7, 1);
         }
         set_simbacore_csr(M29_PHASE2_NO_REQUANT, seqLen, dModel, M2_dInner_tile, dtRank, dModel);
+        set_p2_launch(0, ptr_oscore_weight_P2, ptr_dt_weight_1, ptr_dt_weight_2, ptr_dt_bias, ptr_A, ptr_D,
+                      ptr_iscore_weight_P2, ptr_x_tile, ptr_z_tile, ptr_y_tile);
     }
     snrt_cluster_hw_barrier();
 
-    for (uint32_t i = 0; i < nb_tiles + 2; i++) {
-        int buf = i % 2;
-
-        if (i < nb_tiles && snrt_is_dm_core()) {
-            snrt_dma_start_1d(ptr_oscore_weight_P2[buf], M2_oscore_weight + i * M2_stride_oscore_weight_tile,
-                              M2_length_oscore_weight_tile);
-            snrt_dma_start_1d(ptr_dt_weight_1[buf], M2_dt_weight_1 + i * M2_stride_dt_weight_1_tile,
-                              M2_length_dt_weight_1_tile);
-            snrt_dma_start_1d(ptr_dt_weight_2[buf], M2_dt_weight_2 + i * M2_stride_dt_weight_2_tile,
-                              M2_length_dt_weight_2_tile);
-            snrt_dma_start_1d(ptr_dt_bias[buf], M2_dt_bias + i * M2_stride_dt_bias_tile, M2_length_dt_bias_tile);
-            snrt_dma_start_1d(ptr_A[buf], M2_suc_A + i * M2_stride_A_tile, M2_length_A_tile);
-            snrt_dma_start_1d(ptr_D[buf], M2_suc_D + i * M2_stride_D_tile, M2_length_D_tile);
-            snrt_dma_start_1d(ptr_iscore_weight_P2[buf], M2_iscore_weight + i * M2_stride_iscore_weight_tile,
-                              M2_length_iscore_weight_tile);
-            snrt_dma_start_1d(ptr_x_tile[buf], ptr_conv_out_l3 + i * M2_stride_x_tile, M2_length_x_tile);
+    for (uint32_t i = 0; i < nb_tiles + 3; i++) {
+        // Stage I: load what launch i consumes, spill what launch i-1 finished reading
+        if (snrt_is_dm_core()) {
+            if (i < nb_tiles) {
+                int buf = i % 2;
+                snrt_dma_start_1d(ptr_oscore_weight_P2[buf], M2_oscore_weight + i * M2_stride_oscore_weight_tile,
+                                  M2_length_oscore_weight_tile);
+            }
+            if (i >= 1 && i <= nb_tiles) {
+                uint32_t tile = i - 1;
+                int buf       = tile % 2;
+                snrt_dma_start_1d(ptr_dt_weight_1[buf], M2_dt_weight_1 + tile * M2_stride_dt_weight_1_tile,
+                                  M2_length_dt_weight_1_tile);
+                snrt_dma_start_1d(ptr_dt_weight_2[buf], M2_dt_weight_2 + tile * M2_stride_dt_weight_2_tile,
+                                  M2_length_dt_weight_2_tile);
+                snrt_dma_start_1d(ptr_dt_bias[buf], M2_dt_bias + tile * M2_stride_dt_bias_tile, M2_length_dt_bias_tile);
+                snrt_dma_start_1d(ptr_A[buf], M2_suc_A + tile * M2_stride_A_tile, M2_length_A_tile);
+                snrt_dma_start_1d(ptr_D[buf], M2_suc_D + tile * M2_stride_D_tile, M2_length_D_tile);
+                snrt_dma_start_1d(ptr_x_tile[buf], ptr_conv_out_l3 + tile * M2_stride_x_tile, M2_length_x_tile);
+            }
+            if (i >= 2 && i <= nb_tiles + 1) {
+                uint32_t tile = i - 2;
+                int buf       = tile % 2;
+                snrt_dma_start_1d(ptr_iscore_weight_P2[buf], M2_iscore_weight + tile * M2_stride_iscore_weight_tile,
+                                  M2_length_iscore_weight_tile);
+                snrt_dma_start_1d(ptr_z_l3 + tile * M2_stride_z_tile, ptr_z_tile[buf], M2_length_z_tile);
+            }
+            if (i >= 3) {
+                uint32_t tile = i - 3;
+                snrt_dma_start_1d(ptr_y_l3 + tile * M2_stride_y_tile, ptr_y_tile[tile % 2], M2_length_y_tile);
+            }
         }
 
-        if (i >= 1 && i <= nb_tiles && snrt_global_core_idx() == 0) {
-            uint32_t tile      = i - 1;
-            bool is_final_tile = (tile == nb_tiles - 1);
+        // Stage II: launch i-1
+        if (i >= 1 && snrt_global_core_idx() == 0) {
+            uint32_t l  = i - 1;
+            bool suc_on = l >= 1 && l <= nb_tiles;
+            bool is_on  = l >= 2;
+            uint32_t mode;
+            if (suc_on && is_on) mode = M29_PHASE2_NO_REQUANT;
+            else if (suc_on) mode = M33_PHASE2_NO_ISCORE;  // launch 1: no isCore tile yet
+            else if (is_on) mode = M4_ISGEMM;              // last launch: isCore only, requant
+            else mode = M3_OSGEMM;                         // launch 0: osCore only
 
-            // Tile 0: base ptrs set by initial set_streamer_phase2. Tile > 0: preloaded in prev iter.
-            if (is_final_tile) write_csr(MODE, M2_PHASE2);
-            start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt, M2_R11_en, M2_R11_start_cnt);
+            write_csr(MODE, mode);
+            _set_streamer_start();
+            _set_simbacore_start();
+            if (suc_on) write_csr(DELAYED_START_READER_10, 1);  // z slot complete: release at once
+            if (is_on) write_csr(DELAYED_START_READER_11, 1);   // y slot complete
             write_csr(STREAMER_START_CSR, 0);
             write_csr(SIMBACORE_START, 0);
             write_csr(DELAYED_START_READER_10, 0);
             write_csr(DELAYED_START_READER_11, 0);
 
-            // Preload next tile's base ptrs while HW computes.
-            if (!is_final_tile) {
-                uint32_t next_tile = tile + 1;
-                int nbuf           = next_tile % 2;
-                write_csr(BASE_PTR_READER_1_LOW, (uint32_t)ptr_oscore_weight_P2[nbuf]);
-                write_csr(BASE_PTR_READER_3_LOW, (uint32_t)ptr_dt_weight_1[nbuf]);
-                write_csr(BASE_PTR_READER_4_LOW, (uint32_t)ptr_dt_bias[nbuf]);
-                write_csr(BASE_PTR_READER_5_LOW, (uint32_t)ptr_dt_weight_2[nbuf]);
-                write_csr(BASE_PTR_READER_6_LOW, (uint32_t)ptr_A[nbuf]);
-                write_csr(BASE_PTR_READER_8_LOW, (uint32_t)ptr_D[nbuf]);
-                write_csr(BASE_PTR_READER_9_LOW, (uint32_t)ptr_x_tile[nbuf]);
-                write_csr(BASE_PTR_READER_10_LOW, (uint32_t)ptr_z_tile[nbuf]);
-                write_csr(BASE_PTR_READER_11_LOW, (uint32_t)ptr_y_tile[nbuf]);
-                write_csr(BASE_PTR_READER_12_LOW, (uint32_t)ptr_iscore_weight_P2[nbuf]);
-                write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)ptr_z_tile[nbuf]);
-                write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)ptr_y_tile[nbuf]);
-            }
+            // Next launch's streamer program (latched at its START) while HW computes.
+            if (l <= nb_tiles)
+                set_p2_launch(l + 1, ptr_oscore_weight_P2, ptr_dt_weight_1, ptr_dt_weight_2, ptr_dt_bias, ptr_A,
+                              ptr_D, ptr_iscore_weight_P2, ptr_x_tile, ptr_z_tile, ptr_y_tile);
+
             while (read_csr(SIMBACORE_BUSY));
             while (read_csr(STREAMER_BUSY_CSR));
             asm volatile("fence" ::: "memory");
@@ -299,14 +362,7 @@ int test_phase1_and_2() {
             if (i == 1) _p2_compute_done = snrt_mcycle();
 
             // Keep track of liveliness
-            // printf("[%u cc] P2 tile %u/%d done\n", snrt_mcycle(), tile + 1, nb_tiles);
-        }
-
-        if (i >= 2 && snrt_is_dm_core()) {
-            uint32_t spill_tile = i - 2;
-            int sbuf            = spill_tile % 2;
-            snrt_dma_start_1d(ptr_z_l3 + spill_tile * M2_stride_z_tile, ptr_z_tile[sbuf], M2_length_z_tile);
-            snrt_dma_start_1d(ptr_y_l3 + spill_tile * M2_stride_y_tile, ptr_y_tile[sbuf], M2_length_y_tile);
+            // printf("[%u cc] P2 launch %u/%d done\n", snrt_mcycle(), l + 1, nb_tiles + 2);
         }
 
         if (snrt_is_dm_core()) {

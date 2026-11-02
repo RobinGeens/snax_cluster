@@ -462,6 +462,7 @@ void SimWorld::run_invocation(uint64_t at) {
         verify_ran_ = true;
         verify_datapath();
     }
+    if (ports_[14].enabled) prev_w0_base_ = (uint32_t)ports_[14].base;
 
     if (std::getenv("MEMSIM_ACC"))
         std::fprintf(stderr,
@@ -725,9 +726,10 @@ void SimWorld::verify_datapath() {
         }
     bool discriminates = fault_bad > 0;  // the fault must corrupt some values
 
-    // Producer/consumer: R10 (SUC z reader) base must match W0 (z writer) base,
-    // i.e. the consumer reads the buffer the producer wrote.
-    bool pc_ok = !ports_[10].enabled || (ports_[10].base == ports_[14].base);
+    // Producer/consumer: R10 (SUC z reader) base must match the W0 (z writer) base of this or the
+    // previous invocation, i.e. the consumer reads a buffer the producer wrote (main-tiled runs the
+    // SUC one dInner tile behind the osCore).
+    bool pc_ok = !ports_[10].enabled || (ports_[10].base == ports_[14].base) || (ports_[10].base == prev_w0_base_);
 
     layout_pass_ = r0_ok && w0_ok && rt_bad == 0 && discriminates && pc_ok;
     std::fprintf(stderr,

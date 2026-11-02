@@ -32,8 +32,6 @@
                     nb_tiles: 16 // power of 2. 8 too small
                     bc_pad_banks: 0
                     bc_swizzle: 1
-                    safe_to_start_r10: 11
-                    safe_to_start_r11: 6000
                 }
                 // {
                 //     name: IN main C
@@ -56,8 +54,6 @@
                     nb_tiles: 11
                     bc_pad_banks: 0
                     bc_swizzle: 1
-                    safe_to_start_r10: 5
-                    safe_to_start_r11: 3000
                 }
             ]
         }
@@ -242,7 +238,7 @@
                     nb_tiles: 4 // 8 not possible
                 }
                 // P2 out proj B (Simba-L IN) removed: p2-carry now fuses this output projection into its
-                // Phase B (K-tiled), so the SUC/in proj B p2-carry entry above computes the full P2.
+                // Phase B (K-tiled), so the P2 B p2-carry entry below computes the full P2.
 
                 {  // FFT
                     name: fft D
@@ -259,7 +255,7 @@
             app: p2-carry
             params: [
                 {
-                    name: SUC/in proj B
+                    name: P2 B
                     model: Simba-L IN
                     force: false
                     seqLen: 768
@@ -915,7 +911,7 @@
             app: p2-carry
             params: [
                 {
-                    name: SUC/in proj B
+                    name: P2 B
                     model: Simba-S IN
                     force: false
                     seqLen: 784 // x1
@@ -942,8 +938,6 @@
                     nb_tiles: 14
                     bc_pad_banks: 0
                     bc_swizzle: 1
-                    safe_to_start_r10: 11
-                    safe_to_start_r11: 6000
                 }
                 {
                     name: main D
@@ -955,8 +949,6 @@
                     nb_tiles: 19
                     bc_pad_banks: 0
                     bc_swizzle: 1
-                    safe_to_start_r10: 5
-                    safe_to_start_r11: 3000
                 }
             ]
         }
@@ -1138,8 +1130,6 @@
                     nb_tiles: 16
                     bc_pad_banks: 0
                     bc_swizzle: 1
-                    safe_to_start_r10: 6
-                    safe_to_start_r11: 3840
                 }
                 {
                     name: head mamba
@@ -1151,8 +1141,6 @@
                     nb_tiles: 11
                     bc_pad_banks: 0
                     bc_swizzle: 1
-                    safe_to_start_r10: 6
-                    safe_to_start_r11: 3840
                 }
             ]
         }

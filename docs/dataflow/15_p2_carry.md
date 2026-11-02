@@ -19,17 +19,21 @@ through the isCore streamer ports (R13/W3) is exactly that read-out/restore.
 
 ## Two phases
 
-**Phase A: P2 without the isCore, L-tiled with state carry.** Per L-tile the accelerator runs a
-`PHASE2_NO_ISCORE` launch (osCore + switchCore + SUC), double-buffered:
+**Phase A: P2 without the isCore, L-tiled with state carry, osCore one tile ahead.** Launch `l` runs the
+osCore on L-tile `l` and the switchCore + SUC on L-tile `l-1`, so every input a core streams is complete
+when the launch starts and the R10 gate reader is released at START (no safe-to-start gauge):
 
-- osCore projects `oscore_in[lt] → z[lt]` (W0), read back by the SUC as its gate input (R10) within the
-  launch, paced by the R10 safe-to-start.
-- switchCore + SUC produce `y[lt]` (W2); the hidden state loads from R13 and saves to W3.
-- The mode word is `PHASE2_NO_ISCORE` OR-ed with the two state MSBs (`sw_sucStateLoad`/`sw_sucStateSave`):
-  save on the first tile, load+save on the middle tiles, load on the last — the same save/carry/load schedule
-  as [suc-carry](13_suc_carry.md).
-- The DM core gathers the next tile (`oscore_in`, `dt`, `BC`, `x`) and spills the previous tile's `z`/`y`
-  (convFormat) to L3 while the accelerator computes the current tile.
+- osCore projects `oscore_in[l] → z[l]` (W0) into the free z slot; the SUC reads `z[l-1]` (R10) from the
+  other slot.
+- switchCore + SUC produce `y[l-1]` (W2); the hidden state loads from R13 and saves to W3.
+- `nb_l_tiles + 1` launches: launch 0 is `OSGEMM` (osCore only), launches `1 … nb_l_tiles-1` are
+  `PHASE2_NO_ISCORE`, the last is `SUC_ONLY`. The two state MSBs (`sw_sucStateLoad`/`sw_sucStateSave`) are
+  OR-ed on for the SUC tile as in [suc-carry](13_suc_carry.md): save on its first tile, load+save on the
+  middle ones, load on the last. An idle core's ports are switched off by a zero outer temporal bound.
+- The streamer program is written once; per launch only `MODE`, the slot base pointers and the port
+  enables change, preloaded during the previous launch (the program is latched at START).
+- The DM core gathers the operands of the next launch (`oscore_in` for its osCore tile, `dt`/`BC`/`x` for
+  its SUC tile) and spills finished `z`/`y` tiles (convFormat) to L3 while the accelerator computes.
 
 Because the state serialises the L-tiles, Phase A runs at the SUC rate with the osCore hidden underneath —
 the same osCore↔SUC overlap `P2-async` had, but with `BC` fetched from L3 **once** instead of the
@@ -70,4 +74,5 @@ resident osCore weight (`dModel·dInner`); a very large `dModel` (e.g. the Simba
 
 `PHASE2_NO_ISCORE_STATE_{SAVE,CARRY,LOAD}` (`SimbaCoreMode.scala`) = `PHASE2_NO_ISCORE` plus the state MSBs,
 mirroring `SUC_ONLY_STATE_*`. The isCore is disabled in these modes, so its R13/W3 ports are free for the
-state exactly as in the SUC-only carry modes.
+state exactly as in the SUC-only carry modes. The pipeline-fill launch (osCore only) is plain `OSGEMM`; the
+drain launch (SUC only) uses the `SUC_ONLY_STATE_*` modes themselves.

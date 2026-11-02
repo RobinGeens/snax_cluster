@@ -222,6 +222,7 @@ class SimWorld : public World {
     bool verify_       = false;                                           // run the integer layout cross-check
     bool verify_ran_   = false;                                           // datapath verify has run once
     bool layout_pass_  = true;                                            // running result
+    uint32_t prev_w0_base_ = 0;                                           // W0 (z) base of the previous invocation
     uint32_t golden_z_ = 0, golden_y_ = 0, golden_isc_ = 0;               // app FP8 goldens (.data)
     uint32_t dState_ = 0, xProjDim_ = 0, bc_pad_ = 0, dtRankUnroll_ = 0;  // SSM shape
     uint32_t golden_dtbc_ = 0, golden_sucx_ = 0;                          // P1-output goldens (dt_BC, conv_out=x)

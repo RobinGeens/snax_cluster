@@ -33,7 +33,7 @@
       "model_total": "569140",
       "l1_kib": "407",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 19:43:03"
     },
     "main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_safe_to_start_r105_safe_to_start_r113000_seqLen48": {
       "app": "main-tiled",
@@ -56,7 +56,7 @@
       "batch_run": "20261031_181640",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_safe_to_start_r105_safe_to_start_r113000_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_safe_to_start_r105_safe_to_start_r113000_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_181640/main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_safe_to_start_r105_safe_to_start_r113000_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -68,7 +68,7 @@
       "model_total": "259552",
       "l1_kib": "330",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 19:43:03"
     },
     "main-tiled-oscore__bc_swizzle1_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r108_safe_to_start_r116000_seqLen192": {
       "app": "main-tiled-oscore",
@@ -89,22 +89,22 @@
       "seqLen": 192,
       "dModel": 384,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
-      "commit": "e44c396b",
-      "log": "batch_run_out/20261031_181640/main-tiled-oscore__bc_swizzle1_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r108_safe_to_start_r116000_seqLen192.log",
-      "timeline": "batch_run_out/20261031_181640/main-tiled-oscore__bc_swizzle1_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r108_safe_to_start_r116000_seqLen192.timeline.png",
-      "state": "running",
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled-oscore__bc_swizzle1_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r108_safe_to_start_r116000_seqLen192.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled-oscore__bc_swizzle1_dModel384_dtRank24_nb_l_tiles12_nb_slots2_nb_tiles16_safe_to_start_r108_safe_to_start_r116000_seqLen192.timeline.png",
+      "state": "done",
       "cached": false,
-      "errors": null,
-      "crashed": false,
-      "simbacore": null,
-      "total": null,
+      "errors": "1",
+      "crashed": true,
+      "simbacore": "567233",
+      "total": "598759",
       "model_errors": "107",
       "model_simbacore": "559990",
       "model_total": "576831",
       "l1_kib": "407",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel96_dtRank24_nb_tiles4_seqLen784": {
       "app": "P1-tiled-D",
@@ -120,10 +120,10 @@
       "seqLen": 784,
       "dModel": 96,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/P1-tiled-D__dModel96_dtRank24_nb_tiles4_seqLen784.log",
-      "timeline": "batch_run_out/20261031_181640/P1-tiled-D__dModel96_dtRank24_nb_tiles4_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel96_dtRank24_nb_tiles4_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -135,7 +135,7 @@
       "model_total": "75043",
       "l1_kib": "403",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel192_dtRank24_nb_tiles8_seqLen784": {
       "app": "P1-tiled-D",
@@ -151,10 +151,10 @@
       "seqLen": 784,
       "dModel": 192,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/P1-tiled-D__dModel192_dtRank24_nb_tiles8_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel192_dtRank24_nb_tiles8_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel192_dtRank24_nb_tiles8_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -166,7 +166,7 @@
       "model_total": "191357",
       "l1_kib": "486",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen512": {
       "app": "P1-tiled-D",
@@ -182,10 +182,10 @@
       "seqLen": 512,
       "dModel": 384,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen512.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen512.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen512.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -197,7 +197,7 @@
       "model_total": "460305",
       "l1_kib": "442",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel504_dtRank24_nb_tiles21_seqLen256": {
       "app": "P1-tiled-D",
@@ -213,10 +213,10 @@
       "seqLen": 256,
       "dModel": 504,
       "n_tiles": 21,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/P1-tiled-D__dModel504_dtRank24_nb_tiles21_seqLen256.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel504_dtRank24_nb_tiles21_seqLen256.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel504_dtRank24_nb_tiles21_seqLen256.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -228,7 +228,7 @@
       "model_total": "390455",
       "l1_kib": "288",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen512": {
       "app": "double-gemm-conflict-free",
@@ -245,10 +245,10 @@
       "seqLen": 512,
       "dModel": 192,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen512.log",
-      "timeline": "batch_run_out/20261031_181640/double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen512.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen512.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -260,7 +260,7 @@
       "model_total": "119960",
       "l1_kib": "450",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen256": {
       "app": "double-gemm-conflict-free",
@@ -277,10 +277,10 @@
       "seqLen": 256,
       "dModel": 384,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen256.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen256.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen256.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -292,7 +292,7 @@
       "model_total": "59718",
       "l1_kib": "444",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -309,10 +309,10 @@
       "seqLen": 128,
       "dModel": 384,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen128.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -324,7 +324,7 @@
       "model_total": "119948",
       "l1_kib": "288",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -341,10 +341,10 @@
       "seqLen": 64,
       "dModel": 768,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -356,7 +356,7 @@
       "model_total": "60078",
       "l1_kib": "348",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner1056_dModel528_dtRank24_nb_tiles22_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -373,10 +373,10 @@
       "seqLen": 64,
       "dModel": 528,
       "n_tiles": 22,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner1056_dModel528_dtRank24_nb_tiles22_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner1056_dModel528_dtRank24_nb_tiles22_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner1056_dModel528_dtRank24_nb_tiles22_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -388,7 +388,7 @@
       "model_total": "114620",
       "l1_kib": "243",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel1024_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -405,10 +405,10 @@
       "seqLen": 64,
       "dModel": 1024,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner528_dModel1024_dtRank24_nb_tiles11_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel1024_dtRank24_nb_tiles11_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel1024_dtRank24_nb_tiles11_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -420,7 +420,7 @@
       "model_total": "110442",
       "l1_kib": "460",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner192_dModel96_dtRank24_nb_tiles4_seqLen784": {
       "app": "double-gemm-conflict-free",
@@ -437,10 +437,10 @@
       "seqLen": 784,
       "dModel": 96,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner192_dModel96_dtRank24_nb_tiles4_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner192_dModel96_dtRank24_nb_tiles4_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner192_dModel96_dtRank24_nb_tiles4_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -452,7 +452,7 @@
       "model_total": "46550",
       "l1_kib": "459",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner96_dModel192_dtRank24_nb_tiles4_seqLen400": {
       "app": "double-gemm-conflict-free",
@@ -469,10 +469,10 @@
       "seqLen": 400,
       "dModel": 192,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner96_dModel192_dtRank24_nb_tiles4_seqLen400.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner96_dModel192_dtRank24_nb_tiles4_seqLen400.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner96_dModel192_dtRank24_nb_tiles4_seqLen400.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -484,7 +484,7 @@
       "model_total": "23630",
       "l1_kib": "355",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner1056_dModel512_nb_tiles11_seqLen48": {
       "app": "double-gemm-conflict-free",
@@ -500,10 +500,10 @@
       "seqLen": 48,
       "dModel": 512,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner1056_dModel512_nb_tiles11_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner1056_dModel512_nb_tiles11_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner1056_dModel512_nb_tiles11_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -515,12 +515,12 @@
       "model_total": "86012",
       "l1_kib": "306",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "p2-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles12_nb_tiles1_seqLen768": {
       "app": "p2-carry",
       "tag": "bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles12_nb_tiles1_seqLen768",
-      "name": "SUC/in proj B",
+      "name": "P2 B",
       "model": "Simba-L IN",
       "params": {
         "seqLen": 768,
@@ -534,10 +534,10 @@
       "seqLen": 768,
       "dModel": 192,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/p2-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles12_nb_tiles1_seqLen768.log",
-      "timeline": "batch_run_out/20261031_181640/p2-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles12_nb_tiles1_seqLen768.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/p2-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles12_nb_tiles1_seqLen768.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -549,7 +549,7 @@
       "model_total": "549281",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768": {
       "app": "suc-carry",
@@ -568,10 +568,10 @@
       "seqLen": 32768,
       "dModel": 96,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -583,7 +583,7 @@
       "model_total": "6512500",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384": {
       "app": "suc-carry",
@@ -602,10 +602,10 @@
       "seqLen": 16384,
       "dModel": 192,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -617,7 +617,7 @@
       "model_total": "6573092",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096": {
       "app": "suc-carry",
@@ -636,10 +636,10 @@
       "seqLen": 4096,
       "dModel": 384,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -651,7 +651,7 @@
       "model_total": "3496602",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024": {
       "app": "suc-carry",
@@ -670,10 +670,10 @@
       "seqLen": 1024,
       "dModel": 528,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/suc-carry__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -685,7 +685,7 @@
       "model_total": "1143312",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136": {
       "app": "suc-carry",
@@ -704,10 +704,10 @@
       "seqLen": 3136,
       "dModel": 96,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel96_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -719,7 +719,7 @@
       "model_total": "627190",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-tiled__dModel96_nb_tiles1_seqLen784": {
       "app": "einfft-tiled",
@@ -734,10 +734,10 @@
       "seqLen": 784,
       "dModel": 96,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/einfft-tiled__dModel96_nb_tiles1_seqLen784.log",
-      "timeline": "batch_run_out/20261031_181640/einfft-tiled__dModel96_nb_tiles1_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-tiled__dModel96_nb_tiles1_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -749,7 +749,7 @@
       "model_total": "134710",
       "l1_kib": "259",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-tiled__dModel96_nb_tiles1_seqLen512": {
       "app": "einfft-tiled",
@@ -764,10 +764,10 @@
       "seqLen": 512,
       "dModel": 96,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/einfft-tiled__dModel96_nb_tiles1_seqLen512.log",
-      "timeline": "batch_run_out/20261030_174604/einfft-tiled__dModel96_nb_tiles1_seqLen512.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-tiled__dModel96_nb_tiles1_seqLen512.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -779,7 +779,7 @@
       "model_total": "91656",
       "l1_kib": "170",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "isgemm-tiled__dim048_dim1528_dim2528_nb_tiles11": {
       "app": "isgemm-tiled",
@@ -826,10 +826,10 @@
       "seqLen": 96,
       "dModel": 864,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner192_dModel864_nb_tiles8_seqLen96.log",
-      "timeline": "batch_run_out/20261031_181640/double-gemm-conflict-free__dInner192_dModel864_nb_tiles8_seqLen96.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner192_dModel864_nb_tiles8_seqLen96.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -841,7 +841,7 @@
       "model_total": "50758",
       "l1_kib": "414",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner384_dModel1728_nb_tiles16_seqLen48": {
       "app": "double-gemm-conflict-free",
@@ -857,10 +857,10 @@
       "seqLen": 48,
       "dModel": 1728,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner384_dModel1728_nb_tiles16_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner384_dModel1728_nb_tiles16_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner384_dModel1728_nb_tiles16_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -872,7 +872,7 @@
       "model_total": "103044",
       "l1_kib": "490",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "conv-downsample__dInner528_dModel3456_nb_tiles18_seqLen16": {
       "app": "conv-downsample",
@@ -888,10 +888,10 @@
       "seqLen": 16,
       "dModel": 3456,
       "n_tiles": 18,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/conv-downsample__dInner528_dModel3456_nb_tiles18_seqLen16.log",
-      "timeline": "batch_run_out/20261031_181640/conv-downsample__dInner528_dModel3456_nb_tiles18_seqLen16.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/conv-downsample__dInner528_dModel3456_nb_tiles18_seqLen16.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -903,7 +903,7 @@
       "model_total": "78284",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel96_nb_tiles28_seqLen3136": {
       "app": "rmsnorm-tiled",
@@ -918,10 +918,10 @@
       "seqLen": 3136,
       "dModel": 96,
       "n_tiles": 28,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel96_nb_tiles28_seqLen3136.log",
-      "timeline": "batch_run_out/20261031_181640/rmsnorm-tiled__dModel96_nb_tiles28_seqLen3136.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel96_nb_tiles28_seqLen3136.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "1",
@@ -933,7 +933,7 @@
       "model_total": "73823",
       "l1_kib": "90",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel192_nb_tiles7_seqLen784": {
       "app": "rmsnorm-tiled",
@@ -948,10 +948,10 @@
       "seqLen": 784,
       "dModel": 192,
       "n_tiles": 7,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel192_nb_tiles7_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel192_nb_tiles7_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel192_nb_tiles7_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -963,7 +963,7 @@
       "model_total": "35018",
       "l1_kib": "180",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel384_nb_tiles4_seqLen192": {
       "app": "rmsnorm-tiled",
@@ -978,10 +978,10 @@
       "seqLen": 192,
       "dModel": 384,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel384_nb_tiles4_seqLen192.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel384_nb_tiles4_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel384_nb_tiles4_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "2",
@@ -993,7 +993,7 @@
       "model_total": "18017",
       "l1_kib": "168",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel512_nb_tiles3_seqLen48": {
       "app": "rmsnorm-tiled",
@@ -1008,10 +1008,10 @@
       "seqLen": 48,
       "dModel": 512,
       "n_tiles": 3,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel512_nb_tiles3_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel512_nb_tiles3_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel512_nb_tiles3_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "2",
@@ -1023,7 +1023,7 @@
       "model_total": "8022",
       "l1_kib": "96",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel96_dtRank24_nb_tiles11_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -1040,10 +1040,10 @@
       "seqLen": 128,
       "dModel": 96,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner528_dModel96_dtRank24_nb_tiles11_seqLen128.log",
-      "timeline": "batch_run_out/20261031_181640/double-gemm-conflict-free__dInner528_dModel96_dtRank24_nb_tiles11_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel96_dtRank24_nb_tiles11_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1055,7 +1055,7 @@
       "model_total": "21606",
       "l1_kib": "90",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel192_dtRank24_nb_tiles11_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -1072,10 +1072,10 @@
       "seqLen": 128,
       "dModel": 192,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner528_dModel192_dtRank24_nb_tiles11_seqLen128.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel192_dtRank24_nb_tiles11_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel192_dtRank24_nb_tiles11_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1087,7 +1087,7 @@
       "model_total": "41930",
       "l1_kib": "156",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel384_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -1104,10 +1104,10 @@
       "seqLen": 64,
       "dModel": 384,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner528_dModel384_dtRank24_nb_tiles11_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel384_dtRank24_nb_tiles11_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel384_dtRank24_nb_tiles11_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1119,7 +1119,7 @@
       "model_total": "42062",
       "l1_kib": "180",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel512_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -1136,10 +1136,10 @@
       "seqLen": 64,
       "dModel": 512,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner528_dModel512_dtRank24_nb_tiles11_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel512_dtRank24_nb_tiles11_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel512_dtRank24_nb_tiles11_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1151,7 +1151,7 @@
       "model_total": "55738",
       "l1_kib": "236",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel2048_dtRank24_nb_tiles22_seqLen32": {
       "app": "double-gemm-conflict-free",
@@ -1168,10 +1168,10 @@
       "seqLen": 32,
       "dModel": 2048,
       "n_tiles": 22,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner528_dModel2048_dtRank24_nb_tiles22_seqLen32.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel2048_dtRank24_nb_tiles22_seqLen32.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel2048_dtRank24_nb_tiles22_seqLen32.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1183,7 +1183,7 @@
       "model_total": "114094",
       "l1_kib": "451",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "batchnorm__channels528_seqLen128": {
       "app": "batchnorm",
@@ -1197,10 +1197,10 @@
       "seqLen": 128,
       "dModel": null,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/batchnorm__channels528_seqLen128.log",
-      "timeline": "batch_run_out/20261031_181640/batchnorm__channels528_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/batchnorm__channels528_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1212,7 +1212,7 @@
       "model_total": "8302",
       "l1_kib": "297",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel72_dtRank24_nb_tiles3_seqLen784": {
       "app": "P1-tiled-D",
@@ -1228,10 +1228,10 @@
       "seqLen": 784,
       "dModel": 72,
       "n_tiles": 3,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/P1-tiled-D__dModel72_dtRank24_nb_tiles3_seqLen784.log",
-      "timeline": "batch_run_out/20261031_181640/P1-tiled-D__dModel72_dtRank24_nb_tiles3_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel72_dtRank24_nb_tiles3_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1243,7 +1243,7 @@
       "model_total": "54877",
       "l1_kib": "382",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel144_dtRank24_nb_tiles6_seqLen784": {
       "app": "P1-tiled-D",
@@ -1259,10 +1259,10 @@
       "seqLen": 784,
       "dModel": 144,
       "n_tiles": 6,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/P1-tiled-D__dModel144_dtRank24_nb_tiles6_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel144_dtRank24_nb_tiles6_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel144_dtRank24_nb_tiles6_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1274,7 +1274,7 @@
       "model_total": "119463",
       "l1_kib": "444",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner144_dModel64_dtRank24_nb_tiles3_seqLen784": {
       "app": "double-gemm-conflict-free",
@@ -1291,10 +1291,10 @@
       "seqLen": 784,
       "dModel": 64,
       "n_tiles": 3,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner144_dModel64_dtRank24_nb_tiles3_seqLen784.log",
-      "timeline": "batch_run_out/20261031_181640/double-gemm-conflict-free__dInner144_dModel64_dtRank24_nb_tiles3_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner144_dModel64_dtRank24_nb_tiles3_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1306,7 +1306,7 @@
       "model_total": "23752",
       "l1_kib": "355",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner72_dModel128_dtRank24_nb_tiles3_seqLen784": {
       "app": "double-gemm-conflict-free",
@@ -1323,10 +1323,10 @@
       "seqLen": 784,
       "dModel": 128,
       "n_tiles": 3,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner72_dModel128_dtRank24_nb_tiles3_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner72_dModel128_dtRank24_nb_tiles3_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner72_dModel128_dtRank24_nb_tiles3_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1338,7 +1338,7 @@
       "model_total": "23256",
       "l1_kib": "477",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner144_dModel576_nb_tiles3_seqLen96": {
       "app": "double-gemm-conflict-free",
@@ -1354,10 +1354,10 @@
       "seqLen": 96,
       "dModel": 576,
       "n_tiles": 3,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner144_dModel576_nb_tiles3_seqLen96.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner144_dModel576_nb_tiles3_seqLen96.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner144_dModel576_nb_tiles3_seqLen96.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1369,7 +1369,7 @@
       "model_total": "25302",
       "l1_kib": "342",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner336_dModel1152_nb_tiles7_seqLen48": {
       "app": "double-gemm-conflict-free",
@@ -1385,10 +1385,10 @@
       "seqLen": 48,
       "dModel": 1152,
       "n_tiles": 7,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/double-gemm-conflict-free__dInner336_dModel1152_nb_tiles7_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner336_dModel1152_nb_tiles7_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner336_dModel1152_nb_tiles7_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1400,7 +1400,7 @@
       "model_total": "59330",
       "l1_kib": "441",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "isgemm-tiled__dim048_dim1480_dim2896_nb_tiles10": {
       "app": "isgemm-tiled",
@@ -1416,10 +1416,10 @@
       "seqLen": 48,
       "dModel": 480,
       "n_tiles": 10,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/isgemm-tiled__dim048_dim1480_dim2896_nb_tiles10.log",
-      "timeline": "batch_run_out/20261031_181640/isgemm-tiled__dim048_dim1480_dim2896_nb_tiles10.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/isgemm-tiled__dim048_dim1480_dim2896_nb_tiles10.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1431,7 +1431,7 @@
       "model_total": "54646",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "conv-downsample__dInner448_dModel2880_nb_tiles15_seqLen16": {
       "app": "conv-downsample",
@@ -1447,10 +1447,10 @@
       "seqLen": 16,
       "dModel": 2880,
       "n_tiles": 15,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/conv-downsample__dInner448_dModel2880_nb_tiles15_seqLen16.log",
-      "timeline": "batch_run_out/20261031_181640/conv-downsample__dInner448_dModel2880_nb_tiles15_seqLen16.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/conv-downsample__dInner448_dModel2880_nb_tiles15_seqLen16.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1462,7 +1462,7 @@
       "model_total": "55517",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-tiled__dModel96_nb_tiles1_seqLen784__2": {
       "app": "einfft-tiled",
@@ -1477,10 +1477,10 @@
       "seqLen": 784,
       "dModel": 96,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/einfft-tiled__dModel96_nb_tiles1_seqLen784__2.log",
-      "timeline": "batch_run_out/20261031_181640/einfft-tiled__dModel96_nb_tiles1_seqLen784__2.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-tiled__dModel96_nb_tiles1_seqLen784__2.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1492,7 +1492,7 @@
       "model_total": "134710",
       "l1_kib": "259",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel64_nb_tiles28_seqLen3136": {
       "app": "rmsnorm-tiled",
@@ -1507,10 +1507,10 @@
       "seqLen": 3136,
       "dModel": 64,
       "n_tiles": 28,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel64_nb_tiles28_seqLen3136.log",
-      "timeline": "batch_run_out/20261031_181640/rmsnorm-tiled__dModel64_nb_tiles28_seqLen3136.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel64_nb_tiles28_seqLen3136.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "1",
@@ -1522,7 +1522,7 @@
       "model_total": "52827",
       "l1_kib": "60",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel128_nb_tiles7_seqLen784": {
       "app": "rmsnorm-tiled",
@@ -1537,10 +1537,10 @@
       "seqLen": 784,
       "dModel": 128,
       "n_tiles": 7,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel128_nb_tiles7_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel128_nb_tiles7_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel128_nb_tiles7_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1552,7 +1552,7 @@
       "model_total": "24356",
       "l1_kib": "120",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel320_nb_tiles4_seqLen192": {
       "app": "rmsnorm-tiled",
@@ -1567,10 +1567,10 @@
       "seqLen": 192,
       "dModel": 320,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel320_nb_tiles4_seqLen192.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel320_nb_tiles4_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel320_nb_tiles4_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "1",
@@ -1582,7 +1582,7 @@
       "model_total": "15283",
       "l1_kib": "140",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel448_nb_tiles3_seqLen48": {
       "app": "rmsnorm-tiled",
@@ -1597,10 +1597,10 @@
       "seqLen": 48,
       "dModel": 448,
       "n_tiles": 3,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/rmsnorm-tiled__dModel448_nb_tiles3_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel448_nb_tiles3_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel448_nb_tiles3_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1612,7 +1612,7 @@
       "model_total": "7178",
       "l1_kib": "84",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136": {
       "app": "suc-carry",
@@ -1631,10 +1631,10 @@
       "seqLen": 3136,
       "dModel": 72,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136.log",
-      "timeline": "batch_run_out/20261031_181640/suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles14_nb_tiles1_seqLen3136.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1646,12 +1646,12 @@
       "model_total": "467142",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "p2-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784": {
       "app": "p2-carry",
       "tag": "bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784",
-      "name": "SUC/in proj B",
+      "name": "P2 B",
       "model": "Simba-S IN",
       "params": {
         "seqLen": 784,
@@ -1665,10 +1665,10 @@
       "seqLen": 784,
       "dModel": 144,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/p2-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784.log",
-      "timeline": "batch_run_out/20261031_181640/p2-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/p2-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1680,7 +1680,7 @@
       "model_total": "379531",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_safe_to_start_r1011_safe_to_start_r116000_seqLen192": {
       "app": "main-tiled",
@@ -1703,7 +1703,7 @@
       "batch_run": "20261031_181640",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_safe_to_start_r1011_safe_to_start_r116000_seqLen192.log",
-      "timeline": "batch_run_out/20261030_174604/main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_safe_to_start_r1011_safe_to_start_r116000_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_181640/main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_safe_to_start_r1011_safe_to_start_r116000_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1715,7 +1715,7 @@
       "model_total": "451629",
       "l1_kib": "371",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 19:43:03"
     },
     "main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_safe_to_start_r105_safe_to_start_r113000_seqLen64": {
       "app": "main-tiled",
@@ -1738,7 +1738,7 @@
       "batch_run": "20261031_181640",
       "commit": "ff2bf7d4",
       "log": "batch_run_out/20260924_072027/main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_safe_to_start_r105_safe_to_start_r113000_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_safe_to_start_r105_safe_to_start_r113000_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_181640/main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_safe_to_start_r105_safe_to_start_r113000_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1750,100 +1750,7 @@
       "model_total": "291837",
       "l1_kib": "216",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "isgemm-tiled__dim048_dim1528_dim21024_nb_tiles11": {
-      "app": "isgemm-tiled",
-      "tag": "dim048_dim1528_dim21024_nb_tiles11",
-      "name": "fft D",
-      "model": "Simba-L IN",
-      "params": {
-        "dim0": 48,
-        "dim1": 528,
-        "dim2": 1024,
-        "nb_tiles": 11
-      },
-      "seqLen": 48,
-      "dModel": 528,
-      "n_tiles": 11,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/isgemm-tiled__dim048_dim1528_dim21024_nb_tiles11.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "69683",
-      "total": "73435",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": null,
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "conv-downsample__dInner528_dModel2880_nb_tiles15_seqLen16": {
-      "app": "conv-downsample",
-      "tag": "dInner528_dModel2880_nb_tiles15_seqLen16",
-      "name": "downsample C",
-      "model": "Simba-B IN",
-      "params": {
-        "seqLen": 16,
-        "dModel": 2880,
-        "dInner": 528,
-        "nb_tiles": 15
-      },
-      "seqLen": 16,
-      "dModel": 2880,
-      "n_tiles": 15,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/conv-downsample__dInner528_dModel2880_nb_tiles15_seqLen16.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "68472",
-      "total": "71472",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": null,
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "double-gemm-conflict-free__dInner768_dModel1536_nb_tiles32_seqLen32": {
-      "app": "double-gemm-conflict-free",
-      "tag": "dInner768_dModel1536_nb_tiles32_seqLen32",
-      "name": "downsample C",
-      "model": "VMamba-Ti IN",
-      "params": {
-        "seqLen": 32,
-        "dModel": 1536,
-        "dInner": 768,
-        "nb_tiles": 32
-      },
-      "seqLen": 32,
-      "dModel": 1536,
-      "n_tiles": 32,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/double-gemm-conflict-free__dInner768_dModel1536_nb_tiles32_seqLen32.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "113197",
-      "total": "119590",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": "339",
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 19:43:03"
     },
     "double-gemm-conflict-free__dInner264_dModel400_nb_tiles11_seqLen48": {
       "app": "double-gemm-conflict-free",
@@ -1967,7 +1874,7 @@
       "batch_run": "20261031_181640",
       "commit": "de4aa793",
       "log": "batch_run_out/20261028_201752/main-tiled__bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_safe_to_start_r106_safe_to_start_r113840_seqLen80.log",
-      "timeline": "batch_run_out/20261030_174604/main-tiled__bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_safe_to_start_r106_safe_to_start_r113840_seqLen80.timeline.png",
+      "timeline": "batch_run_out/20261031_181640/main-tiled__bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_safe_to_start_r106_safe_to_start_r113840_seqLen80.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -1979,157 +1886,7 @@
       "model_total": "149209",
       "l1_kib": "166",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "rmsnorm-tiled__dModel192_nb_tiles28_seqLen3136": {
-      "app": "rmsnorm-tiled",
-      "tag": "dModel192_nb_tiles28_seqLen3136",
-      "name": "merge+norm A",
-      "model": "VMamba-Ti IN",
-      "params": {
-        "seqLen": 3136,
-        "dModel": 192,
-        "nb_tiles": 28
-      },
-      "seqLen": 3136,
-      "dModel": 192,
-      "n_tiles": 28,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/rmsnorm-tiled__dModel192_nb_tiles28_seqLen3136.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "56",
-      "total": "147368",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": "180",
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "rmsnorm-tiled__dModel384_nb_tiles7_seqLen784": {
-      "app": "rmsnorm-tiled",
-      "tag": "dModel384_nb_tiles7_seqLen784",
-      "name": "merge+norm B",
-      "model": "VMamba-Ti IN",
-      "params": {
-        "seqLen": 784,
-        "dModel": 384,
-        "nb_tiles": 7
-      },
-      "seqLen": 784,
-      "dModel": 384,
-      "n_tiles": 7,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/rmsnorm-tiled__dModel384_nb_tiles7_seqLen784.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "14",
-      "total": "70819",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": "360",
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "rmsnorm-tiled__dModel768_nb_tiles4_seqLen192": {
-      "app": "rmsnorm-tiled",
-      "tag": "dModel768_nb_tiles4_seqLen192",
-      "name": "merge+norm C",
-      "model": "VMamba-Ti IN",
-      "params": {
-        "seqLen": 192,
-        "dModel": 768,
-        "nb_tiles": 4
-      },
-      "seqLen": 192,
-      "dModel": 768,
-      "n_tiles": 4,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/rmsnorm-tiled__dModel768_nb_tiles4_seqLen192.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "1",
-      "crashed": false,
-      "simbacore": "8",
-      "total": "40135",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": "336",
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "rmsnorm-tiled__dModel1536_nb_tiles3_seqLen48": {
-      "app": "rmsnorm-tiled",
-      "tag": "dModel1536_nb_tiles3_seqLen48",
-      "name": "merge+norm D",
-      "model": "VMamba-Ti IN",
-      "params": {
-        "seqLen": 48,
-        "dModel": 1536,
-        "nb_tiles": 3
-      },
-      "seqLen": 48,
-      "dModel": 1536,
-      "n_tiles": 3,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/rmsnorm-tiled__dModel1536_nb_tiles3_seqLen48.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "6",
-      "total": "23753",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": "288",
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
-    },
-    "rmsnorm-tiled__dModel768_nb_tiles3_seqLen48": {
-      "app": "rmsnorm-tiled",
-      "tag": "dModel768_nb_tiles3_seqLen48",
-      "name": "rms D",
-      "model": "VMamba-Ti IN",
-      "params": {
-        "seqLen": 48,
-        "dModel": 768,
-        "nb_tiles": 3
-      },
-      "seqLen": 48,
-      "dModel": 768,
-      "n_tiles": 3,
-      "batch_run": "20261031_181640",
-      "commit": "1c7fcc2d",
-      "log": "batch_run_out/20261027_160816/rmsnorm-tiled__dModel768_nb_tiles3_seqLen48.log",
-      "timeline": null,
-      "state": "done",
-      "cached": true,
-      "errors": "0",
-      "crashed": false,
-      "simbacore": "6",
-      "total": "13258",
-      "model_errors": null,
-      "model_simbacore": null,
-      "model_total": null,
-      "l1_kib": "144",
-      "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 19:43:03"
     },
     "rmsnorm-tiled__dModel400_nb_tiles5_seqLen80": {
       "app": "rmsnorm-tiled",
@@ -2176,10 +1933,10 @@
       "seqLen": 400,
       "dModel": 192,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen400.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen400.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner384_dModel192_dtRank24_nb_tiles16_seqLen400.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2191,7 +1948,7 @@
       "model_total": "94166",
       "l1_kib": "355",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen192": {
       "app": "double-gemm-conflict-free",
@@ -2208,10 +1965,10 @@
       "seqLen": 192,
       "dModel": 384,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen192.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner192_dModel384_dtRank24_nb_tiles8_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2223,7 +1980,7 @@
       "model_total": "45006",
       "l1_kib": "342",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen96": {
       "app": "double-gemm-conflict-free",
@@ -2240,10 +1997,10 @@
       "seqLen": 96,
       "dModel": 384,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen96.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen96.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner768_dModel384_dtRank24_nb_tiles16_seqLen96.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2255,7 +2012,7 @@
       "model_total": "90560",
       "l1_kib": "234",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen96": {
       "app": "double-gemm-conflict-free",
@@ -2272,10 +2029,10 @@
       "seqLen": 96,
       "dModel": 768,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen96.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen96.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner384_dModel768_dtRank24_nb_tiles8_seqLen96.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2287,7 +2044,7 @@
       "model_total": "89262",
       "l1_kib": "450",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner1536_dModel768_dtRank24_nb_tiles32_seqLen32": {
       "app": "double-gemm-conflict-free",
@@ -2304,10 +2061,10 @@
       "seqLen": 32,
       "dModel": 768,
       "n_tiles": 32,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/double-gemm-conflict-free__dInner1536_dModel768_dtRank24_nb_tiles32_seqLen32.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner1536_dModel768_dtRank24_nb_tiles32_seqLen32.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner1536_dModel768_dtRank24_nb_tiles32_seqLen32.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2319,7 +2076,7 @@
       "model_total": "123956",
       "l1_kib": "246",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner264_dModel384_nb_tiles11_seqLen48": {
       "app": "double-gemm-conflict-free",
@@ -2335,10 +2092,10 @@
       "seqLen": 48,
       "dModel": 384,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/double-gemm-conflict-free__dInner264_dModel384_nb_tiles11_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner264_dModel384_nb_tiles11_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner264_dModel384_nb_tiles11_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2350,7 +2107,7 @@
       "model_total": "16396",
       "l1_kib": "112",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen192": {
       "app": "P1-tiled-D",
@@ -2366,10 +2123,10 @@
       "seqLen": 192,
       "dModel": 384,
       "n_tiles": 16,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen192.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel384_dtRank24_nb_tiles16_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2381,7 +2138,7 @@
       "model_total": "175755",
       "l1_kib": "197",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel768_dtRank24_nb_tiles32_seqLen48": {
       "app": "P1-tiled-D",
@@ -2397,10 +2154,10 @@
       "seqLen": 48,
       "dModel": 768,
       "n_tiles": 32,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/P1-tiled-D__dModel768_dtRank24_nb_tiles32_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel768_dtRank24_nb_tiles32_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel768_dtRank24_nb_tiles32_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2412,7 +2169,7 @@
       "model_total": "174685",
       "l1_kib": "141",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784": {
       "app": "suc-carry",
@@ -2431,10 +2188,10 @@
       "seqLen": 784,
       "dModel": 192,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles7_nb_tiles1_seqLen784.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2446,7 +2203,7 @@
       "model_total": "314817",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles3_nb_tiles1_seqLen192": {
       "app": "suc-carry",
@@ -2465,10 +2222,10 @@
       "seqLen": 192,
       "dModel": 384,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles3_nb_tiles1_seqLen192.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles3_nb_tiles1_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_l_tiles3_nb_tiles1_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2480,7 +2237,7 @@
       "model_total": "155577",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel768_dtRank24_nb_l_tiles3_nb_tiles1_seqLen48": {
       "app": "suc-carry",
@@ -2499,10 +2256,10 @@
       "seqLen": 48,
       "dModel": 768,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/suc-carry__bc_pad_banks0_bc_swizzle1_dModel768_dtRank24_nb_l_tiles3_nb_tiles1_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel768_dtRank24_nb_l_tiles3_nb_tiles1_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel768_dtRank24_nb_l_tiles3_nb_tiles1_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2514,7 +2271,7 @@
       "model_total": "82467",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_safe_to_start_r106_safe_to_start_r113840_seqLen80": {
       "app": "main-tiled",
@@ -2537,7 +2294,7 @@
       "batch_run": "20261031_181640",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_safe_to_start_r106_safe_to_start_r113840_seqLen80.log",
-      "timeline": "batch_run_out/20261030_174604/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_safe_to_start_r106_safe_to_start_r113840_seqLen80.timeline.png",
+      "timeline": "batch_run_out/20261031_181640/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_safe_to_start_r106_safe_to_start_r113840_seqLen80.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2549,7 +2306,7 @@
       "model_total": "271290",
       "l1_kib": "216",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 19:43:03"
     },
     "rmsnorm-tiled__dModel384_nb_tiles5_seqLen80": {
       "app": "rmsnorm-tiled",
@@ -2564,10 +2321,10 @@
       "seqLen": 80,
       "dModel": 384,
       "n_tiles": 5,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_081011/rmsnorm-tiled__dModel384_nb_tiles5_seqLen80.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel384_nb_tiles5_seqLen80.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel384_nb_tiles5_seqLen80.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "1",
@@ -2579,7 +2336,7 @@
       "model_total": "10324",
       "l1_kib": "72",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "rmsnorm-tiled__dModel192_nb_tiles1_seqLen16": {
       "app": "rmsnorm-tiled",
@@ -2594,10 +2351,10 @@
       "seqLen": 16,
       "dModel": 192,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/rmsnorm-tiled__dModel192_nb_tiles1_seqLen16.log",
-      "timeline": "batch_run_out/20261030_174604/rmsnorm-tiled__dModel192_nb_tiles1_seqLen16.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel192_nb_tiles1_seqLen16.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "1",
@@ -2609,7 +2366,7 @@
       "model_total": "1514",
       "l1_kib": "36",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles28_nb_tiles1_seqLen3136": {
       "app": "suc-carry",
@@ -2628,10 +2385,10 @@
       "seqLen": 3136,
       "dModel": 192,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles28_nb_tiles1_seqLen3136.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles28_nb_tiles1_seqLen3136.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel192_dtRank24_nb_l_tiles28_nb_tiles1_seqLen3136.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2643,7 +2400,7 @@
       "model_total": "1260426",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "add-tiled__n_acc1_nb_tiles12_numElem100352": {
       "app": "add-tiled",
@@ -2658,10 +2415,10 @@
       "seqLen": null,
       "dModel": null,
       "n_tiles": 12,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_115525/add-tiled__n_acc1_nb_tiles12_numElem100352.log",
-      "timeline": "batch_run_out/20261030_174604/add-tiled__n_acc1_nb_tiles12_numElem100352.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/add-tiled__n_acc1_nb_tiles12_numElem100352.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2673,7 +2430,7 @@
       "model_total": "56164",
       "l1_kib": "392",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner408_dModel192_nb_tiles17_seqLen16": {
       "app": "double-gemm-conflict-free",
@@ -2689,10 +2446,10 @@
       "seqLen": 16,
       "dModel": 192,
       "n_tiles": 17,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_115525/double-gemm-conflict-free__dInner408_dModel192_nb_tiles17_seqLen16.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner408_dModel192_nb_tiles17_seqLen16.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner408_dModel192_nb_tiles17_seqLen16.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2704,7 +2461,7 @@
       "model_total": "5374",
       "l1_kib": "31",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768": {
       "app": "suc-carry",
@@ -2723,10 +2480,10 @@
       "seqLen": 32768,
       "dModel": 72,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel72_dtRank24_nb_l_tiles128_nb_tiles1_seqLen32768.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2738,7 +2495,7 @@
       "model_total": "4884476",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384": {
       "app": "suc-carry",
@@ -2757,10 +2514,10 @@
       "seqLen": 16384,
       "dModel": 144,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/suc-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel144_dtRank24_nb_l_tiles128_nb_tiles1_seqLen16384.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2772,7 +2529,7 @@
       "model_total": "4933100",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096": {
       "app": "suc-carry",
@@ -2791,10 +2548,10 @@
       "seqLen": 4096,
       "dModel": 336,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/suc-carry__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_l_tiles128_nb_tiles1_seqLen4096.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2806,7 +2563,7 @@
       "model_total": "2914008",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "suc-carry__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024": {
       "app": "suc-carry",
@@ -2825,10 +2582,10 @@
       "seqLen": 1024,
       "dModel": 456,
       "n_tiles": 1,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/suc-carry__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024.log",
-      "timeline": "batch_run_out/20261030_174604/suc-carry__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/suc-carry__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_l_tiles32_nb_tiles1_seqLen1024.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2840,7 +2597,7 @@
       "model_total": "1036074",
       "l1_kib": null,
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel336_dtRank24_nb_tiles14_seqLen512": {
       "app": "P1-tiled-D",
@@ -2856,10 +2613,10 @@
       "seqLen": 512,
       "dModel": 336,
       "n_tiles": 14,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/P1-tiled-D__dModel336_dtRank24_nb_tiles14_seqLen512.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel336_dtRank24_nb_tiles14_seqLen512.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel336_dtRank24_nb_tiles14_seqLen512.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2871,7 +2628,7 @@
       "model_total": "356593",
       "l1_kib": "414",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "P1-tiled-D__dModel456_dtRank24_nb_tiles19_seqLen256": {
       "app": "P1-tiled-D",
@@ -2887,10 +2644,10 @@
       "seqLen": 256,
       "dModel": 456,
       "n_tiles": 19,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/P1-tiled-D__dModel456_dtRank24_nb_tiles19_seqLen256.log",
-      "timeline": "batch_run_out/20261030_174604/P1-tiled-D__dModel456_dtRank24_nb_tiles19_seqLen256.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/P1-tiled-D__dModel456_dtRank24_nb_tiles19_seqLen256.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2902,7 +2659,7 @@
       "model_total": "322551",
       "l1_kib": "271",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner288_dModel128_dtRank24_nb_tiles12_seqLen512": {
       "app": "double-gemm-conflict-free",
@@ -2919,10 +2676,10 @@
       "seqLen": 512,
       "dModel": 128,
       "n_tiles": 12,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "de4aa793",
       "log": "batch_run_out/20261029_115525/double-gemm-conflict-free__dInner288_dModel128_dtRank24_nb_tiles12_seqLen512.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner288_dModel128_dtRank24_nb_tiles12_seqLen512.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner288_dModel128_dtRank24_nb_tiles12_seqLen512.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2934,7 +2691,7 @@
       "model_total": "60650",
       "l1_kib": "316",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner144_dModel256_dtRank24_nb_tiles6_seqLen256": {
       "app": "double-gemm-conflict-free",
@@ -2951,10 +2708,10 @@
       "seqLen": 256,
       "dModel": 256,
       "n_tiles": 6,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner144_dModel256_dtRank24_nb_tiles6_seqLen256.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner144_dModel256_dtRank24_nb_tiles6_seqLen256.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner144_dModel256_dtRank24_nb_tiles6_seqLen256.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2966,7 +2723,7 @@
       "model_total": "30130",
       "l1_kib": "304",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner672_dModel320_dtRank24_nb_tiles14_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -2983,10 +2740,10 @@
       "seqLen": 128,
       "dModel": 320,
       "n_tiles": 14,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner672_dModel320_dtRank24_nb_tiles14_seqLen128.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner672_dModel320_dtRank24_nb_tiles14_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner672_dModel320_dtRank24_nb_tiles14_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -2998,7 +2755,7 @@
       "model_total": "87524",
       "l1_kib": "244",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner336_dModel640_dtRank24_nb_tiles7_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -3015,10 +2772,10 @@
       "seqLen": 64,
       "dModel": 640,
       "n_tiles": 7,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner336_dModel640_dtRank24_nb_tiles7_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner336_dModel640_dtRank24_nb_tiles7_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner336_dModel640_dtRank24_nb_tiles7_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3030,7 +2787,7 @@
       "model_total": "44158",
       "l1_kib": "292",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner912_dModel448_dtRank24_nb_tiles19_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -3047,10 +2804,10 @@
       "seqLen": 64,
       "dModel": 448,
       "n_tiles": 19,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner912_dModel448_dtRank24_nb_tiles19_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner912_dModel448_dtRank24_nb_tiles19_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner912_dModel448_dtRank24_nb_tiles19_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3062,7 +2819,7 @@
       "model_total": "84442",
       "l1_kib": "208",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner456_dModel896_dtRank24_nb_tiles19_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -3079,10 +2836,10 @@
       "seqLen": 64,
       "dModel": 896,
       "n_tiles": 19,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner456_dModel896_dtRank24_nb_tiles19_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner456_dModel896_dtRank24_nb_tiles19_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner456_dModel896_dtRank24_nb_tiles19_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3094,7 +2851,7 @@
       "model_total": "84384",
       "l1_kib": "314",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel64_dtRank24_nb_tiles11_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -3111,10 +2868,10 @@
       "seqLen": 128,
       "dModel": 64,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner528_dModel64_dtRank24_nb_tiles11_seqLen128.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel64_dtRank24_nb_tiles11_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel64_dtRank24_nb_tiles11_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3126,7 +2883,7 @@
       "model_total": "14858",
       "l1_kib": "68",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel128_dtRank24_nb_tiles11_seqLen128": {
       "app": "double-gemm-conflict-free",
@@ -3143,10 +2900,10 @@
       "seqLen": 128,
       "dModel": 128,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner528_dModel128_dtRank24_nb_tiles11_seqLen128.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel128_dtRank24_nb_tiles11_seqLen128.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel128_dtRank24_nb_tiles11_seqLen128.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3158,7 +2915,7 @@
       "model_total": "28336",
       "l1_kib": "112",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel320_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -3175,10 +2932,10 @@
       "seqLen": 64,
       "dModel": 320,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner528_dModel320_dtRank24_nb_tiles11_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel320_dtRank24_nb_tiles11_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel320_dtRank24_nb_tiles11_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3190,7 +2947,7 @@
       "model_total": "35096",
       "l1_kib": "152",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "double-gemm-conflict-free__dInner528_dModel448_dtRank24_nb_tiles11_seqLen64": {
       "app": "double-gemm-conflict-free",
@@ -3207,10 +2964,10 @@
       "seqLen": 64,
       "dModel": 448,
       "n_tiles": 11,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/double-gemm-conflict-free__dInner528_dModel448_dtRank24_nb_tiles11_seqLen64.log",
-      "timeline": "batch_run_out/20261030_174604/double-gemm-conflict-free__dInner528_dModel448_dtRank24_nb_tiles11_seqLen64.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner528_dModel448_dtRank24_nb_tiles11_seqLen64.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3222,7 +2979,7 @@
       "model_total": "48890",
       "l1_kib": "208",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-3way-tiled__L116_L216_L316_dModel24_l3_tile16_nb_tiles_A3_seqLen4096": {
       "app": "fft-3way-tiled",
@@ -3241,10 +2998,10 @@
       "seqLen": 4096,
       "dModel": 24,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/fft-3way-tiled__L116_L216_L316_dModel24_l3_tile16_nb_tiles_A3_seqLen4096.log",
-      "timeline": "batch_run_out/20261031_181640/fft-3way-tiled__L116_L216_L316_dModel24_l3_tile16_nb_tiles_A3_seqLen4096.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-3way-tiled__L116_L216_L316_dModel24_l3_tile16_nb_tiles_A3_seqLen4096.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3256,7 +3013,7 @@
       "model_total": "90659",
       "l1_kib": "428",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-3way-tiled__L116_L216_L316_dModel16_l3_tile16_nb_tiles_A2_seqLen4096": {
       "app": "fft-3way-tiled",
@@ -3275,10 +3032,10 @@
       "seqLen": 4096,
       "dModel": 16,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/fft-3way-tiled__L116_L216_L316_dModel16_l3_tile16_nb_tiles_A2_seqLen4096.log",
-      "timeline": "batch_run_out/20261030_174604/fft-3way-tiled__L116_L216_L316_dModel16_l3_tile16_nb_tiles_A2_seqLen4096.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-3way-tiled__L116_L216_L316_dModel16_l3_tile16_nb_tiles_A2_seqLen4096.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3290,7 +3047,7 @@
       "model_total": "60311",
       "l1_kib": "428",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-3way-tiled__L164_L216_L364_dModel1_l3_tile16_nb_tiles_A1_seqLen65536": {
       "app": "fft-3way-tiled",
@@ -3309,10 +3066,10 @@
       "seqLen": 65536,
       "dModel": 1,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/fft-3way-tiled__L164_L216_L364_dModel1_l3_tile16_nb_tiles_A1_seqLen65536.log",
-      "timeline": "batch_run_out/20261030_174604/fft-3way-tiled__L164_L216_L364_dModel1_l3_tile16_nb_tiles_A1_seqLen65536.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-3way-tiled__L164_L216_L364_dModel1_l3_tile16_nb_tiles_A1_seqLen65536.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3324,7 +3081,7 @@
       "model_total": "138486",
       "l1_kib": "485",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-3way-tiled__L132_L216_L332_dModel8_l3_tile16_nb_tiles_A4_seqLen16384": {
       "app": "fft-3way-tiled",
@@ -3343,10 +3100,10 @@
       "seqLen": 16384,
       "dModel": 8,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "dfa7d8be",
       "log": "batch_run_out/20261029_155723/fft-3way-tiled__L132_L216_L332_dModel8_l3_tile16_nb_tiles_A4_seqLen16384.log",
-      "timeline": "batch_run_out/20261030_174604/fft-3way-tiled__L132_L216_L332_dModel8_l3_tile16_nb_tiles_A4_seqLen16384.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-3way-tiled__L132_L216_L332_dModel8_l3_tile16_nb_tiles_A4_seqLen16384.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3358,7 +3115,7 @@
       "model_total": "171170",
       "l1_kib": "331",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-3way-tiled__L132_L216_L332_dModel16_l3_tile16_nb_tiles_A4_seqLen16384": {
       "app": "fft-3way-tiled",
@@ -3406,10 +3163,10 @@
       "seqLen": 192,
       "dModel": 192,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel192_seqLen192.log",
-      "timeline": "batch_run_out/20261031_181640/einfft-double-conflictfree__dModel192_seqLen192.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-double-conflictfree__dModel192_seqLen192.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3421,7 +3178,7 @@
       "model_total": "40016",
       "l1_kib": "225",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-double-conflictfree__dModel384_seqLen96": {
       "app": "einfft-double-conflictfree",
@@ -3435,10 +3192,10 @@
       "seqLen": 96,
       "dModel": 384,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel384_seqLen96.log",
-      "timeline": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel384_seqLen96.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-double-conflictfree__dModel384_seqLen96.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3450,7 +3207,7 @@
       "model_total": "63438",
       "l1_kib": "279",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-double-conflictfree__dModel576_seqLen48": {
       "app": "einfft-double-conflictfree",
@@ -3464,10 +3221,10 @@
       "seqLen": 48,
       "dModel": 576,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel576_seqLen48.log",
-      "timeline": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel576_seqLen48.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-double-conflictfree__dModel576_seqLen48.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3479,7 +3236,7 @@
       "model_total": "66445",
       "l1_kib": "317",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-tiled__L132_L232_dModel96_nb_tiles4_nb_tiles_B2_seqLen1024": {
       "app": "fft-tiled",
@@ -3497,10 +3254,10 @@
       "seqLen": 1024,
       "dModel": 96,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/fft-tiled__L132_L232_dModel96_nb_tiles4_nb_tiles_B2_seqLen1024.log",
-      "timeline": "batch_run_out/20261031_181640/fft-tiled__L132_L232_dModel96_nb_tiles4_nb_tiles_B2_seqLen1024.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-tiled__L132_L232_dModel96_nb_tiles4_nb_tiles_B2_seqLen1024.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3512,7 +3269,7 @@
       "model_total": "93219",
       "l1_kib": "491",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-tiled__L116_L216_dModel384_nb_tiles4_nb_tiles_B2_seqLen256": {
       "app": "fft-tiled",
@@ -3530,10 +3287,10 @@
       "seqLen": 256,
       "dModel": 384,
       "n_tiles": 4,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/fft-tiled__L116_L216_dModel384_nb_tiles4_nb_tiles_B2_seqLen256.log",
-      "timeline": "batch_run_out/20261030_174604/fft-tiled__L116_L216_dModel384_nb_tiles4_nb_tiles_B2_seqLen256.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-tiled__L116_L216_dModel384_nb_tiles4_nb_tiles_B2_seqLen256.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3545,7 +3302,7 @@
       "model_total": "55523",
       "l1_kib": "482",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-tiled__L164_L264_dModel16_nb_tiles8_nb_tiles_B2_seqLen4096": {
       "app": "fft-tiled",
@@ -3563,10 +3320,10 @@
       "seqLen": 4096,
       "dModel": 16,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/fft-tiled__L164_L264_dModel16_nb_tiles8_nb_tiles_B2_seqLen4096.log",
-      "timeline": "batch_run_out/20261030_174604/fft-tiled__L164_L264_dModel16_nb_tiles8_nb_tiles_B2_seqLen4096.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-tiled__L164_L264_dModel16_nb_tiles8_nb_tiles_B2_seqLen4096.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3578,7 +3335,7 @@
       "model_total": "111665",
       "l1_kib": "355",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-tiled__L132_L232_dModel64_nb_tiles8_nb_tiles_B2_seqLen1024": {
       "app": "fft-tiled",
@@ -3596,10 +3353,10 @@
       "seqLen": 1024,
       "dModel": 64,
       "n_tiles": 8,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/fft-tiled__L132_L232_dModel64_nb_tiles8_nb_tiles_B2_seqLen1024.log",
-      "timeline": "batch_run_out/20261030_174604/fft-tiled__L132_L232_dModel64_nb_tiles8_nb_tiles_B2_seqLen1024.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-tiled__L132_L232_dModel64_nb_tiles8_nb_tiles_B2_seqLen1024.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3611,7 +3368,7 @@
       "model_total": "61325",
       "l1_kib": "331",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "fft-3way-tiled__L132_L216_L332_dModel16_l3_tile16_nb_tiles_A8_seqLen16384": {
       "app": "fft-3way-tiled",
@@ -3630,10 +3387,10 @@
       "seqLen": 16384,
       "dModel": 16,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/fft-3way-tiled__L132_L216_L332_dModel16_l3_tile16_nb_tiles_A8_seqLen16384.log",
-      "timeline": "batch_run_out/20261030_174604/fft-3way-tiled__L132_L216_L332_dModel16_l3_tile16_nb_tiles_A8_seqLen16384.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/fft-3way-tiled__L132_L216_L332_dModel16_l3_tile16_nb_tiles_A8_seqLen16384.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3645,7 +3402,7 @@
       "model_total": "342598",
       "l1_kib": "331",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-double-conflictfree__dModel192_seqLen192__2": {
       "app": "einfft-double-conflictfree",
@@ -3659,10 +3416,10 @@
       "seqLen": 192,
       "dModel": 192,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel192_seqLen192__2.log",
-      "timeline": "batch_run_out/20261031_181640/einfft-double-conflictfree__dModel192_seqLen192__2.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-double-conflictfree__dModel192_seqLen192__2.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3674,7 +3431,7 @@
       "model_total": "40016",
       "l1_kib": "225",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-double-conflictfree__dModel384_seqLen96__2": {
       "app": "einfft-double-conflictfree",
@@ -3688,10 +3445,10 @@
       "seqLen": 96,
       "dModel": 384,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel384_seqLen96__2.log",
-      "timeline": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel384_seqLen96__2.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-double-conflictfree__dModel384_seqLen96__2.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3703,7 +3460,7 @@
       "model_total": "63438",
       "l1_kib": "279",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
     },
     "einfft-double-conflictfree__dModel576_seqLen48__2": {
       "app": "einfft-double-conflictfree",
@@ -3717,10 +3474,10 @@
       "seqLen": 48,
       "dModel": 576,
       "n_tiles": null,
-      "batch_run": "20261031_181640",
+      "batch_run": "20261031_194350",
       "commit": "e44c396b",
       "log": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel576_seqLen48__2.log",
-      "timeline": "batch_run_out/20261030_174604/einfft-double-conflictfree__dModel576_seqLen48__2.timeline.png",
+      "timeline": "batch_run_out/20261031_194350/einfft-double-conflictfree__dModel576_seqLen48__2.timeline.png",
       "state": "done",
       "cached": true,
       "errors": "0",
@@ -3732,8 +3489,449 @@
       "model_total": "66445",
       "l1_kib": "317",
       "l1_oom": false,
-      "updated": "2026-10-31 18:17:28"
+      "updated": "2026-10-31 23:34:08"
+    },
+    "main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen192": {
+      "app": "main-tiled",
+      "tag": "bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen192",
+      "name": "main C",
+      "model": "Simba-L IN",
+      "params": {
+        "seqLen": 192,
+        "dModel": 384,
+        "dtRank": 24,
+        "nb_tiles": 16,
+        "bc_pad_banks": 0,
+        "bc_swizzle": 1
+      },
+      "seqLen": 192,
+      "dModel": 384,
+      "n_tiles": 16,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen192.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen192.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "393406",
+      "total": "416583",
+      "model_errors": "0",
+      "model_simbacore": "420943",
+      "model_total": "429472",
+      "l1_kib": "407",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_seqLen48": {
+      "app": "main-tiled",
+      "tag": "bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_seqLen48",
+      "name": "main D",
+      "model": "Simba-L IN",
+      "params": {
+        "seqLen": 48,
+        "dModel": 528,
+        "dtRank": 24,
+        "nb_tiles": 11,
+        "bc_pad_banks": 0,
+        "bc_swizzle": 1
+      },
+      "seqLen": 48,
+      "dModel": 528,
+      "n_tiles": 11,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_seqLen48.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel528_dtRank24_nb_tiles11_seqLen48.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "191492",
+      "total": "211961",
+      "model_errors": "0",
+      "model_simbacore": "199265",
+      "model_total": "208202",
+      "l1_kib": "330",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_seqLen192": {
+      "app": "main-tiled",
+      "tag": "bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_seqLen192",
+      "name": "main C",
+      "model": "Simba-S IN",
+      "params": {
+        "seqLen": 192,
+        "dModel": 336,
+        "dtRank": 24,
+        "nb_tiles": 14,
+        "bc_pad_banks": 0,
+        "bc_swizzle": 1
+      },
+      "seqLen": 192,
+      "dModel": 336,
+      "n_tiles": 14,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_seqLen192.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel336_dtRank24_nb_tiles14_seqLen192.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "308693",
+      "total": "330976",
+      "model_errors": "0",
+      "model_simbacore": "327751",
+      "model_total": "335774",
+      "l1_kib": "371",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_seqLen64": {
+      "app": "main-tiled",
+      "tag": "bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_seqLen64",
+      "name": "main D",
+      "model": "Simba-S IN",
+      "params": {
+        "seqLen": 64,
+        "dModel": 456,
+        "dtRank": 24,
+        "nb_tiles": 19,
+        "bc_pad_banks": 0,
+        "bc_swizzle": 1
+      },
+      "seqLen": 64,
+      "dModel": 456,
+      "n_tiles": 19,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_seqLen64.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel456_dtRank24_nb_tiles19_seqLen64.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "187740",
+      "total": "208780",
+      "model_errors": "0",
+      "model_simbacore": "198256",
+      "model_total": "206707",
+      "l1_kib": "216",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "isgemm-tiled__dim048_dim1528_dim21024_nb_tiles11": {
+      "app": "isgemm-tiled",
+      "tag": "dim048_dim1528_dim21024_nb_tiles11",
+      "name": "fft D",
+      "model": "Simba-L IN",
+      "params": {
+        "dim0": 48,
+        "dim1": 528,
+        "dim2": 1024,
+        "nb_tiles": 11
+      },
+      "seqLen": 48,
+      "dModel": 528,
+      "n_tiles": 11,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/isgemm-tiled__dim048_dim1528_dim21024_nb_tiles11.log",
+      "timeline": "batch_run_out/20261031_194350/isgemm-tiled__dim048_dim1528_dim21024_nb_tiles11.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "69683",
+      "total": "73435",
+      "model_errors": "0",
+      "model_simbacore": "67897",
+      "model_total": "68599",
+      "l1_kib": null,
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "conv-downsample__dInner528_dModel2880_nb_tiles15_seqLen16": {
+      "app": "conv-downsample",
+      "tag": "dInner528_dModel2880_nb_tiles15_seqLen16",
+      "name": "downsample C",
+      "model": "Simba-B IN",
+      "params": {
+        "seqLen": 16,
+        "dModel": 2880,
+        "dInner": 528,
+        "nb_tiles": 15
+      },
+      "seqLen": 16,
+      "dModel": 2880,
+      "n_tiles": 15,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/conv-downsample__dInner528_dModel2880_nb_tiles15_seqLen16.log",
+      "timeline": "batch_run_out/20261031_194350/conv-downsample__dInner528_dModel2880_nb_tiles15_seqLen16.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "68472",
+      "total": "71472",
+      "model_errors": "0",
+      "model_simbacore": "64294",
+      "model_total": "65231",
+      "l1_kib": null,
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "double-gemm-conflict-free__dInner768_dModel1536_nb_tiles32_seqLen32": {
+      "app": "double-gemm-conflict-free",
+      "tag": "dInner768_dModel1536_nb_tiles32_seqLen32",
+      "name": "downsample C",
+      "model": "VMamba-Ti IN",
+      "params": {
+        "seqLen": 32,
+        "dModel": 1536,
+        "dInner": 768,
+        "nb_tiles": 32
+      },
+      "seqLen": 32,
+      "dModel": 1536,
+      "n_tiles": 32,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner768_dModel1536_nb_tiles32_seqLen32.log",
+      "timeline": "batch_run_out/20261031_194350/double-gemm-conflict-free__dInner768_dModel1536_nb_tiles32_seqLen32.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "113197",
+      "total": "119590",
+      "model_errors": "48",
+      "model_simbacore": "123408",
+      "model_total": "125014",
+      "l1_kib": "339",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen80": {
+      "app": "main-tiled",
+      "tag": "bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen80",
+      "name": "mamba",
+      "model": "FEMBA TUAR",
+      "params": {
+        "seqLen": 80,
+        "dModel": 384,
+        "dtRank": 24,
+        "nb_tiles": 16,
+        "bc_pad_banks": 0,
+        "bc_swizzle": 1
+      },
+      "seqLen": 80,
+      "dModel": 384,
+      "n_tiles": 16,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen80.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel384_dtRank24_nb_tiles16_seqLen80.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "169078",
+      "total": "189577",
+      "model_errors": "0",
+      "model_simbacore": "178662",
+      "model_total": "186822",
+      "l1_kib": "216",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "main-tiled__bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_seqLen80": {
+      "app": "main-tiled",
+      "tag": "bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_seqLen80",
+      "name": "head mamba",
+      "model": "FEMBA TUAR",
+      "params": {
+        "seqLen": 80,
+        "dModel": 264,
+        "dtRank": 24,
+        "nb_tiles": 11,
+        "bc_pad_banks": 0,
+        "bc_swizzle": 1
+      },
+      "seqLen": 80,
+      "dModel": 264,
+      "n_tiles": 11,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_seqLen80.log",
+      "timeline": "batch_run_out/20261031_194350/main-tiled__bc_pad_banks0_bc_swizzle1_dModel264_dtRank24_nb_tiles11_seqLen80.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "94315",
+      "total": "113381",
+      "model_errors": "0",
+      "model_simbacore": "90716",
+      "model_total": "98267",
+      "l1_kib": "166",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "rmsnorm-tiled__dModel192_nb_tiles28_seqLen3136": {
+      "app": "rmsnorm-tiled",
+      "tag": "dModel192_nb_tiles28_seqLen3136",
+      "name": "merge+norm A",
+      "model": "VMamba-Ti IN",
+      "params": {
+        "seqLen": 3136,
+        "dModel": 192,
+        "nb_tiles": 28
+      },
+      "seqLen": 3136,
+      "dModel": 192,
+      "n_tiles": 28,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel192_nb_tiles28_seqLen3136.log",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel192_nb_tiles28_seqLen3136.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "56",
+      "total": "147368",
+      "model_errors": "0",
+      "model_simbacore": "0",
+      "model_total": "138359",
+      "l1_kib": "180",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "rmsnorm-tiled__dModel384_nb_tiles7_seqLen784": {
+      "app": "rmsnorm-tiled",
+      "tag": "dModel384_nb_tiles7_seqLen784",
+      "name": "merge+norm B",
+      "model": "VMamba-Ti IN",
+      "params": {
+        "seqLen": 784,
+        "dModel": 384,
+        "nb_tiles": 7
+      },
+      "seqLen": 784,
+      "dModel": 384,
+      "n_tiles": 7,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel384_nb_tiles7_seqLen784.log",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel384_nb_tiles7_seqLen784.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "14",
+      "total": "70819",
+      "model_errors": "0",
+      "model_simbacore": "0",
+      "model_total": "66924",
+      "l1_kib": "360",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "rmsnorm-tiled__dModel768_nb_tiles4_seqLen192": {
+      "app": "rmsnorm-tiled",
+      "tag": "dModel768_nb_tiles4_seqLen192",
+      "name": "merge+norm C",
+      "model": "VMamba-Ti IN",
+      "params": {
+        "seqLen": 192,
+        "dModel": 768,
+        "nb_tiles": 4
+      },
+      "seqLen": 192,
+      "dModel": 768,
+      "n_tiles": 4,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel768_nb_tiles4_seqLen192.log",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel768_nb_tiles4_seqLen192.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "8",
+      "total": "40135",
+      "model_errors": "0",
+      "model_simbacore": "0",
+      "model_total": "34411",
+      "l1_kib": "336",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "rmsnorm-tiled__dModel1536_nb_tiles3_seqLen48": {
+      "app": "rmsnorm-tiled",
+      "tag": "dModel1536_nb_tiles3_seqLen48",
+      "name": "merge+norm D",
+      "model": "VMamba-Ti IN",
+      "params": {
+        "seqLen": 48,
+        "dModel": 1536,
+        "nb_tiles": 3
+      },
+      "seqLen": 48,
+      "dModel": 1536,
+      "n_tiles": 3,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel1536_nb_tiles3_seqLen48.log",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel1536_nb_tiles3_seqLen48.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "6",
+      "total": "23753",
+      "model_errors": "0",
+      "model_simbacore": "0",
+      "model_total": "21490",
+      "l1_kib": "288",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
+    },
+    "rmsnorm-tiled__dModel768_nb_tiles3_seqLen48": {
+      "app": "rmsnorm-tiled",
+      "tag": "dModel768_nb_tiles3_seqLen48",
+      "name": "rms D",
+      "model": "VMamba-Ti IN",
+      "params": {
+        "seqLen": 48,
+        "dModel": 768,
+        "nb_tiles": 3
+      },
+      "seqLen": 48,
+      "dModel": 768,
+      "n_tiles": 3,
+      "batch_run": "20261031_194350",
+      "commit": "41f42e0c",
+      "log": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel768_nb_tiles3_seqLen48.log",
+      "timeline": "batch_run_out/20261031_194350/rmsnorm-tiled__dModel768_nb_tiles3_seqLen48.timeline.png",
+      "state": "done",
+      "cached": false,
+      "errors": "0",
+      "crashed": false,
+      "simbacore": "6",
+      "total": "13258",
+      "model_errors": "0",
+      "model_simbacore": "0",
+      "model_total": "11384",
+      "l1_kib": "144",
+      "l1_oom": false,
+      "updated": "2026-10-31 23:34:08"
     }
   },
-  "updated": "2026-10-31 18:17:28"
+  "updated": "2026-10-31 23:34:08"
 }

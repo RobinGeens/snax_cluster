@@ -302,8 +302,9 @@ round-trip below (mamba only).
 **(b) osCore GEMM integer cross-check (`verify_datapath`, mamba only, FP-aware).** An
 integer cross-check of the osCore GEMM (`z = A·B`, A=oscore_in/flattenA, B=oscore_weight,
 z=W0/ConvFormat), carrying real data. It checks: R0 input AGU implements the documented
-`flattenA`; W0 writes z contiguously in ConvFormat; the SUC z-reader R10 reads the buffer
-W0 wrote; and a deliberately permuted gather changes the integer result (proving the check
+`flattenA`; W0 writes z contiguously in ConvFormat; the SUC z-reader R10 reads a buffer
+W0 wrote (in this or the previous invocation: `main-tiled` runs the SUC one dInner tile behind
+the osCore); and a deliberately permuted gather changes the integer result (proving the check
 discriminates). Runs once on the first P2 invocation; drives PASS/FAIL in `--verify` mode.
 
 ### Timing-coupled BIST (SUC dt_BC delivery)

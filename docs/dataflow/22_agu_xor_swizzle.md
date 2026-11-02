@@ -143,7 +143,7 @@ previously-unpadded family) also runs the swizzle now.
 A note on release margins: pad-era hand-tuned safe-to-start values were tuned with a
 conflict-free SUC and stay valid under the swizzle (blanket-widening them cost
 main-tiled +23% before being reverted). Only apps whose tuning baseline was
-BC-conflicted (p2-carry, main-tiled-oscore, P2-async) need the widened swizzle-aware
+BC-conflicted (main-tiled-oscore, P2-async) need the widened swizzle-aware
 formula.
 
 Two pitfalls found while porting:
@@ -151,7 +151,7 @@ Two pitfalls found while porting:
 - Removing the BC bottleneck speeds up the SUC front-end, so `z` consumption catches
   the osCore sooner in apps that produce z in-launch behind the R10 delayed start.
   Symptom: scattered all-zero `y` samples (`y = SiLU(z) * ...` with torn z). The
-  safe-to-start formulas in `main`/`main-tiled`/`p2-carry` widen their margin when
+  safe-to-start formulas in `main`/`main-tiled` widen their margin when
   bc_swizzle is set; pad-era hand-tuned `safe_to_start_*` overrides should be retired
   or re-tuned.
 - `suc-carry`'s hand-emitted W3 state spatial-stride array predated the W3 `[2,2]`

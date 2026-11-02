@@ -2,8 +2,9 @@
 // Not released under license. All rights reserved.
 //
 // Mamba P2 (no isCore) sequence-tiled with on-chip SSM state carry, fused with the output projection.
-// Replaces the (P2-async-OS-no-IS + separate out-proj) two-program pipeline with one program
-// See docs/dataflow/13_suc_carry.md.
+// Replaces the (P2-async-OS-no-IS + separate out-proj) two-program pipeline with one program.
+// Phase A skews the osCore one L-tile ahead of the SUC so neither waits on the other.
+// See docs/dataflow/15_p2_carry.md.
 
 #include "helper.c"
 #include "snax-simbacore-lib.h"
@@ -30,10 +31,11 @@ static inline void spill_conv_tile(uint32_t lt, const uint8_t* src, uint8_t* dst
 }
 
 // osCore(z) + switchCore(dt) + SUC(y), with state carry through R13(in)/W3(out). z is osCore-produced
-// (W0) and read back by the SUC (R10) within the launch; x/y ride the convFormat conv<->suc streamers.
+// (W0) and read back by the SUC (R10) one launch later; x/y ride the convFormat conv<->suc streamers.
+// Full program, written once; set_launch() then switches slots and ports per launch.
 static inline void set_streamer_p2_carry(uint32_t p_oi, uint32_t p_ow, uint32_t p_dt, uint32_t p_dw1, uint32_t p_dw2,
                                          uint32_t p_db, uint32_t p_A, uint32_t p_BC, uint32_t p_D, uint32_t p_x,
-                                         uint32_t p_z, uint32_t p_y, uint32_t p_state, bool load_en, bool save_en) {
+                                         uint32_t p_z, uint32_t p_y, uint32_t p_state) {
     set_streamer_csr(p_oi, M2_R0_ss, M2_R0_lt_tb, M2_R0_lt_ts, M2_R0_en,      // R0 osCore in
                      p_ow, M2_R1_ss, M2_R1_lt_tb, M2_R1_lt_ts, M2_R1_en,      // R1 osCore weight
                      p_dt, M2_R2_ss, M2_R2_tb_sync, M2_R2_ts_sync, M2_R2_en,  // R2 switchCore in (dt)
@@ -47,12 +49,45 @@ static inline void set_streamer_p2_carry(uint32_t p_oi, uint32_t p_ow, uint32_t 
                      p_z, M2_R10_ss, M2_R10_lt_tb, M2_R10_lt_ts, M2_R10_en,   // R10 SUC z (= osCore out, convFormat)
                      (uint32_t)0, 0, 0, 0, 0,                                 // R11 (disabled)
                      (uint32_t)0, 0, 0, 0, 0,                                 // R12 (disabled)
-                     p_state, M2_R13_state_ss, M2_R13_state_tb, M2_R13_state_ts, load_en,  // R13 SUC state IN
+                     p_state, M2_R13_state_ss, M2_R13_state_tb, M2_R13_state_ts, true,  // R13 SUC state IN
 
-                     p_z, M2_W0_ss, M2_W0_lt_tb, M2_W0_lt_ts, M2_W0_en,                  // W0 osCore out (z)
-                     (uint32_t)0, 0, 0, 0, 0,                                            // W1 (disabled)
-                     p_y, M2_W2_ss, M2_W2_lt_tb, M2_W2_lt_ts, M2_W2_en,                  // W2 SUC y out (convFormat)
-                     p_state, M2_W3_state_ss, M2_W3_state_tb, M2_W3_state_ts, save_en);  // W3 SUC state OUT
+                     p_z, M2_W0_ss, M2_W0_lt_tb, M2_W0_lt_ts, M2_W0_en,               // W0 osCore out (z)
+                     (uint32_t)0, 0, 0, 0, 0,                                         // W1 (disabled)
+                     p_y, M2_W2_ss, M2_W2_lt_tb, M2_W2_lt_ts, M2_W2_en,               // W2 SUC y out (convFormat)
+                     p_state, M2_W3_state_ss, M2_W3_state_tb, M2_W3_state_ts, true);  // W3 SUC state OUT
+}
+
+// Streamer program of launch l: osCore tile l, switchCore+SUC tile l-1 (zero outer temporal bound = port off).
+static void set_launch(uint32_t l, uint8_t* const* oi, uint8_t* const* dt, uint8_t* const* bc, uint8_t* const* x,
+                       uint8_t* const* z, uint8_t* const* y) {
+    const bool os_on  = l < M2_NB_L_TILES;
+    const bool suc_on = l >= 1u;
+    const int o       = l & 1;        // tile l slot
+    const int s       = (l + 1) & 1;  // tile l-1 slot
+
+    write_csr(BASE_PTR_READER_0_LOW, (uint32_t)oi[o]);
+    write_csr(BASE_PTR_WRITER_0_LOW, (uint32_t)z[o]);
+    write_csr(T_BOUND_BASE_READER_0, os_on ? M2_R0_lt_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_1, os_on ? M2_R1_lt_tb[0] : 0);
+    write_csr(T_BOUND_BASE_WRITER_0, os_on ? M2_W0_lt_tb[0] : 0);
+
+    write_csr(BASE_PTR_READER_2_LOW, (uint32_t)dt[s]);
+    write_csr(BASE_PTR_READER_7_LOW, (uint32_t)bc[s]);
+    write_csr(BASE_PTR_READER_9_LOW, (uint32_t)x[s]);
+    write_csr(BASE_PTR_READER_10_LOW, (uint32_t)z[s]);
+    write_csr(BASE_PTR_WRITER_2_LOW, (uint32_t)y[s]);
+    write_csr(T_BOUND_BASE_READER_2, suc_on ? M2_R2_tb_sync[0] : 0);
+    write_csr(T_BOUND_BASE_READER_3, suc_on ? M2_R3_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_4, suc_on ? M2_R4_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_5, suc_on ? M2_R5_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_6, suc_on ? M2_R6_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_7, suc_on ? M2_R7_tb_sync[0] : 0);
+    write_csr(T_BOUND_BASE_READER_8, suc_on ? M2_R8_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_9, suc_on ? M2_R9_lt_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_10, suc_on ? M2_R10_lt_tb[0] : 0);
+    write_csr(T_BOUND_BASE_WRITER_2, suc_on ? M2_W2_lt_tb[0] : 0);
+    write_csr(T_BOUND_BASE_READER_13, l >= 2u ? M2_R13_state_tb[0] : 0);                        // load: tile l-1 not first
+    write_csr(T_BOUND_BASE_WRITER_3, (suc_on && l < M2_NB_L_TILES) ? M2_W3_state_tb[0] : 0);  // save: tile l-1 not last
 }
 
 int main() {
@@ -108,7 +143,7 @@ int main() {
 
     if (snrt_global_core_idx() == 0) init_cycle_counter();
 
-    // Load L-independent operands once; pre-gather tile 0 into slot 0.
+    // Load L-independent operands once.
     if (snrt_is_dm_core()) {
         snrt_dma_start_1d(ptr_dt_w1, M2_dt_weight_1, M2_length_dt_weight_1);
         snrt_dma_start_1d(ptr_dt_w2, M2_dt_weight_2, M2_length_dt_weight_2);
@@ -116,9 +151,6 @@ int main() {
         snrt_dma_start_1d(ptr_A, M2_suc_A, M2_length_A);
         snrt_dma_start_1d(ptr_D, M2_suc_D, M2_length_D);
         snrt_dma_start_1d(ptr_os_weight, M2_oscore_weight, M2_length_oscore_weight);
-        gather_dt_bc(0, ptr_dt[0], ptr_BC[0]);
-        gather_conv_tile(0, ptr_x[0], M2_suc_x);
-        snrt_dma_start_1d(ptr_oi[0], M2_oscore_in, M2_length_oscore_in_l_tile);
         snrt_dma_wait_all();
     }
     snrt_cluster_hw_barrier();
@@ -128,55 +160,54 @@ int main() {
         printf("\nStarting program: p2-carry (L=%d, dModel=%d, dInner=%d, NB=%u, L_tile=%u, dbuf)\n\n", seqLen, dModel,
                dInner, M2_NB_L_TILES, M2_L_tile);
         if (bc_swizzle) write_csr(ADDR_REMAP_INDEX_READER_7, 1);  // BC read through the XOR swizzle
+        set_streamer_p2_carry((uint32_t)ptr_oi[0], (uint32_t)ptr_os_weight, (uint32_t)ptr_dt[0], (uint32_t)ptr_dt_w1,
+                              (uint32_t)ptr_dt_w2, (uint32_t)ptr_dt_bias, (uint32_t)ptr_A, (uint32_t)ptr_BC[0],
+                              (uint32_t)ptr_D, (uint32_t)ptr_x[0], (uint32_t)ptr_z[0], (uint32_t)ptr_y[0],
+                              (uint32_t)ptr_state);
+        set_launch(0, ptr_oi, ptr_dt, ptr_BC, ptr_x, ptr_z, ptr_y);
+        set_simbacore_csr(M3_OSGEMM, M2_L_tile, dModel, dInner, dtRank, dModel);  // shape; MODE rewritten per launch
         start_cycles = snrt_mcycle();
     }
 
-    // ---- Phase A: sequence-tiled P2 (no isCore) with state carry ----
-    for (uint32_t lt = 0; lt < M2_NB_L_TILES; lt++) {
-        uint32_t cur = lt & 1u;
-
-        if (snrt_global_core_idx() == 0) {
-            bool load_en  = (lt != 0);
-            bool save_en  = (lt != M2_NB_L_TILES - 1u);
-            uint32_t mode = M33_PHASE2_NO_ISCORE | (load_en ? state_load_bit : 0u) | (save_en ? state_save_bit : 0u);
-            set_streamer_p2_carry((uint32_t)ptr_oi[cur], (uint32_t)ptr_os_weight, (uint32_t)ptr_dt[cur],
-                                  (uint32_t)ptr_dt_w1, (uint32_t)ptr_dt_w2, (uint32_t)ptr_dt_bias, (uint32_t)ptr_A,
-                                  (uint32_t)ptr_BC[cur], (uint32_t)ptr_D, (uint32_t)ptr_x[cur], (uint32_t)ptr_z[cur],
-                                  (uint32_t)ptr_y[cur], (uint32_t)ptr_state, load_en, save_en);
-            set_simbacore_csr(mode, M2_L_tile, dModel, dInner, dtRank, dModel);
-            start_simbacore_and_streamers(M2_R10_en, M2_R10_start_cnt_lt, 0, 0);
-        }
-
-        // DM core (concurrent with compute): gather next tile + spill previous tile's z/y.
+    // ---- Phase A: sequence-tiled P2 (no isCore) with state carry. Launch l = osCore tile l + SUC tile l-1;
+    // iteration i runs launch i-1 while the DM core loads for launch i and spills what launch i-2 produced. ----
+    for (uint32_t i = 0; i < M2_NB_L_TILES + 3u; i++) {
         if (snrt_is_dm_core()) {
-            if (lt + 1u < M2_NB_L_TILES) {
-                gather_dt_bc(lt + 1u, ptr_dt[cur ^ 1u], ptr_BC[cur ^ 1u]);
-                gather_conv_tile(lt + 1u, ptr_x[cur ^ 1u], M2_suc_x);
-                snrt_dma_start_1d(ptr_oi[cur ^ 1u], M2_oscore_in + (lt + 1u) * M2_oscore_in_l_tile_offset,
+            if (i < M2_NB_L_TILES)
+                snrt_dma_start_1d(ptr_oi[i & 1u], M2_oscore_in + i * M2_oscore_in_l_tile_offset,
                                   M2_length_oscore_in_l_tile);
+            if (i >= 1u && i <= M2_NB_L_TILES) {
+                uint32_t t = i - 1u;
+                gather_dt_bc(t, ptr_dt[t & 1u], ptr_BC[t & 1u]);
+                gather_conv_tile(t, ptr_x[t & 1u], M2_suc_x);
             }
-            if (lt >= 1u) {
-                spill_conv_tile(lt - 1u, ptr_z[cur ^ 1u], ptr_z_l3);
-                spill_conv_tile(lt - 1u, ptr_y[cur ^ 1u], ptr_y_l3);
-            }
-            snrt_dma_wait_all();
+            if (i >= 2u && i <= M2_NB_L_TILES + 1u) spill_conv_tile(i - 2u, ptr_z[i & 1u], ptr_z_l3);
+            if (i >= 3u) spill_conv_tile(i - 3u, ptr_y[(i - 3u) & 1u], ptr_y_l3);
         }
 
-        if (snrt_global_core_idx() == 0) {
+        if (i >= 1u && i <= M2_NB_L_TILES + 1u && snrt_global_core_idx() == 0) {
+            uint32_t l    = i - 1u;
+            bool suc_on   = l >= 1u;
+            uint32_t mode = !suc_on ? M3_OSGEMM : (l < M2_NB_L_TILES ? M33_PHASE2_NO_ISCORE : M27_SUC_ONLY);
+            if (l >= 2u) mode |= state_load_bit;
+            if (suc_on && l < M2_NB_L_TILES) mode |= state_save_bit;
+            write_csr(MODE, mode);
+            _set_streamer_start();
+            _set_simbacore_start();
+            if (suc_on) write_csr(DELAYED_START_READER_10, 1);  // z slot complete: release at once
+            write_csr(STREAMER_START_CSR, 0);
+            write_csr(SIMBACORE_START, 0);
+            write_csr(DELAYED_START_READER_10, 0);
+            // Next launch's program (latched at its START) while the accelerator runs.
+            if (l < M2_NB_L_TILES) set_launch(l + 1u, ptr_oi, ptr_dt, ptr_BC, ptr_x, ptr_z, ptr_y);
             wait_simbacore_and_streamer();
             asm volatile("fence" ::: "memory");
             simbacore_cycles += read_simbacore_perf_counter();
         }
+
+        if (snrt_is_dm_core()) snrt_dma_wait_all();
         snrt_cluster_hw_barrier();
     }
-
-    // Epilogue: spill the last tile's z/y.
-    if (snrt_is_dm_core()) {
-        spill_conv_tile(M2_NB_L_TILES - 1u, ptr_z[(M2_NB_L_TILES - 1u) & 1u], ptr_z_l3);
-        spill_conv_tile(M2_NB_L_TILES - 1u, ptr_y[(M2_NB_L_TILES - 1u) & 1u], ptr_y_l3);
-        snrt_dma_wait_all();
-    }
-    snrt_cluster_hw_barrier();
     if (snrt_global_core_idx() == 0) printf("Phase A done (z/y spilled to L3), starting out-proj (K-tiled)\n");
 
     // ---- Phase B: output projection out = y @ iscore_weight (+ bias), K-tiled isgemm. The out psum stays
