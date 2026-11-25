@@ -1,4 +1,4 @@
-# 5. FFT family: `fft`, `fft-tiled`, `fft-3way`, `fft-3way-tiled(-async)`, `fft-4way(-tiled-async)`
+# 5. FFT family: `fft`, `fft-tiled`, `fft-3way`, `fft-3way-tiled`, `fft-4way`
 
 > **All pages:**
 > [README](README.md) ·
@@ -25,7 +25,7 @@ SIMD Hadamards (CMul) and re/im deinterleaves. The
 streamer chain is fully on-chip — there are no software byte reorders
 between stages (the one exception is `fft-4way`'s reorder2 `m3↔m4`
 transpose, a scalar C loop in the un-tiled validation harness — see that
-section). In `fft-tiled`, `fft-3way-tiled` and `fft-4way-tiled-async` the
+section). In `fft-tiled` and `fft-3way-tiled` the
 deinterleave is fused into the CMul itself: the W3 writer's `[2, 2]` spatial loop (`ss = [8, re_region_size]`, 
 temporal stride 16 B) scatters each 32 B CMul output beat's re half into the first output region and its im half into the second, 
 so no separate SIMD-Noop pass exists there. The un-tiled apps (`fft`, `fft-3way`, `fft-4way`) still run
@@ -236,38 +236,6 @@ FP8 rounding boundaries, so a few round-to-zero or flip ±1 LSB. The 2-way
 `fft-tiled` shows the same floor (~1/50); `einfft` (no DFT-matmul rounding) hits
 0/100. It is independent of `nb_tiles_A`, so prefer the largest `dM` that fits.
 
-## `fft-3way-tiled-async` (l3-streamed, for long sequences)
-
-`fft-3way-tiled` keeps every partition tile (so `LxD_tile`) resident, for a total of  `~9·L·D_tile` + `twiddles1 (2·L)`
-This app streams the `L3` axis to fit much longer sequences
-
-The key structural fact: `m3` (the `L3` axis) is a batch factor for partitions 1&2
-(they run independently per `m3`) but the contraction axis of partition 3. So:
-
-1. Stages 1–4 run per `l3`-tile (`l3_tile` channels of `m3`, must be a multiple of
-   `seqLenUnroll`). Their input + twiddles are DMA-gathered from DRAM into contiguous
-   tile-local buffers, on which the unchanged `L3=l3_tile` descriptors are correct.
-2. Each tile's reordered output is staged to L3 with its re/im halves split into the
-   full-K order. Partition 3 contracts the complex `m3` axis, whose K dimension is
-   stacked `[re(all m3) | im(all m3)]`. A tile produces `[re(tile m3) | im(tile m3)]`
-   (cmul2's fused split write), so concatenating tiles would scramble K
-   (`[re t0|im t0|re t1|im t1]`). Instead the stage-out sends the tile's re half to the
-   L3 re region (`+ lt·h2_half`) and its im half to the im region
-   (`+ h2_im_region + lt·h2_half`), so L3 ends up as the correct
-   `[re t0|re t1|…|im t0|im t1|…]`.
-3. Partition 3 N-tiles its output batch (`N_3 = dM·L1·L2`) into `nb_ntile` chunks. Each
-   chunk gathers its full-K `H2` `N`-run back from L3 into a small TCDM buffer, then
-   K-tiles the contraction into `nb_l3` chunks of `K=2·L3_padded/nb_l3` and accumulates. The K-tiling is required because the
-   IS-core hangs if a single `ISGEMM_SQ` is given the full `K=2·L3_padded` once `2·L3 > ~32`
-   (e.g. `K=96` at `L3=32`). Because both `weight3` and the gathered `H2` are now in `[re|im]`
-   order, contiguous K-chunks pair correctly. Then scatter the chunk to the L3 output.
-
-So only one `l3`-tile of stages-1–4 scratch, one gathered `N`-tile of `H2`, and one `N`-tile
-of the partition-3 psum are ever resident. Partition 3 runs only after stages 1–4 finish for a
-slice, so its buffers (`h2_ntile`, `P3`) overlay the by-then-dead stages-1–4 scratch (in
-`src/fft.c`, `ptr_h2ntile = ptr_in`). Peak ≈ `weights + max(in_tile + tw1_tile + tw2_tile +
-P_tile + 2·H_tile, h2_ntile + P3_ntile)` (all in `memory_model.py`).
-
 ## `fft-3way-L8` (3-way with a factor-8 axis, `L3 < seqLenUnroll`)
 
 `fft-3way-tiled` needs every `Lx` a multiple of `seqLenUnroll` (=16). `fft-3way-L8` adds an
@@ -316,65 +284,10 @@ exception: partition3 contracts `m3`, but after partition2/cmul2 the data has `m
 `m3` must be gathered to the K-axis — an `m3↔m4` transpose. The bank-based streamers cannot do
 this (a bank is a fixed run of contiguous bytes; a transpose needs a strided scatter). The
 un-tiled `fft-4way` does it as a scalar C loop (it is a kernel-validation harness, not a
-performance target); in `fft-4way-tiled-async` the contraction-order layout leaves it a plain
-re/im split, fused into cmul2's write (see below).
+performance target).
 
 `fft-4way` keeps every buffer resident, so it only fits small `dModel` at the minimum valid
 `L = 8192` (`L1=16, L2=L3=L4=8`); use it to validate the kernel. Residual sim errors are the
 FFT FP8 rounding floor (near-zero outputs landing on FP8 boundaries), cascaded across four
 partitions — same nature as the 3-way's `~2/25` floor.
-
-## `fft-4way-tiled-async` (l3-streamed, for `L = 16⁴` and beyond)
-
-The dModel-tile alone cannot fit `L = 65536`: it only slices `dM` and leaves the L-proportional
-buffers (`twiddles1 ≈ 2·L`, the BF16 partition psum `≈ 4·L·dM`, two FP8 hadamards `≈ 2·L·dM`)
-intact — peak `≈ 717 KiB > 512 KiB` even at `dM=1`. Two tilings cut the peak; the whole
-partition-3 input (`packed3 = 2·L·dM` FP8) always stays TCDM-resident — no L3 spill.
-
-**Stages 1–2 tiling** (pick one axis; each tile runs p1 → cmul1 → p2 → cmul2, cmul2 writing
-its tile of `packed3`):
-- `l3_tile < L3`: stream `m3` (the partition-3 contraction) per `l3`-tile; the tile's input and
-  twiddles are DMA-gathered from DRAM so the `m3`-block lands in K-position for partition 3.
-- `nb_m4 > 1` (requires `L3 == 16`, `dM == 1`): stream `m4`-blocks instead. The tile's slices
-  are contiguous in the chip layouts (1-D input DMA, one chunk per `k1`/`k2` twiddle row), and
-  cmul2's write places each `(k1,k2)`'s `L4t` m3-runs at their `m4` slots in `packed3`.
-
-**Stages 3–4 N-chunking** (`nb_ntile > 1`, requires `L4 == 16`, `nb_tiles_A == 1`): once
-`packed3` is assembled, `partition3 → cmul3 → partition4 → output scatter` run per `(k1,k2)`
-column chunk (`L1·L2/nb_ntile` a-values). The partition-3 B-walk reads the chunk's N-run inside
-each K-block of the resident `packed3` (the K stride stays the full-N block); the chunk buffers
-`P3/packed4/P4` are private (`P4` ping-pongs against the scatter), and the scatter drains the
-chunk's slice of each `M_4` row-block (FP8 payload) to the L3 output. At `L = 65536 = 16⁴` with
-`nb_m4 = nb_ntile = 4` the peak is ≈ 421 KiB.
-
-**Re/im deinterleave.** Each hadamard's 32 B CMul beats (`[16 re | 16 im]`) must land in the
-next partition's K-major input, in a regime picked by the contracted axis length:
-- axis `== 16` (`= seqLenUnroll`, `K = 2`): the halves are separate K-blocks, so the split is
-  **fused into the cmul's W3 write**: its `[2, 2]` spatial loop (`ss = [8, kstride]`, temporal
-  stride 16 B) puts the re half at `+0` and the im half one K-block further, no reorder pass.
-  cmul1 → partition2's input (`L2 == 16`), cmul2 → `packed3` (`L3 == 16`; under `nb_m4` tiling
-  a second temporal level places each `(k1,k2)`'s `L4t` beats at the tile's `m4` offset of its
-  `L4·L3` run), cmul3 → `packed4` (`L4 == 16`).
-- `2·axis ≤ 16` (`K = 1`): both halves share one K-run per N, so the beat's two middle banks
-  must swap (`[re n0|re n1|im n0|im n1]` → `[re n0|im n0|re n1|im n1]`). The writer cannot do
-  that (the sparse interconnect locks each W3 lane to banks of its own parity), so the cmul
-  writes plain beats to a scratch (`H1`/`H3`) and a block-swap SIMD NOOP (`R7 ss = [16, 8]`)
-  finishes the deinterleave.
-
-cmul2's re/im spatial *read* jump follows the `L2` regime: `L2` rows within the block for
-`2·L2 ≤ 16`, the second row-block (half the FP8 payload) at `L2 == 16`.
-
-**No psum zero-fills.** Every GEMM opens its own accumulation and covers at most 2 K-steps, so
-each launch reads its K-step-0 psum from a resident zero buffer (R13 base = zero, K-stride =
-`psum − zero`), as in `fft-3way-tiled`. The zero buffer is the larger of the tile and chunk psums.
-
-**Latency hiding.** Every launch's streamer program is written while the previous launch runs
-(cmul1's during p1, p2's during cmul1, cmul2's during p2, the next tile's p1 or the first p3
-during cmul2, cmul3's during p3, p4's during cmul3, the next chunk's p3 during p4). The tile's
-`tw2` load rides behind p1+cmul1, the next tile's `in`/`tw1` behind p2+cmul2, and each chunk's
-output scatter behind the next chunk's launches; only the prologue (weights, zero buffer, tile 0)
-and the last scatter are serial DMA.
-
-**Factorisation limits.** `L1 == 16`; `L2`, `L3`, `L4 ≤ 16` (every partition `K ≤ 2`);
-`dM == 1`; `nb_m4` requires `L3 == 16` and `nb_l3 == 1`; `nb_ntile` requires `L4 == 16`.
 

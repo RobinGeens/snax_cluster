@@ -47,8 +47,8 @@ an individual start signal.
 
 ## Implementation concepts
 
-The input-side ring is implemented in `osgemm-tiled-async` (minimal single-osCore
-GEMM) and `main-tiled-oscore` (the full P1 with `oscore_in` ring-tiled).
+The input-side ring is implemented in `main-tiled-oscore` (the full P1 with
+`oscore_in` ring-tiled).
 
 **1. Make the streamer wrap with no HW change.**
 Streamer AGUs only support non-negative strides, so a literal modular
@@ -131,9 +131,8 @@ throughput.
 The same mechanism applies to isCore. Instead of ringing a shared
 input, keep the full IS-core PSUM (`seqLen × dModel`) in L3 and slide the ring
 through TCDM, paced by the IS-core output-tile gauge `ISCORE_TILE_CNT` instead of
-`R10_DELAY_GAUGE`. Implemented in `isgemm-tiled-async` (minimal single-isCore
-GEMM) and `main-tiled-iscore` (the full P1 with `iscore_out_P1` ring-tiled). Two
-differences from the input case:
+`R10_DELAY_GAUGE`. Implemented in `main-tiled-iscore` (the full P1 with
+`iscore_out_P1` ring-tiled). Two differences from the input case:
 
 - **Two transfers per ring visit.** Because K (dInner) is the outer loop, every
   L-tile's running psum is revisited each K-step, so a visit must **spill** the
@@ -160,65 +159,3 @@ does not fit this ring, for two independent reasons:
 - **Transpose scatter.** A requant and transpose*final tile additionally runs the
   stateful `BankTransposer` (an 8-bank scatter) which desyncs on the stride-0 rewind when
   L-tiles are small. Disabling only the transpose still leaves the FP8/BF16 rate mismatch.
-
-## Both rings at once (dual-core, double-pacing)
-
-`IS_OSGEMM` runs the OS-core and IS-core concurrently in one kernel, so both rings
-can be live together: the OS-core A **input** ring (refill, gauge `R10_DELAY_GAUGE`)
-and the IS-core PSUM **output** ring (spill+reload, gauge `ISCORE_TILE_CNT`), both
-sweeping the same `seqLen` L-tiling and serviced by the one DM core. (Implemented in
-`is-osgemm-tiled-async`. `K_t′ = 1` forces `nb_inv = dInner / dInnerUnroll`, with the
-OS-core producing one `dInnerUnroll` N-slice per invocation; mode stays `NO_REQUANT`
-so the OS-core requantizes its FP8 D while the IS-core PSUM rides the ring as BF16.)
-
-The two cores generally run at different speeds, so the refill loop needs **two
-independent cursors, each advanced by its own gauge** — *double-pacing*. Each pass:
-poll both gauges, refill whichever ring(s) have a consumed slot (one, the other, or
-both), advance only those cursors. Do **not** drive both rings from one shared cursor
-gated on both gauges ("pace-on-slower"): that makes the *faster* core's refill wait
-on the slower core, so the faster core wraps onto a slot that is still un-refilled and
-tears. (Measured: pace-on-slower tears the OS-core input ring while the IS-core
-passes; switching to double-pacing fixes it.)
-
-Double-pacing removes the gauge-coupling tax but exposes a second one: a **single DM
-core/DMA engine serves both rings**, so the faster core's bursty refills can queue
-ahead of the slower core's transfers and delay them — pure DMA-bandwidth contention,
-not gauge timing. The *lead-margin* rule above absorbs it; in practice the combined
-case needs one more slot than each ring would alone (e.g. `nb_slots = 3` where an
-isolated ring passes at 2), or equivalently a larger `dModel`. Diagnosis rule of
-thumb: **input ring tears → gauge coupling (decouple the cursors); output ring tears
-while input passes → DMA contention (deepen `nb_slots`).**
-
-### Overlapping the osCore and SUC (P2-async)
-
-`P2-async-OS-no-IS` runs the fused `M33` (osCore → switchCore → SUC) with two input
-rings live at once — `oscore_in` (gauge `R10_DELAY_GAUGE`) and `BC` (gauge
-`R11_DELAY_GAUGE`, the SUC output count) — from one double-paced loop,
-so the osCore and SUC pipeline: the SUC's z-reader is released at the safe-to-start
-threshold `M2_R10_start_cnt` and trails the osCore.
-
-How much they overlap is set entirely by that threshold. The SUC reads z in a scrambled
-per-`(seqLenUnroll × dInnerUnroll)` tile order, so it must trail the osCore by ~1 such
-window: `safe_to_start = ceil(max(seqLen_tiles, suc_delta) · 1.2)`, clamped to
-`gemm_total = seqLen_tiles · n_24L` (`get_safe_to_start_delay`), where
-`n_24L = dInner_tile / dInnerUnroll`. Therefore:
-
-- **`n_24L == 1`** → the clamp = the full osCore window → the SUC can only start once the
-  osCore is done → **no overlap** (the loop degenerates cleanly to sequential). This is
-  the regime a large-`seqLen` config is forced into when the 512 KiB budget caps
-  `dInner_tile` at `dInnerUnroll` (e.g. `seqLen=3136, dModel=96 → nb_tiles=8`).
-- **`n_24L ≥ 2`** → the SUC overlaps the later windows; overlap fraction ≈
-  `(n_24L − 1.2) / n_24L` (n_24L=2 ≈ 40 %, 4 ≈ 70 %, 8 ≈ 85 %).
-
-The value of that overlap scales with the osCore's share of the tile,
-`osCore / SUC ≈ dModel / (384 · bc)` (L-independent; `bc ≈ 1.756` for the real 2-bank
-conflict): `dModel=96` → osCore ~12.5 % of the tile (overlap buys ≤ ~4 %); `dModel=384`
-→ ~36 % (~1.4×); balanced 50/50 near `dModel ≈ 674` (~2×). So overlap is worth pursuing
-only when `dModel` is large **and** `dInner_tile` is large enough for `n_24L ≥ 2` — the
-two pull against the footprint budget, so it is a moderate-`seqLen` feature.
-
-The osCore array back-pressures cleanly, so a BC-refill DMA that transiently grounds the
-osCore W0 (z-write) superbank only stalls it, never drops z — `oscore_in` refill already
-overlaps W0 with clean z. The only real care is the standard double-pacing rule above:
-the two-barrier handshake (publish `do_os/do_bc`, then "safe to recompute") plus enough
-`oscore_in` slots to absorb the handshake latency.

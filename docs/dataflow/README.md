@@ -36,14 +36,11 @@ for the exact streamer/CSR programming see the program sources.
 | App | What it does | Detail |
 | --- | --- | :---: |
 | `osgemm` | Single-shot OS-core `D = A·B` (ConvFormat output) | [1](01_oscore_kernels.md) |
-| `osgemm-tiled` | OS GEMM, output `N`-axis tiled | [1](01_oscore_kernels.md) |
-| `osgemm-tiled-async` | OS GEMM with the `A` input L-tiled into an async TCDM ring (input-side ring, paced by `R10`) | [9](09_async_tiling.md) |
+| `osgemm-tiled` | OS-core-only GEMM over activation chunks × weight tiles, the weights or the activations resident, each operand read from L3 as few times as the TCDM allows (the energy counterpart of `double-gemm-conflict-free`, `isgemm-tiled` and `conv-downsample`) | [1](01_oscore_kernels.md) |
 | `isgemm` | Single-shot IS-core `D = C + A·B` (psum read-back) | [2](02_iscore_kernels.md) |
 | `isgemm-tiled` | IS GEMM, `K`-axis accumulating tiles | [2](02_iscore_kernels.md) |
-| `isgemm-tiled-async` | IS GEMM with the PSUM streamed through an async output-side ring (paced by `ISCORE_TILE_CNT`) | [9](09_async_tiling.md) |
 | `is-osgemm` | OS + IS GEMM concurrently in one un-tiled `IS_OSGEMM` kernel *(inactive)* | [2](02_iscore_kernels.md) |
 | `is-osgemm-tiled` | Same, dInner-tiled and double-buffered | [2](02_iscore_kernels.md) |
-| `is-osgemm-tiled-async` | Both async rings live at once (A-input refill + PSUM spill/reload), double-paced | [9](09_async_tiling.md) |
 | `double-gemm-conflict-free` | `is-osgemm-tiled`'s parallel OS+IS GEMMs with a bank-partitioned skip-128 layout (OS → banks 0-15, IS → banks 16-31), eliminating cross-core bank contention | [20](20_double_gemm_conflict_free.md) |
 | `conv-downsample` | 3×3 stride-2 Conv2d (SiMBA downsample) as an im2col GEMM, IS-core tiled over the reduction axis `dModel = 9·Cin` | [21](21_conv_downsample.md) |
 
@@ -71,10 +68,8 @@ for the exact streamer/CSR programming see the program sources.
 | `suc-only` | Stand-alone SUC probe / `BC` bank-conflict demo | [4](04_mamba_main.md) |
 | `SUC-tiled` | SUC only, dInner-tiled | [4](04_mamba_main.md) |
 | `suc-async` | SUC only, async rings on `BC`, `x`, `z`, `y` (`dt` full) | [12](12_suc_async.md) |
-| `suc-async-dt` | `suc-async` plus an async `dt` ring; for the largest `seqLen` | [12](12_suc_async.md) |
 | `suc-carry` | SUC only, L-tiled with on-chip state carry (no `BC` ring); double-buffered | [13](13_suc_carry.md) |
-| `P2-async-OS-no-IS` | P2 minus the IS-core; `oscore_in` async input ring | [4](04_mamba_main.md) · [9](09_async_tiling.md) |
-| `p2-carry` | Full P2 sequence-tiled with SSM state carry (no async rings) + fused output projection; replaces `P2-async-OS-no-IS` + a separate out-proj | [15](15_p2_carry.md) |
+| `p2-carry` | Full P2 sequence-tiled with SSM state carry (no async rings) + fused output projection | [15](15_p2_carry.md) |
 
 ### FFT
 
@@ -84,10 +79,8 @@ for the exact streamer/CSR programming see the program sources.
 | `fft-tiled` | 2-way DFT, Phase A dModel-tiled + Phase B K-tiled | [5](05_fft.md) |
 | `fft-3way` | 3-way partitioned DFT | [5](05_fft.md) |
 | `fft-3way-tiled` | 3-way DFT, outer dModel-tile + inner l3-tile loop (`L3 > seqLenUnroll`), all on-chip | [5](05_fft.md) |
-| `fft-3way-tiled-async` | 3-way DFT streaming the `L3` axis through L3 (H2 + psum) for long sequences | [5](05_fft.md) |
 | `fft-3way-L8` | 3-way DFT with a factor-8 axis (`L3 < seqLenUnroll`), via `m3` padding | [5](05_fft.md) |
 | `fft-4way` | 4-way partitioned DFT (kernel-validation harness, every buffer resident) | [5](05_fft.md) |
-| `fft-4way-tiled-async` | 4-way DFT for `L = 16⁴`+: stages 1–2 per `m4`/`l3` tile with the hadamards' fused re/im split writes feeding the next partition, stages 3–4 per N-chunk over the TCDM-resident partition-3 input | [5](05_fft.md) |
 
 ### EinFFT MLP
 
@@ -128,8 +121,7 @@ These constraints are baked into the hardware and shape every program.
    last-iteration in every tile and corrupts the requant timing.
 5. **Inter-stage byte reorders must be folded into streamer programming.**
    Scalar reorders over TCDM via Snitch are too slow; the only exception is
-   `fft-4way`'s `reorder2` validation harness (the async variant fuses it into
-   cmul2's write).
+   `fft-4way`'s `reorder2` validation harness.
 6. **Padding is the programmer's responsibility** unless an explicit hardware
    helper does it (e.g., `ISGEMM_SQ` pads the input internally; the weight
    must still be pre-padded).

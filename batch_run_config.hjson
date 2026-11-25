@@ -571,7 +571,7 @@
                     name: downsample C
                     model: Simba-L IN
                     force: false
-                    seqLen: 16 // 2x
+                    seqLen: 16 // x3 (one IS-core GEMM of 16 tokens per call)
                     dModel: 3456 // = 9 * 384
                     dInner: 528
                     nb_tiles: 18
@@ -692,11 +692,11 @@
                     name: segformer E
                     model: Simba-L CS
                     force: false
-                    seqLen: 32 // x1024 -> 32768
-                    dModel: 2048
+                    seqLen: 64 // x680 -> 43520: fuse split per stage (65536 + 16384 + 4096 + 1024 tokens, 512 -> 512), same shape as segformer D
+                    dModel: 512
                     dInner: 528
                     dtRank: 24
-                    nb_tiles: 22
+                    nb_tiles: 11
                 }
             ]
         }
@@ -799,16 +799,16 @@
             ]
         }
         {
-            app: conv-downsample
+            app: double-gemm-conflict-free
             params: [
-                { // 320 -> 448 downsample
+                { // 320 -> 448 downsample, was conv-downsample (1.7x slower per token, snax vsim 11-25)
                     name: downsample C
                     model: Simba-S IN
                     force: false
                     seqLen: 16 // x1.53125
                     dModel: 2880 // = 9 * 320
-                    dInner: 448
-                    nb_tiles: 15
+                    dInner: 456 // 448 -> mult of 24; 24-column tiles, the only width that fits (451.5 KiB)
+                    nb_tiles: 19
                 }
             ]
         }
@@ -967,16 +967,16 @@
             ]
         }
         {
-            app: conv-downsample
+            app: double-gemm-conflict-free
             params: [
-                {
+                { // 320 -> 512 downsample, was conv-downsample (1.7x slower per token, snax vsim 11-25)
                     name: downsample C
                     model: Simba-B IN
                     force: false
-                    seqLen: 16
-                    dModel: 2880
-                    dInner: 528
-                    nb_tiles: 15
+                    seqLen: 16 // x1.53125
+                    dModel: 2880 // = 9 * 320
+                    dInner: 528 // 24-column tiles, the only width that fits (451.5 KiB)
+                    nb_tiles: 22
                 }
             ]
         }
@@ -1429,6 +1429,687 @@
                     dInner: 528
                     dtRank: 24
                     nb_tiles: 11
+                }
+            ]
+        }
+        {
+            app: osgemm-tiled
+            params: [
+                {
+                    name: P2 in proj A
+                    model: Simba-L IN
+                    force: false
+                    dim0: 3136
+                    dim1: 96
+                    dim2: 192
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj A
+                    model: Simba-L IN
+                    force: false
+                    dim0: 3136
+                    dim1: 192
+                    dim2: 96
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: fft D
+                    model: Simba-L IN
+                    force: false
+                    dim0: 48
+                    dim1: 512
+                    dim2: 1032 // 1024 -> mult of 24
+                    nb_tiles: 4
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: downsample A
+                    model: Simba-L IN
+                    force: false
+                    dim0: 784
+                    dim1: 864 // = 9 * 96
+                    dim2: 192
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: downsample B
+                    model: Simba-L IN
+                    force: false
+                    dim0: 192
+                    dim1: 1728 // = 9 * 192
+                    dim2: 384
+                    nb_tiles: 16
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: downsample C
+                    model: Simba-L IN
+                    force: false
+                    dim0: 48
+                    dim1: 3456 // = 9 * 384
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 22
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: P2 in proj A
+                    model: Simba-S IN
+                    force: false
+                    dim0: 3136
+                    dim1: 64
+                    dim2: 144 // 128 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj A
+                    model: Simba-S IN
+                    force: false
+                    dim0: 3136
+                    dim1: 128
+                    dim2: 72 // 64 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: fft D
+                    model: Simba-S IN
+                    force: false
+                    dim0: 48
+                    dim1: 448
+                    dim2: 912 // 896 -> mult of 24
+                    nb_tiles: 4
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: downsample A
+                    model: Simba-S IN
+                    force: false
+                    dim0: 784
+                    dim1: 576 // = 9 * 64
+                    dim2: 144 // 128 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: downsample B
+                    model: Simba-S IN
+                    force: false
+                    dim0: 192
+                    dim1: 1152 // = 9 * 128
+                    dim2: 336 // 320 -> mult of 24
+                    nb_tiles: 7
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: downsample C
+                    model: Simba-S IN
+                    force: false
+                    dim0: 48
+                    dim1: 2880 // = 9 * 320
+                    dim2: 456 // 448 -> mult of 24
+                    nb_tiles: 10
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: P2 in proj A
+                    model: Simba-L CS
+                    force: false
+                    dim0: 4096 // x16 -> 65536
+                    dim1: 96
+                    dim2: 192
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj A
+                    model: Simba-L CS
+                    force: false
+                    dim0: 4096 // x16 -> 65536
+                    dim1: 192
+                    dim2: 96
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj B
+                    model: Simba-L CS
+                    force: false
+                    dim0: 1024 // x16 -> 16384
+                    dim1: 192
+                    dim2: 384
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj B
+                    model: Simba-L CS
+                    force: false
+                    dim0: 1024 // x16 -> 16384
+                    dim1: 384
+                    dim2: 192
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj C
+                    model: Simba-L CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 384
+                    dim2: 768
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj C
+                    model: Simba-L CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 768
+                    dim2: 384
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj D
+                    model: Simba-L CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 512
+                    dim2: 1032 // 1024 -> mult of 24
+                    nb_tiles: 2
+                    nb_l_tiles: 4
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj D
+                    model: Simba-L CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 1024
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 2
+                    nb_l_tiles: 4
+                    a_stationary: 0
+                }
+                {
+                    name: downsample A
+                    model: Simba-L CS
+                    force: false
+                    dim0: 1024 // x16 -> 16384
+                    dim1: 864 // = 9 * 96
+                    dim2: 192
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: downsample B
+                    model: Simba-L CS
+                    force: false
+                    dim0: 256 // x16 -> 4096
+                    dim1: 1728 // = 9 * 192
+                    dim2: 384
+                    nb_tiles: 2
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: downsample C
+                    model: Simba-L CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 3456 // = 9 * 384
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 6
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: segformer A
+                    model: Simba-L CS
+                    force: false
+                    dim0: 2048 // x32 -> 65536
+                    dim1: 96
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: segformer B
+                    model: Simba-L CS
+                    force: false
+                    dim0: 1024 // x16 -> 16384
+                    dim1: 192
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: segformer C
+                    model: Simba-L CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 384
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 4
+                    a_stationary: 0
+                }
+                {
+                    name: segformer D
+                    model: Simba-L CS
+                    force: false
+                    dim0: 512 // x2 -> 1024
+                    dim1: 512
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: segformer E
+                    model: Simba-L CS
+                    force: false
+                    dim0: 1024 // x85 -> 87040
+                    dim1: 512
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: downsample C
+                    model: Simba-B IN
+                    force: false
+                    dim0: 48
+                    dim1: 2880 // = 9 * 320
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 11
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: P2 in proj B
+                    model: VMamba-Ti IN
+                    force: false
+                    dim0: 784
+                    dim1: 192
+                    dim2: 384
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj B
+                    model: VMamba-Ti IN
+                    force: false
+                    dim0: 784
+                    dim1: 384
+                    dim2: 192
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj C
+                    model: VMamba-Ti IN
+                    force: false
+                    dim0: 192
+                    dim1: 384
+                    dim2: 768
+                    nb_tiles: 1
+                    nb_l_tiles: 3
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj C
+                    model: VMamba-Ti IN
+                    force: false
+                    dim0: 192
+                    dim1: 768
+                    dim2: 384
+                    nb_tiles: 1
+                    nb_l_tiles: 3
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj D
+                    model: VMamba-Ti IN
+                    force: false
+                    dim0: 48
+                    dim1: 768
+                    dim2: 1536
+                    nb_tiles: 8
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: downsample C
+                    model: VMamba-Ti IN
+                    force: false
+                    dim0: 48
+                    dim1: 1536 // = 4 * 384
+                    dim2: 768
+                    nb_tiles: 8
+                    nb_l_tiles: 1
+                    a_stationary: 1
+                }
+                {
+                    name: head
+                    model: Simba-L K400
+                    force: false
+                    dim0: 784
+                    dim1: 512
+                    dim2: 408 // 400 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 7
+                    a_stationary: 0
+                }
+                {
+                    name: head fc1
+                    model: FEMBA TUAR
+                    force: false
+                    dim0: 80
+                    dim1: 384
+                    dim2: 264 // 256 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 1
+                    a_stationary: 0
+                }
+                {
+                    name: head
+                    model: VideoMamba-Ti K400
+                    force: false
+                    dim0: 16
+                    dim1: 192
+                    dim2: 408 // 400 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 1
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj A
+                    model: Simba-S CS
+                    force: false
+                    dim0: 8192 // x8 -> 65536
+                    dim1: 64
+                    dim2: 144 // 128 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 32
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj A
+                    model: Simba-S CS
+                    force: false
+                    dim0: 8192 // x8 -> 65536
+                    dim1: 128
+                    dim2: 72 // 64 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 32
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj B
+                    model: Simba-S CS
+                    force: false
+                    dim0: 2048 // x8 -> 16384
+                    dim1: 128
+                    dim2: 264 // 256 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj B
+                    model: Simba-S CS
+                    force: false
+                    dim0: 2048 // x8 -> 16384
+                    dim1: 256
+                    dim2: 144 // 128 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj C
+                    model: Simba-S CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 320
+                    dim2: 648 // 640 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj C
+                    model: Simba-S CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 640
+                    dim2: 336 // 320 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: P2 in proj D
+                    model: Simba-S CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 448
+                    dim2: 912 // 896 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: P2 out proj D
+                    model: Simba-S CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 896
+                    dim2: 456 // 448 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: downsample A
+                    model: Simba-S CS
+                    force: false
+                    dim0: 1024 // x16 -> 16384
+                    dim1: 576 // = 9 * 64
+                    dim2: 144 // 128 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: downsample B
+                    model: Simba-S CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 1152 // = 9 * 128
+                    dim2: 336 // 320 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 32
+                    a_stationary: 0
+                }
+                {
+                    name: downsample C
+                    model: Simba-S CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 2880 // = 9 * 320
+                    dim2: 456 // 448 -> mult of 24
+                    nb_tiles: 4
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: segformer A
+                    model: Simba-S CS
+                    force: false
+                    dim0: 2048 // x32 -> 65536
+                    dim1: 64
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: segformer B
+                    model: Simba-S CS
+                    force: false
+                    dim0: 2048 // x8 -> 16384
+                    dim1: 128
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+                {
+                    name: segformer C
+                    model: Simba-S CS
+                    force: false
+                    dim0: 512 // x8 -> 4096
+                    dim1: 320
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 4
+                    a_stationary: 0
+                }
+                {
+                    name: segformer D
+                    model: Simba-S CS
+                    force: false
+                    dim0: 512 // x2 -> 1024
+                    dim1: 448
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 1
+                    nb_l_tiles: 8
+                    a_stationary: 0
+                }
+                {
+                    name: downsample C
+                    model: Simba-B CS
+                    force: false
+                    dim0: 256 // x4 -> 1024
+                    dim1: 2880 // = 9 * 320
+                    dim2: 528 // 512 -> mult of 24
+                    nb_tiles: 5
+                    nb_l_tiles: 16
+                    a_stationary: 0
+                }
+            ]
+        }
+        {
+            app: einfft-tiled
+            params: [
+                {
+                    name: einfft B
+                    model: Simba-L IN
+                    force: false
+                    seqLen: 784
+                    dModel: 192
+                    nb_tiles: 2
+                }
+                {
+                    name: einfft C
+                    model: Simba-L IN
+                    force: false
+                    seqLen: 192
+                    dModel: 384
+                    nb_tiles: 1
+                }
+                {
+                    name: einfft D
+                    model: Simba-L IN
+                    force: false
+                    seqLen: 48
+                    dModel: 576 // 512 -> dPerB mult of 24
+                    nb_tiles: 1
+                }
+                {
+                    name: einfft D
+                    model: Simba-S IN
+                    force: false
+                    seqLen: 48
+                    dModel: 480 // 448 -> dPerB mult of 24
+                    nb_tiles: 1
+                }
+                {
+                    name: einfft B
+                    model: Simba-L CS
+                    force: false
+                    seqLen: 1024 // x16 -> 16384
+                    dModel: 192
+                    nb_tiles: 2
+                }
+                {
+                    name: einfft C
+                    model: Simba-L CS
+                    force: false
+                    seqLen: 512 // x8 -> 4096
+                    dModel: 384
+                    nb_tiles: 4
+                }
+                {
+                    name: einfft D
+                    model: Simba-L CS
+                    force: false
+                    seqLen: 256 // x4 -> 1024
+                    dModel: 576 // 512 -> dPerB mult of 24
+                    nb_tiles: 2
+                }
+                {
+                    name: einfft D
+                    model: Simba-S CS
+                    force: false
+                    seqLen: 256 // x4 -> 1024
+                    dModel: 480 // 448 -> dPerB mult of 24
+                    nb_tiles: 5
+                }
+            ]
+        }
+        {
+            app: add-tiled
+            params: [
+                {
+                    name: segformer sum
+                    model: Simba-L CS
+                    force: false
+                    numElem: 65536 // per tile; x 32 tiles = 4096 x 512
+                    n_acc: 1 // SIMD generator arg, unused by the add
+                    nb_tiles: 32
                 }
             ]
         }

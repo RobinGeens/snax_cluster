@@ -2,7 +2,6 @@
 // Not released under license. All rights reserved.
 //
 // Mamba P2 (no isCore) sequence-tiled with on-chip SSM state carry, fused with the output projection.
-// Replaces the (P2-async-OS-no-IS + separate out-proj) two-program pipeline with one program.
 // Phase A skews the osCore one L-tile ahead of the SUC so neither waits on the other.
 // See docs/dataflow/15_p2_carry.md.
 

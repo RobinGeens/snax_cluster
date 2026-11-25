@@ -134,17 +134,12 @@ samples including a zero-valued tear (torn z through the R10 release), and the
 swizzle's timing shift wobbles that to 24/50 at matching cycles (793,130 vs padded
 794,749). Flip it to the swizzle after the underlying R10 race is fixed.
 
-The biggest single-app win is `P2-async-OS-no-IS`, whose BC ring alias had never been
-padded: 171,460 -> 104,989 SimbaCore cycles (-38.8%, PASS 0/50 at 448/96/nb_l 4). Its
-BC ring is pre-swizzled per ring position (slot = lt % nb_slots, which the refill
-keeps stable; the ring base is 2 KiB-aligned). `main-tiled-oscore` (same
-previously-unpadded family) also runs the swizzle now.
+`main-tiled-oscore`, whose BC alias had never been padded, also runs the swizzle.
 
 A note on release margins: pad-era hand-tuned safe-to-start values were tuned with a
 conflict-free SUC and stay valid under the swizzle (blanket-widening them cost
-main-tiled +23% before being reverted). Only apps whose tuning baseline was
-BC-conflicted (main-tiled-oscore, P2-async) need the widened swizzle-aware
-formula.
+main-tiled +23% before being reverted). Only an app whose tuning baseline was
+BC-conflicted (main-tiled-oscore) needs the widened swizzle-aware formula.
 
 Two pitfalls found while porting:
 

@@ -156,7 +156,7 @@ DMA-tile size against kernel-launch overhead.
 ### Possible further tricks (not yet implemented)
 
 - L-tile `iscore_out_P2` by splitting P2 into the `PHASE2_NO_ISCORE` mode
-  (`M33_PHASE2_NO_ISCORE`, already used by `P2-async-OS-no-IS`) + IS-core-only
+  (`M33_PHASE2_NO_ISCORE`, already used by `p2-carry`) + IS-core-only
   kernel calls. Frees the `L*dModel*2` buffer.
 
 

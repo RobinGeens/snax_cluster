@@ -1,6 +1,8 @@
 {
-    "dim0": 64, // Must be multiple of 16
+    "dim0": 64,
     "dim1": 56,
-    "dim2": 192, // Must be multiple of (24 * nb_tiles). Tiled dimension.
-    "nb_tiles": 4 // Number of tiles along the dInner (dim2) dimension
+    "dim2": 192,
+    "nb_tiles": 3,
+    "nb_l_tiles": 3,
+    "a_stationary": 0
 }

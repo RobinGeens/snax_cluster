@@ -16,8 +16,6 @@ import sys
 # old app -> replacement app. Extend as new implementations supersede old ones.
 REPLACEMENTS = {
     "suc-async": "suc-carry",
-    "suc-async-dt": "suc-carry",
-    "P2-async-OS-no-IS": "p2-carry",
 }
 
 

@@ -3,8 +3,8 @@
 # Copyright 2025 KU Leuven.
 # Not released under license. All rights reserved.
 #
-# suc-async TCDM layout (see src/main.c). SUC-only: no osCore, so no oscore_in ring / oscore_weight
-# (cf. P2-async-OS-no-IS). All buffers are laid out in ONE sequentially-64B-aligned chain and are
+# suc-async TCDM layout (see src/main.c). SUC-only: no osCore, so no oscore_in ring / oscore_weight.
+# All buffers are laid out in ONE sequentially-64B-aligned chain and are
 # live together during the per-dInner-tile compute loop, so the peak is just their sum:
 #
 #   dt PACKED (full L) -> BC ring (nb_slots) -> dt_w1 -> dt_w2 -> dt_bias -> A -> D

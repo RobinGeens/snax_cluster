@@ -225,8 +225,8 @@ Two structural constraints push the tiling onto **N**:
 
 The tiled version then pipelines `nb_tiles` weight DMAs against the
 per-tile compute. The combined `[W_re|W_im]` tile is reused across both
-concat OSGEMMs (`out_A` with `x_re`, `out_B` with `x_im`). This is the same
-axis [`osgemm-tiled`](01_oscore_kernels.md) picks.
+concat OSGEMMs (`out_A` with `x_re`, `out_B` with `x_im`). This is the loop
+order of [`osgemm-tiled`](01_oscore_kernels.md) with `a_stationary = 1`.
 
 The tiled program applies the ConvFormat-throughout strategy at the
 OS-core level (per-tile concat OSGEMM writing a TILE-sized ConvFormat

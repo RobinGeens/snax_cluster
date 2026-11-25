@@ -68,6 +68,3 @@ reduction `K` axis (each tile accumulates into the `CD` buffer). Non-final
 tiles run `IS_OSGEMM_NO_REQUANT`; the final tile runs `IS_OSGEMM`, applying
 the IS-core requant on the last K iteration (see "Why K, not N" above). A
 three-stage pipeline double-buffers DMA-in / compute / DMA-out.
-
-The async variant (`is-osgemm-tiled-async`) streams both rings at once — see
-[9. Async tiling](09_async_tiling.md).

@@ -8,12 +8,11 @@
 > [13. SUC carry](13_suc_carry.md) ·
 > **15. p2-carry (this page)**
 
-`p2-carry` runs the whole Mamba Phase 2 for a long `seqLen` as one program, replacing the two-launch
-pipeline of [`P2-async-OS-no-IS`](09_async_tiling.md) (osCore input projection + SUC, async `BC`/`oscore_in`
-rings) **plus** a separate output-projection GEMM. It does this by sequence-tiling P2 and handing the SSM
-hidden state across L-tiles with the [suc-carry](13_suc_carry.md) mechanism, so the async rings are gone.
+`p2-carry` runs the whole Mamba Phase 2 for a long `seqLen`, output-projection GEMM included, as one
+program. It does this by sequence-tiling P2 and handing the SSM hidden state across L-tiles with the
+[suc-carry](13_suc_carry.md) mechanism, so it needs no async rings.
 
-The premise that once forced the split — *"Split SSM in L is impossible because it requires the intermediate
+The premise that once ruled this out — *"Split SSM in L is impossible because it requires the intermediate
 SSM states to be read out and restored"* ([04](04_mamba_main.md) option A1) — no longer holds: state carry
 through the isCore streamer ports (R13/W3) is exactly that read-out/restore.
 
@@ -35,9 +34,8 @@ when the launch starts and the R10 gate reader is released at START (no safe-to-
 - The DM core gathers the operands of the next launch (`oscore_in` for its osCore tile, `dt`/`BC`/`x` for
   its SUC tile) and spills finished `z`/`y` tiles (convFormat) to L3 while the accelerator computes.
 
-Because the state serialises the L-tiles, Phase A runs at the SUC rate with the osCore hidden underneath —
-the same osCore↔SUC overlap `P2-async` had, but with `BC` fetched from L3 **once** instead of the
-`dInner/delaySU`× re-read the ring pays.
+Because the state serialises the L-tiles, Phase A runs at the SUC rate with the osCore hidden underneath,
+and `BC` is fetched from L3 only **once**.
 
 **Phase B: output projection, K-tiled.** `out = y · iscore_weight (+ bias)` is an `ISGEMM` reducing over
 `dInner`. Following [isgemm-tiled](02_iscore_kernels.md), the `out` psum stays **full-resident** in TCDM and
@@ -68,7 +66,7 @@ state-carry P2 scales to long sequences the same way [suc-carry](13_suc_carry.md
 [suc-async](12_suc_async.md) do. **Phase B** holds the full `out` psum plus one `K`-tile of `y`/weight (see
 above). The binding constraint is therefore the `out` psum (`seqLen·dModel·BF16`) and — in Phase A — the
 resident osCore weight (`dModel·dInner`); a very large `dModel` (e.g. the Simba-L CS block, `dModel=528`,
-`dInner=1056`) exceeds the 512 KiB TCDM and stays on the tiled-`dInner` [P2-async](09_async_tiling.md).
+`dInner=1056`) exceeds the 512 KiB TCDM and runs as [suc-carry](13_suc_carry.md) plus separate projection GEMMs.
 
 ## Mode
 
